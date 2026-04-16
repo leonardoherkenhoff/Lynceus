@@ -72,11 +72,11 @@ def process_attack(input_pcap_dir, output_csv_dir, attack_name):
     monitor_proc = subprocess.Popen([sys.executable, monitor_script, str(loader_proc.pid), monitor_csv])
 
     # 3. Stream data via Hardware (tcpreplay ignores Linux Routing and sends raw to Interface)
-    print(f"   Streaming {total_packets} packets via tcpreplay directly to BPF Map...")
+    print(f"   Streaming {total_packets} packets via tcpreplay directly to BPF Map (Top-Speed)...")
     start_time = time.time()
     
     try:
-        subprocess.run(["sudo", "tcpreplay", "-i", "lo", "-K", merged_pcap], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["sudo", "tcpreplay", "-i", "lo", "-t", "-K", merged_pcap], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except subprocess.CalledProcessError:
         print("   ⚠️ tcpreplay warned about loopback delivery, but BPF captured it.")
 
