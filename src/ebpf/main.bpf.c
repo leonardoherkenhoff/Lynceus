@@ -89,6 +89,7 @@ int xdp_prog(struct xdp_md *ctx) {
         return XDP_PASS;
 
     __u16 l4_payload_len = 0;
+    __u16 l4_header_len = 0;
     __u16 tcp_flags_tracked = 0;
     __u16 sport = 0, dport = 0;
     __u8 l4_proto = ip->protocol;
@@ -100,6 +101,7 @@ int xdp_prog(struct xdp_md *ctx) {
         
         sport = tcp->source;
         dport = tcp->dest;
+        l4_header_len = tcp->doff * 4;
         
         // Instant atomic binary extraction (Replaces slow loops from legacy tools)
         tcp_flags_tracked = (tcp->fin) | (tcp->syn << 1) | (tcp->rst << 2) | (tcp->psh << 3) | (tcp->ack << 4) | (tcp->urg << 5);
@@ -112,6 +114,7 @@ int xdp_prog(struct xdp_md *ctx) {
 
         sport = udp->source;
         dport = udp->dest;
+        l4_header_len = sizeof(struct udphdr);
         l4_payload_len = bpf_ntohs(udp->len) - sizeof(struct udphdr);
     } else {
         return XDP_PASS; // Discard ICMP and other unsupported protocols
@@ -155,7 +158,7 @@ int xdp_prog(struct xdp_md *ctx) {
     event->protocol = l4_proto;
     event->tcp_flags = tcp_flags_tracked;
     event->payload_length = l4_payload_len;
-    event->header_length = (ip->ihl * 4) + (l4_proto == IPPROTO_TCP ? ((struct tcphdr *)((void *)ip + (ip->ihl * 4)))->doff * 4 : sizeof(struct udphdr));
+    event->header_length = (ip->ihl * 4) + l4_header_len;
     
     // DNS Handling (L7 Payload push)
     // Strict byte allocation to prevent infinite loop errors from the BPF Verifier

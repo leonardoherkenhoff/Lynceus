@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <arpa/inet.h>
+#include <net/if.h>
 
 // Must precisely synchronize with main.bpf.c struct map
 struct flow_event_t {
@@ -130,8 +131,22 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
 }
 
 int main(int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "Uso: %s <interface_de_rede>\nExemplo: %s lo\n", argv[0], argv[0]);
+        return 1;
+    }
+
+    const char *iface = argv[1];
+    int ifindex = if_nametoindex(iface);
+    if (!ifindex) {
+        fprintf(stderr, ">> FATAL: Interface %s nao encontrada no Sistema.\n", iface);
+        return 1;
+    }
+
     struct ring_buffer *rb = NULL;
     struct bpf_object *obj = NULL;
+    struct bpf_program *prog = NULL;
+    struct bpf_link *link = NULL;
     int map_fd;
 
     // 1. Flush termination states using Signal handlers
@@ -150,7 +165,21 @@ int main(int argc, char **argv) {
         return 1;
     }
     
-    // 3. Assemble User-Space Lock-Free channel targeting core 'handle_event' callback
+    // 3. Attach XDP prog to Interface Driver
+    prog = bpf_object__find_program_by_name(obj, "xdp_prog");
+    if (!prog) {
+        fprintf(stderr, ">> FATAL: Failed finding xdp_prog in BPF object.\n");
+        goto cleanup;
+    }
+
+    link = bpf_program__attach_xdp(prog, ifindex);
+    if (libbpf_get_error(link)) {
+        fprintf(stderr, ">> FATAL: Failed to attach XDP to %s (Driver error). Use sudo.\n", iface);
+        link = NULL;
+        goto cleanup;
+    }
+    
+    // 4. Assemble User-Space Lock-Free channel targeting core 'handle_event' callback
     map_fd = bpf_object__find_map_fd_by_name(obj, "flows_ringbuf");
     rb = ring_buffer__new(map_fd, handle_event, NULL, NULL);
     if (!rb) {
@@ -167,6 +196,7 @@ int main(int argc, char **argv) {
     }
 
 cleanup:
+    if (link) bpf_link__destroy(link);
     ring_buffer__free(rb);
     bpf_object__close(obj);
     return 0;
