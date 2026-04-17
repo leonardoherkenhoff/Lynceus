@@ -11,7 +11,7 @@ Calculates hardware-metrics synchronously with monitor.py.
 """
 
 # --- CONFIGURATION ---
-INPUT_DIR = "./data/raw/PCAP"
+INPUT_DIR = "/home/leo/Documentos/IFES/PPComp/20252/CICDDoS2019/PCAP/01-12"
 OUTPUT_DIR = "./data/interim/EBPF_RAW"
 
 def get_packet_count(pcap_files):
@@ -86,6 +86,10 @@ def process_attack(input_pcap_dir, output_csv_dir, attack_name):
     
     # We must kill the daemon specifically via sudo since we started it as root
     subprocess.run(["sudo", "kill", "-INT", str(loader_proc.pid)], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        loader_proc.wait(timeout=60) # CRITICAL: Gives C-Daemon time to dump Hash Maps to CSV.
+    except Exception:
+        pass
     
     benchmark_log = os.path.join(output_csv_dir, f"benchmark_{attack_name}.json")
     with open(benchmark_log, 'w') as f:

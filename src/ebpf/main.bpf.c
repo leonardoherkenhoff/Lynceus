@@ -32,6 +32,7 @@ struct flow_event_t {
     __u16 payload_length;
     __u16 header_length;
     __u8 tcp_flags;
+    __u64 timestamp_ns;
 
     // Flexible buffer space for rapid L7 copy restricted to L4 DNS (Port 53)
     __u8 dns_payload_raw[256]; 
@@ -159,6 +160,7 @@ int xdp_prog(struct xdp_md *ctx) {
     event->tcp_flags = tcp_flags_tracked;
     event->payload_length = l4_payload_len;
     event->header_length = (ip->ihl * 4) + l4_header_len;
+    event->timestamp_ns = bpf_ktime_get_ns();
     
     // DNS Handling (L7 Payload push)
     // Strict byte allocation to prevent infinite loop errors from the BPF Verifier
