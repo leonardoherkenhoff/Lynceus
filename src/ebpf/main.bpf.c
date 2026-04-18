@@ -80,11 +80,17 @@ struct {
     __uint(max_entries, 256 * 1024); // Requires heavy throughput. (256 KB)
 } flows_ringbuf SEC(".maps");
 
+/**
+ * @struct flow_state_cache
+ * @brief High-performance LRU Hash Map for in-kernel flow aggregation.
+ * 
+ * Replaces traditional state tracking with a lock-free eBPF architecture.
+ */
 struct {
-    __uint(type, BPF_MAP_TYPE_LRU_HASH); // Replaces the slow Python dictionaries
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, MAX_ENTRIES);
-    __type(key, struct flow_key_t);      // 5-tuple key form
-    __type(value, struct flow_stats_t);  // Atomic accounting for bytes and packets
+    __type(key, struct flow_key_t);
+    __type(value, struct flow_stats_t);
 } flow_state_cache SEC(".maps");
 
 /**

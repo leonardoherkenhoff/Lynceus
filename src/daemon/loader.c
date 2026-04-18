@@ -38,13 +38,11 @@ struct flow_event_t {
 
 static volatile bool exiting = false;
 
-// O(1) Mathematical Core for Continuous Flow Stream (Replaces Python Arrays)
 /**
  * @struct welford_stat
- * @brief Container for iterative statistical calculation (O(1) Memory).
+ * @brief Container for O(1) iterative statistical aggregation.
  * 
- * Replaces the need for storing large packet arrays in memory to calculate 
- * Variance and Standard Deviation, critical for real-time eBPF monitoring.
+ * Essential for continuous flow monitoring without packet storage.
  */
 struct welford_stat {
     unsigned long count; /**< Number of observations */
