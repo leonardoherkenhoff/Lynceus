@@ -1,21 +1,12 @@
 #!/usr/bin/env python3
 """
-Lynceus Research Pipeline - Stochastic Performance Validator (v1.0)
+Lynceus Research Pipeline - Stochastic Performance Validator (v1.2)
 -----------------------------------------------------------
 Scientific Milestone: v1.0 (The Definitive Foundation)
 
 Research Objective:
-Evaluates detection convergence and classification fidelity of eBPF-extracted 
-features via Stochastic Modeling (Random Forest).
-
-Methodology:
-1. Feature Pruning: Removal of identifiers (IP, MAC, Port) to ensure generalization.
-2. Binary Classification: Stochastic attribution of Benign vs. Malicious entropy.
-3. Feature Ranking: Identifying critical attack signatures via Mean Decrease Impurity.
-
-Validation Metrics:
-- F1-Score: Harmonic mean of precision and recall (robust for imbalanced data).
-- Confusion Matrix: Empirical distribution of classification errors.
+Optimized stochastic validation using Random Forest. Maintains the original 
+methodology (in-memory training on 2M samples) with extreme memory efficiency.
 """
 
 import pandas as pd
@@ -25,21 +16,7 @@ import glob
 import gc
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import f1_score, classification_report
-
-def process_dataframe(df):
-    """
-    Standardizes feature selection for supervised learning.
-    Ensures identifiers are excluded to avoid overfitting on network topology.
-    """
-    drop_cols = ['flow_id', 'timestamp', 'src_ip', 'dst_ip', 'src_port', 'dst_port', 'Label']
-    if 'Label' not in df.columns: return None, None
-        
-    y = df['Label']
-    X = df.drop(columns=[c for c in drop_cols if c in df.columns])
-    X = X.apply(pd.to_numeric, errors='coerce').fillna(0)
-    y_binary = y.apply(lambda x: 0 if str(x).upper() == 'BENIGN' else 1)
-    return X, y_binary
+from sklearn.metrics import f1_score
 
 def run_benchmark():
     processed_dir = "/opt/eBPFNetFlowLyzer/data/processed/EBPF"
@@ -50,57 +27,91 @@ def run_benchmark():
         return
 
     print(f"\n{'='*60}")
-    print(f"{'LYNCEUS STOCHASTIC VALIDATION (v1.0)':^60}")
+    print(f"{'LYNCEUS STOCHASTIC VALIDATION (OPTIMIZED)':^60}")
     print(f"{'='*60}\n")
 
     for file_path in processed_files:
         if os.path.basename(file_path).startswith("resource_metrics"): continue
-        attack_name = os.path.basename(file_path).replace('labeled_', '').replace('.csv', '')
-        gc.collect() 
         
-        print(f"\n>>> STATISTICAL CONVERGENCE TEST: {attack_name} <<<")
+        # Enhanced Attack Taxonomy: Path-based identification (e.g. PCAP/01-12/DrDoS_DNS)
+        parts = file_path.split(os.sep)
         try:
+            ebpf_idx = parts.index("EBPF")
+            attack_name = "/".join(parts[ebpf_idx+1:-1])
+            if not attack_name: attack_name = os.path.basename(file_path)
+        except ValueError:
+            attack_name = os.path.basename(file_path).replace('labeled_', '').replace('.csv', '')
+            
+        print(f"\n>>> VALIDATING DETECTION: {attack_name} <<<")
+        gc.collect()
+
+        try:
+            # OPTIMIZATION Phase 1: Filter columns at I/O level
+            sample_df = pd.read_csv(file_path, nrows=1, low_memory=False)
+            drop_cols = ['flow_id', 'timestamp', 'src_ip', 'dst_ip', 'src_port', 'dst_port']
+            use_cols = [c for c in sample_df.columns if c not in drop_cols]
+            
             X_list, y_list = [], []
-            # Memory-aware ingestion for high-entropy datasets.
-            reader = pd.read_csv(file_path, chunksize=200000, low_memory=False)
+            # Methodology: Consistent 2,000,000 samples for high-fidelity comparison
+            reader = pd.read_csv(file_path, chunksize=200000, usecols=use_cols, low_memory=False)
+            
+            total_loaded = 0
             for chunk in reader:
-                X_chunk, y_chunk = process_dataframe(chunk)
-                if X_chunk is not None:
-                    X_list.append(X_chunk)
-                    y_list.append(y_chunk)
-                if len(X_list) >= 10: break 
+                if 'Label' not in chunk.columns: continue
+                
+                # OPTIMIZATION Phase 2: Downcasting to float32 and uint8
+                # This reduces the matrix memory footprint from ~8GB to ~4GB.
+                y_chunk = (chunk['Label'].str.upper() != 'BENIGN').astype(np.uint8)
+                X_chunk = chunk.drop(columns=['Label'])
+                X_chunk = X_chunk.apply(pd.to_numeric, errors='coerce').fillna(0).astype(np.float32)
+                
+                X_list.append(X_chunk)
+                y_list.append(y_chunk)
+                total_loaded += len(X_chunk)
+                
+                if total_loaded >= 2000000: break 
             
             if not X_list: continue
-            X, y = pd.concat(X_list), pd.concat(y_list)
+            X = pd.concat(X_list, copy=False)
+            y = pd.concat(y_list, copy=False)
             
-            if len(y.unique()) < 2: 
+            # Explicit cleanup of temporary lists
+            del X_list, y_list
+            gc.collect()
+
+            if len(np.unique(y)) < 2: 
                 print(f"    ⚠️  Inadequate Class Variance: Stochastic modeling aborted.")
                 continue
 
             # Research-grade Split (70/30) with reproducible seed.
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-            clf = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
+            
+            # OPTIMIZATION Phase 3: Hardware-capping parallelism (n_jobs=12)
+            # Prevents OOM caused by excessive worker overhead on a 48-core/30GB machine.
+            clf = RandomForestClassifier(n_estimators=100, n_jobs=12, random_state=42)
             clf.fit(X_train, y_train)
             
             y_pred = clf.predict(X_test)
             f1 = f1_score(y_test, y_pred)
             
-            print(f"\n    ✅ CONVERGENCE ACHIEVED")
+            print(f"\n    ✅ MODEL VALIDATED")
             print(f"    {'F1-Score:':<20} {f1:.4f}")
-            print(f"    {'Cardinality:':<20} {len(X)}")
-            print(f"    {'Dimensionality:':<20} {X.shape[1]}")
+            print(f"    {'Samples:':<20} {len(X)}")
+            print(f"    {'Features:':<20} {X.shape[1]}")
             
             importances = pd.Series(clf.feature_importances_, index=X.columns).sort_values(ascending=False)
-            print("\n    CRITICAL FEATURE IMPORTANCE (Top 5):")
+            print("\n    CRITICAL ATTACK SIGNATURES (Top 5):")
             for feature, val in importances.head(5).items():
                 print(f"      - {feature:<25} {val:.4f}")
 
-        except Exception as e:
-            print(f"    ❌ Empirical Error: {e}")
+            # Total cleanup before next iteration
+            del X, y, X_train, X_test, y_train, y_test, clf
+            gc.collect()
 
-    print(f"\n{'='*60}")
-    print(f"{'BENCHMARK COMPLETE':^60}")
-    print(f"{'='*60}\n")
+        except Exception as e:
+            print(f"    ❌ Empirical Error during validation: {e}")
+
+    print(f"\n{'='*60}\n")
 
 if __name__ == "__main__":
     run_benchmark()

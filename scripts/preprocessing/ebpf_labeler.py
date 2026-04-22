@@ -35,12 +35,15 @@ def process_file_auto(file_path):
     """
     try:
         rel_from_input = os.path.relpath(file_path, INPUT_DIR)
-        category = rel_from_input.split(os.sep)[0]
+        path_parts = rel_from_input.split(os.sep)
+        # Use the leaf folder as the specific attack category
+        category = path_parts[-2] if len(path_parts) > 1 else "UNKNOWN"
         rel_path = os.path.relpath(os.path.dirname(file_path), INPUT_DIR)
         output_folder = os.path.join(OUTPUT_DIR, rel_path)
         os.makedirs(output_folder, exist_ok=True)
         
-        output_file = os.path.join(output_folder, f"labeled_{category}.csv")
+        output_file_name = os.path.basename(os.path.dirname(file_path)) if os.path.dirname(file_path) != INPUT_DIR else category
+        output_file = os.path.join(output_folder, f"labeled_{output_file_name}.csv")
         first_chunk = not os.path.exists(output_file)
         
         # Memory-efficient chunking for massive PCAP-extracted telemetry.
