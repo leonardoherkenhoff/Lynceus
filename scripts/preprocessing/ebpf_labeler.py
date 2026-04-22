@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""
+Lynceus Pre-processing - Topological Ground-Truth Attributor (v1.0)
+---------------------------------------------------------------------------
+Scientific Milestone: v1.0 (The Definitive Foundation)
+
+Research Objective:
+Performs deterministic labeling of extraction results based on network 
+topology and known attacker vectors. 
+
+Methodology:
+1. Recursive Discovery: Traverses interim directories to find raw CSV telemetry.
+2. Topological Attribution: Matches Source IP against an 'Attacker Matrix'.
+3. Iterative Cleanup: Purges source files post-labeling to maintain storage integrity.
+"""
+
+import pandas as pd
+import numpy as np
+import os
+import glob
+import argparse
+
+# --- Topological Configuration ---
+BASE_DIR = "/opt/eBPFNetFlowLyzer"
+INPUT_DIR = os.path.join(BASE_DIR, "data/interim/EBPF_RAW")
+OUTPUT_DIR = os.path.join(BASE_DIR, "data/processed/EBPF")
+
+# ATTACKER_IPS must be calibrated to the specific research testbed topology.
+ATTACKER_IPS = ["172.16.0.5", "2001:db8:acad:10::5", "fe80::215:5dff:fe00:5"] 
+CHUNK_SIZE = 500000 
+
+def process_file_auto(file_path):
+    """
+    Applies the topological labeling rule to a single extraction result set.
+    """
+    try:
+        rel_from_input = os.path.relpath(file_path, INPUT_DIR)
+        category = rel_from_input.split(os.sep)[0]
+        rel_path = os.path.relpath(os.path.dirname(file_path), INPUT_DIR)
+        output_folder = os.path.join(OUTPUT_DIR, rel_path)
+        os.makedirs(output_folder, exist_ok=True)
+        
+        output_file = os.path.join(output_folder, f"labeled_{category}.csv")
+        first_chunk = not os.path.exists(output_file)
+        
+        # Memory-efficient chunking for massive PCAP-extracted telemetry.
+        reader = pd.read_csv(file_path, chunksize=CHUNK_SIZE, low_memory=False)
+        for chunk in reader:
+            data = chunk.copy()
+            if 'src_ip' in data.columns:
+                src_ips = data['src_ip'].astype(str)
+                is_attack = src_ips.isin(ATTACKER_IPS)
+                data['Label'] = np.where(is_attack, category, 'BENIGN')
+            data.to_csv(output_file, mode='a', header=first_chunk, index=False)
+            first_chunk = False
+            
+        return True
+    except Exception as e:
+        print(f"   ❌ Attribution Error for {file_path}: {e}")
+        return False
+
+def main():
+    parser = argparse.ArgumentParser(description="Lynceus Topological Attributor")
+    parser.add_argument("--path", type=str, help="Specific interim directory to attribute")
+    parser.add_argument("--cleanup", action="store_true", help="Deterministic purge of interim files")
+    args = parser.parse_args()
+
+    print("=== Lynceus Pre-processing: Topological Ground-Truth Attribution ===")
+    
+    if args.path:
+        target_dir = os.path.abspath(args.path)
+        files = glob.glob(os.path.join(target_dir, "*.csv"))
+    else:
+        files = glob.glob(os.path.join(INPUT_DIR, "**", "*.csv"), recursive=True)
+    
+    # Exclude resource consumption metrics from ground-truth labeling.
+    files = [f for f in files if not os.path.basename(f).startswith("resource_metrics")]
+
+    if not files:
+        print(f"⚠️  No telemetric artifacts found in {INPUT_DIR}.")
+        return
+
+    processed_count = 0
+    for f in files:
+        if process_file_auto(f):
+            processed_count += 1
+            if args.cleanup: os.remove(f)
+    
+    print(f"✅ ATTRIBUTION COMPLETE: {processed_count} files formalized.")
+    if args.cleanup: print("   🧹 Local interim storage purged.")
+
+if __name__ == "__main__":
+    main()
