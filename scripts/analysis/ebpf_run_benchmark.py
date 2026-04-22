@@ -16,7 +16,7 @@ import glob
 import gc
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_score
 
 def run_benchmark():
     processed_dir = "/opt/eBPFNetFlowLyzer/data/processed/EBPF"
@@ -93,8 +93,14 @@ def run_benchmark():
             
             y_pred = clf.predict(X_test)
             f1 = f1_score(y_test, y_pred)
+            acc = accuracy_score(y_test, y_pred)
+            prec = precision_score(y_test, y_pred)
+            rec = recall_score(y_test, y_pred)
             
             print(f"\n    ✅ MODEL VALIDATED")
+            print(f"    {'Accuracy:':<20} {acc:.4f}")
+            print(f"    {'Precision:':<20} {prec:.4f}")
+            print(f"    {'Recall:':<20} {rec:.4f}")
             print(f"    {'F1-Score:':<20} {f1:.4f}")
             print(f"    {'Samples:':<20} {len(X)}")
             print(f"    {'Features:':<20} {X.shape[1]}")
