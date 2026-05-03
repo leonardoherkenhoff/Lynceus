@@ -102,6 +102,13 @@ def run_experiment(exp, pcaps):
         extractor = subprocess.Popen(exp["cmd"], stdout=f_csv, stderr=subprocess.DEVNULL, cwd=BASE_DIR)
         time.sleep(3) # BPF map allocation stabilization
         
+        # --- Step 3: Stochastic Resource Profiling ---
+        monitor_script = "scripts/testbed/monitor.py"
+        metrics_csv = os.path.join(parity_out_dir, "resource_metrics.csv")
+        proc_mon = None
+        if os.path.exists(monitor_script):
+            proc_mon = subprocess.Popen(["python3", monitor_script, str(extractor.pid), metrics_csv], cwd=BASE_DIR)
+            
         total_packets = 0
         start_time = time.time()
         
@@ -120,6 +127,11 @@ def run_experiment(exp, pcaps):
         pps = total_packets / elapsed if elapsed > 0 else 0
         
         # --- Step 4: Graceful Termination & Cooldown ---
+        print("   🛑 Synchronizing Engine Buffers...")
+        if proc_mon:
+            proc_mon.terminate()
+            proc_mon.wait()
+            
         time.sleep(2) # Memory buffer flush timeout
         extractor.terminate()
         try:
@@ -131,6 +143,15 @@ def run_experiment(exp, pcaps):
     
     print(f"[=] SYNCHRONIZED: {exp['name']} Completed.")
     print(f"    Metrics: {total_packets} pkts | {elapsed:.2f}s | {pps:.2f} pps")
+    
+    import json
+    summary = {
+        "experiment": exp["name"], "packets_sent": total_packets,
+        "time_seconds": elapsed, "pps": pps, "timestamp": time.ctime()
+    }
+    with open(os.path.join(parity_out_dir, "summary.json"), 'w') as f:
+        json.dump(summary, f, indent=4)
+        
     time.sleep(5) # Thermal CPU limit and memory allocation cooldown
 
     # --- Step 5: Data Preprocessing (Labeling) ---
