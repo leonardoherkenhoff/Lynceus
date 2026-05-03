@@ -50,8 +50,17 @@ def process_file_auto(file_path):
         reader = pd.read_csv(file_path, chunksize=CHUNK_SIZE, low_memory=False)
         for chunk in reader:
             data = chunk.copy()
-            if 'src_ip' in data.columns:
-                src_ips = data['src_ip'].astype(str)
+            # --- Universal Competitor Schema Mapping ---
+            # Lynceus: 'src_ip', RustiFlow: 'Src IP', XFAST: 'source_ip'
+            ip_col = None
+            candidate_cols = ['src_ip', 'Src IP', 'Source IP', 'source_ip', 'src']
+            for col in candidate_cols:
+                if col in data.columns:
+                    ip_col = col
+                    break
+                    
+            if ip_col:
+                src_ips = data[ip_col].astype(str)
                 is_attack = src_ips.isin(ATTACKER_IPS)
                 data['Label'] = np.where(is_attack, category, 'BENIGN')
             data.to_csv(output_file, mode='a', header=first_chunk, index=False)
