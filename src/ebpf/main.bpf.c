@@ -152,6 +152,7 @@ int xdp_prog(struct xdp_md *ctx) {
     }
 
     /* --- [Virtual Network Stack Decapsulation] --- */
+#ifndef PARITY_NETFLOWLYZER
     if (protocol == 47) { /* GRE */
         struct { __u16 flags; __u16 proto; } *gre = p_ptr;
         if ((void *)(gre + 1) <= data_end) {
@@ -179,6 +180,7 @@ int xdp_prog(struct xdp_md *ctx) {
             }
         }
     }
+#endif
 
     key.protocol = protocol;
 
@@ -197,6 +199,7 @@ int xdp_prog(struct xdp_md *ctx) {
             p_ptr = (void *)(udp + 1);
 
             /* VXLAN Decapsulation (UDP 4789) */
+#ifndef PARITY_NETFLOWLYZER
             if (dst_p == bpf_htons(4789)) {
                 struct { __u32 flags; __u32 vni; } *vxlan = p_ptr;
                 if ((void *)(vxlan + 1) <= data_end) {
@@ -223,6 +226,7 @@ int xdp_prog(struct xdp_md *ctx) {
                     }
                 }
             }
+#endif
 
             /* [Application Layer Protocol Discovery] */
             __u16 sp = bpf_ntohs(src_p), dp = bpf_ntohs(dst_p);
@@ -276,12 +280,14 @@ int xdp_prog(struct xdp_md *ctx) {
          * VERIFIER OPTIMIZATION: We use a single boundary check before copying
          * the 64-byte block. This avoids state explosion (E2BIG) in the 
          * kernel verifier by reducing branches from O(N) to O(1). */
+#ifndef PARITY_NETFLOWLYZER
         if (p_ptr + 64 <= data_end) {
             #pragma unroll
             for (int i = 0; i < 64; i++) {
                 new_rec.payload_hint[i] = ((__u8 *)p_ptr)[i];
             }
         }
+#endif
 
         bpf_map_update_elem(&flow_table, &key, &new_rec, BPF_ANY);
         

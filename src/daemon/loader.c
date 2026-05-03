@@ -422,15 +422,22 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
             (duration > 0 ? s->f_pay.n/duration : 0),
             (duration > 0 ? s->b_pay.n/duration : 0),
             (s->f_pay.n > 0 ? (double)s->b_pay.n/s->f_pay.n : 0));
-    fprintf(mem_f, "%lu,%lu,%lu,%lu,%lu,%lu,%u,%u,%u,%u,%u,%u,%u,%u,%u,",
+    fprintf(mem_f, "%lu,%lu,%lu,%lu,%lu,%lu,%u,%u,%u,",
             s->f_bulk_bytes, s->f_bulk_pkts, s->f_bulk_cnt,
             s->b_bulk_bytes, s->b_bulk_pkts, s->b_bulk_cnt,
-            s->dns_answer_count, s->dns_qtype, s->dns_qclass,
+            s->dns_answer_count, s->dns_qtype, s->dns_qclass);
+#ifndef PARITY_NETFLOWLYZER
+    fprintf(mem_f, "%u,%u,%u,%u,%u,%u,",
             s->tunnel_id, s->tunnel_type, s->ntp_mode, s->ntp_stratum,
             s->snmp_pdu_type, s->ssdp_method);
     for (int i=0; i<HIST_BINS; i++) fprintf(mem_f, "%lu,", s->t_hist[i]);
     for (int i=0; i<HIST_BINS; i++) fprintf(mem_f, "%lu,", s->f_hist[i]);
     for (int i=0; i<HIST_BINS; i++) fprintf(mem_f, "%lu%s", s->b_hist[i], (i == HIST_BINS - 1 ? "" : ","));
+#else
+    fprintf(mem_f, "%u,%u,%u,%u",
+            s->ntp_mode, s->ntp_stratum,
+            s->snmp_pdu_type, s->ssdp_method);
+#endif
     fprintf(mem_f, "\n");
     
     q->lens[idx] = ftell(mem_f);
@@ -549,11 +556,15 @@ int main(int argc, char **argv) {
                 ext[i],ext[i],ext[i],ext[i],ext[i],ext[i],ext[i],ext[i],ext[i],ext[i]);
     fprintf(g_out_f, "BytesRate,FwdBytesRate,BwdBytesRate,PacketsRate,FwdPacketsRate,BwdPacketsRate,DownUpRatio,"
                      "FwdBulkBytes,FwdBulkPkts,FwdBulkCnt,BwdBulkBytes,BwdBulkPkts,BwdBulkCnt,"
-                     "DNSAnswerCount,DNSQueryType,DNSQueryClass,"
-                     "TunnelId,TunnelType,NTP_Mode,NTP_Stratum,SNMP_PDU_Type,SSDP_Method,");
+                     "DNSAnswerCount,DNSQueryType,DNSQueryClass,");
+#ifndef PARITY_NETFLOWLYZER
+    fprintf(g_out_f, "TunnelId,TunnelType,NTP_Mode,NTP_Stratum,SNMP_PDU_Type,SSDP_Method,");
     for (int i=0; i<HIST_BINS; i++) fprintf(g_out_f, "Hist_Tot_%d,", i);
     for (int i=0; i<HIST_BINS; i++) fprintf(g_out_f, "Hist_Fwd_%d,", i);
     for (int i=0; i<HIST_BINS; i++) fprintf(g_out_f, "Hist_Bwd_%d%s", i, (i == HIST_BINS-1 ? "" : ","));
+#else
+    fprintf(g_out_f, "NTP_Mode,NTP_Stratum,SNMP_PDU_Type,SSDP_Method");
+#endif
     fprintf(g_out_f, "\n");
     fflush(g_out_f);
 
