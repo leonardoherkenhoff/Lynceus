@@ -21,7 +21,6 @@ Usage:
   python3 ebpf_run_benchmark.py --with-ttl   # Realistic (with TTL)
 """
 
-import pandas as pd
 import numpy as np
 import os
 import glob
@@ -30,6 +29,14 @@ import argparse
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_score
+
+try:
+    import polars as pl
+    import pandas as pd
+    USE_POLARS = True
+except ImportError:
+    import pandas as pd
+    USE_POLARS = False
 
 # =============================================================================
 # [Cross-Day Attack Pairing Matrix]
@@ -72,13 +79,82 @@ TTL_DROP = [
 ]
 
 MAX_SAMPLES = 2_000_000
-CHUNK_SIZE = 200_000
+CHUNK_SIZE = 500_000
 
 
 def load_dataset(file_path, drop_cols):
-    """Load a dataset with column filtering, type coercion, and sample cap."""
+    """
+    Load a dataset with column filtering, type coercion, and sample cap.
+
+    Uses Polars (multi-threaded Rust backend) when available for 5-10x
+    faster CSV parsing, falling back to Pandas chunked reading.
+
+    Args:
+        file_path (str): Path to the labeled CSV dataset.
+        drop_cols (list): List of column names to aggressively drop during load.
+
+    Returns:
+        tuple: (X, y) where X is the feature matrix (pd.DataFrame) and y is the
+               label vector (pd.Series). Returns (None, None) if loading fails.
+    """
+    if USE_POLARS:
+        return _load_polars(file_path, drop_cols)
+    return _load_pandas(file_path, drop_cols)
+
+
+def _load_polars(file_path, drop_cols):
+    """
+    Load dataset using Polars multi-threaded CSV reader.
+
+    Args:
+        file_path (str): Path to the labeled CSV dataset.
+        drop_cols (list): Columns to drop.
+
+    Returns:
+        tuple: (X, y) as pandas objects for sklearn compatibility.
+    """
+    df = pl.read_csv(file_path, n_rows=MAX_SAMPLES, infer_schema_length=10000,
+                     ignore_errors=True)
+
+    # Drop unwanted columns (only those that exist).
+    existing_drops = [c for c in drop_cols if c in df.columns]
+    if existing_drops:
+        df = df.drop(existing_drops)
+
+    if 'Label' not in df.columns:
+        return None, None
+
+    # Extract labels.
+    y = (df['Label'].cast(pl.Utf8).str.to_uppercase() != 'BENIGN').cast(pl.UInt8)
+    df = df.drop('Label')
+
+    # Cast all columns to Float32 (coerce errors to null, fill with 0).
+    for col in df.columns:
+        df = df.with_columns(pl.col(col).cast(pl.Float32, strict=False).fill_null(0))
+
+    # Convert to pandas for sklearn.
+    X = df.to_pandas()
+    y_pd = y.to_pandas()
+
+    del df
+    gc.collect()
+    return X, y_pd
+
+
+def _load_pandas(file_path, drop_cols):
+    """
+    Load dataset using Pandas chunked CSV reader (fallback).
+
+    Args:
+        file_path (str): Path to the labeled CSV dataset.
+        drop_cols (list): Columns to drop.
+
+    Returns:
+        tuple: (X, y) as pandas objects.
+    """
     sample_df = pd.read_csv(file_path, nrows=1, low_memory=False)
     use_cols = [c for c in sample_df.columns if c not in drop_cols]
+    feature_cols = [c for c in use_cols if c != 'Label']
 
     X_list, y_list = [], []
     reader = pd.read_csv(file_path, chunksize=CHUNK_SIZE, usecols=use_cols, low_memory=False)
@@ -89,8 +165,10 @@ def load_dataset(file_path, drop_cols):
             continue
 
         y_chunk = (chunk['Label'].str.upper() != 'BENIGN').astype(np.uint8)
-        X_chunk = chunk.drop(columns=['Label'])
-        X_chunk = X_chunk.apply(pd.to_numeric, errors='coerce').fillna(0).astype(np.float32)
+        X_chunk = chunk[feature_cols]
+        for col in X_chunk.columns:
+            X_chunk[col] = pd.to_numeric(X_chunk[col], errors='coerce')
+        X_chunk = X_chunk.fillna(0).astype(np.float32)
 
         X_list.append(X_chunk)
         y_list.append(y_chunk)
@@ -111,7 +189,17 @@ def load_dataset(file_path, drop_cols):
 
 
 def print_results(X_test, y_test, y_pred, clf, n_train, n_test):
-    """Print metrics and feature importance."""
+    """
+    Print formatted ML metrics and feature importance matrix.
+
+    Args:
+        X_test (pd.DataFrame): Test feature matrix for importance mapping.
+        y_test (pd.Series): Ground-truth test labels.
+        y_pred (np.ndarray): Predicted labels from the estimator.
+        clf (RandomForestClassifier): Trained estimator instance.
+        n_train (int): Number of samples used in training.
+        n_test (int): Number of samples evaluated in testing.
+    """
     acc  = accuracy_score(y_test, y_pred)
     prec = precision_score(y_test, y_pred, zero_division=0)
     rec  = recall_score(y_test, y_pred, zero_division=0)
@@ -136,7 +224,16 @@ def print_results(X_test, y_test, y_pred, clf, n_train, n_test):
 
 
 def resolve_path(processed_dir, relative_suffix):
-    """Resolve a relative dataset path suffix to an actual labeled CSV."""
+    """
+    Resolve a relative dataset path suffix to an actual labeled CSV.
+
+    Args:
+        processed_dir (str): Root directory containing processed CSVs.
+        relative_suffix (str): Logical path suffix (e.g., 'PCAP/01-12/DrDoS_LDAP').
+
+    Returns:
+        str or None: Absolute path to matched CSV, or None if not found.
+    """
     # The processed directory mirrors the raw structure:
     # processed_dir/PCAP/01-12/DrDoS_LDAP/labeled_flows.csv (or similar)
     candidate_dir = os.path.join(processed_dir, relative_suffix)
@@ -149,20 +246,39 @@ def resolve_path(processed_dir, relative_suffix):
 
 
 def get_relative_key(file_path, processed_dir):
-    """Extract the relative path key from a dataset file path.
-    E.g., '/opt/.../EBPF/PCAP/01-12/DrDoS_DNS/labeled.csv' -> 'PCAP/01-12/DrDoS_DNS'
+    """
+    Extract the relative path key from a dataset file path.
+
+    Args:
+        file_path (str): Absolute path to the CSV file.
+        processed_dir (str): Root dataset directory to relativize against.
+
+    Returns:
+        str: Extracted logical key (e.g., 'PCAP/01-12/DrDoS_DNS').
     """
     rel = os.path.relpath(os.path.dirname(file_path), processed_dir)
     return rel
 
 
 def run_benchmark():
+    """
+    Main orchestration routine for the Lynceus Hybrid Validation Benchmark.
+
+    Parses CLI arguments to establish the feature drop matrix (Conservative vs
+    Realistic). Discovers all available datasets, cross-references them against
+    the CROSS_DAY_PAIRS dictionary, and executes either Cross-Day or Split
+    validation accordingly.
+    """
     parser = argparse.ArgumentParser(
         description="Lynceus Hybrid Validation Benchmark v2.0"
     )
     parser.add_argument(
         '--with-ttl', action='store_true',
         help='Include TTL and TTL_Var_* features (Realistic mode)'
+    )
+    parser.add_argument(
+        '--dataset', type=str, default="/opt/eBPFNetFlowLyzer/data/processed/EBPF",
+        help='Path to labeled dataset directory'
     )
     args = parser.parse_args()
 
@@ -173,7 +289,7 @@ def run_benchmark():
 
     mode_label = "REALISTIC (with TTL)" if args.with_ttl else "CONSERVATIVE (no TTL)"
 
-    processed_dir = "/opt/eBPFNetFlowLyzer/data/processed/EBPF"
+    processed_dir = os.path.abspath(args.dataset)
     all_csvs = glob.glob(os.path.join(processed_dir, "**", "*.csv"), recursive=True)
     all_csvs = [c for c in all_csvs if 'resource_metrics' not in os.path.basename(c)]
 
@@ -269,7 +385,14 @@ def run_benchmark():
 
 
 def _run_split_validation(file_path, attack_name, drop_cols):
-    """Validate a dataset using standard 70/30 stochastic split."""
+    """
+    Validate a dataset using a standard 70/30 stochastic split.
+
+    Args:
+        file_path (str): Absolute path to the labeled CSV dataset.
+        attack_name (str): Canonical name or path suffix for reporting.
+        drop_cols (list): List of columns to purge during loading.
+    """
     print(f"\n>>> SPLIT VALIDATION: {attack_name} <<<")
 
     try:
