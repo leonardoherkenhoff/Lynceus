@@ -57,7 +57,7 @@ def get_pcaps():
     Returns sorted lists to guarantee temporal determinism during extraction.
     """
     pcaps = []
-    for category in ["PCAP", "PCAPv6"]:
+    for category in ["PCAP"]:
         path = os.path.join(DATA_RAW, category)
         if os.path.exists(path):
             pcaps.extend(glob.glob(os.path.join(path, "**", "*.pcap*"), recursive=True))
