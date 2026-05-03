@@ -225,6 +225,7 @@ int xdp_prog(struct xdp_md *ctx) {
             }
 
             /* [Application Layer Protocol Discovery] */
+#ifndef PARITY_RUSTIFLOW
             __u16 sp = bpf_ntohs(src_p), dp = bpf_ntohs(dst_p);
             if (sp == 53 || dp == 53) {
                 parse_dns(p_ptr, data_end, &new_rec);
@@ -245,6 +246,7 @@ int xdp_prog(struct xdp_md *ctx) {
                     }
                 }
             }
+#endif
         }
     }
     
@@ -276,12 +278,14 @@ int xdp_prog(struct xdp_md *ctx) {
          * VERIFIER OPTIMIZATION: We use a single boundary check before copying
          * the 64-byte block. This avoids state explosion (E2BIG) in the 
          * kernel verifier by reducing branches from O(N) to O(1). */
+#ifndef PARITY_RUSTIFLOW
         if (p_ptr + 64 <= data_end) {
             #pragma unroll
             for (int i = 0; i < 64; i++) {
                 new_rec.payload_hint[i] = ((__u8 *)p_ptr)[i];
             }
         }
+#endif
 
         bpf_map_update_elem(&flow_table, &key, &new_rec, BPF_ANY);
         
