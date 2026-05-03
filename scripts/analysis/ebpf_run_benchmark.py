@@ -72,23 +72,29 @@ TTL_DROP = [
 ]
 
 MAX_SAMPLES = 2_000_000
-CHUNK_SIZE = 200_000
+CHUNK_SIZE = 500_000
 
 
 def load_dataset(file_path, drop_cols):
     """
     Load a dataset with column filtering, type coercion, and sample cap.
 
+    Uses pre-computed column selection and vectorized numeric conversion
+    to minimize per-chunk overhead.
+
     Args:
         file_path (str): Path to the labeled CSV dataset.
         drop_cols (list): List of column names to aggressively drop during load.
 
     Returns:
-        tuple: (X, y) where X is the feature matrix (DataFrame) and y is the label vector (Series).
-               Returns (None, None) if loading fails or dataset is empty.
+        tuple: (X, y) where X is the feature matrix (DataFrame) and y is the
+               label vector (Series). Returns (None, None) if loading fails.
     """
     sample_df = pd.read_csv(file_path, nrows=1, low_memory=False)
     use_cols = [c for c in sample_df.columns if c not in drop_cols]
+
+    # Pre-compute feature columns (everything except Label).
+    feature_cols = [c for c in use_cols if c != 'Label']
 
     X_list, y_list = [], []
     reader = pd.read_csv(file_path, chunksize=CHUNK_SIZE, usecols=use_cols, low_memory=False)
@@ -99,8 +105,12 @@ def load_dataset(file_path, drop_cols):
             continue
 
         y_chunk = (chunk['Label'].str.upper() != 'BENIGN').astype(np.uint8)
-        X_chunk = chunk.drop(columns=['Label'])
-        X_chunk = X_chunk.apply(pd.to_numeric, errors='coerce').fillna(0).astype(np.float32)
+
+        # Vectorized numeric conversion (much faster than apply + to_numeric).
+        X_chunk = chunk[feature_cols]
+        for col in X_chunk.columns:
+            X_chunk[col] = pd.to_numeric(X_chunk[col], errors='coerce')
+        X_chunk = X_chunk.fillna(0).astype(np.float32)
 
         X_list.append(X_chunk)
         y_list.append(y_chunk)
@@ -125,10 +135,10 @@ def print_results(X_test, y_test, y_pred, clf, n_train, n_test):
     Print formatted ML metrics and feature importance matrix.
 
     Args:
-        X_test (pd.DataFrame): The test feature matrix used for feature importance mapping.
-        y_test (pd.Series): The ground-truth test labels.
-        y_pred (np.ndarray): The predicted labels from the estimator.
-        clf (RandomForestClassifier): The trained sci-kit learn estimator.
+        X_test (pd.DataFrame): Test feature matrix for importance mapping.
+        y_test (pd.Series): Ground-truth test labels.
+        y_pred (np.ndarray): Predicted labels from the estimator.
+        clf (RandomForestClassifier): Trained estimator instance.
         n_train (int): Number of samples used in training.
         n_test (int): Number of samples evaluated in testing.
     """
@@ -160,11 +170,11 @@ def resolve_path(processed_dir, relative_suffix):
     Resolve a relative dataset path suffix to an actual labeled CSV.
 
     Args:
-        processed_dir (str): The root directory containing processed CSVs.
-        relative_suffix (str): The logical path suffix (e.g., 'PCAP/01-12/DrDoS_LDAP').
+        processed_dir (str): Root directory containing processed CSVs.
+        relative_suffix (str): Logical path suffix (e.g., 'PCAP/01-12/DrDoS_LDAP').
 
     Returns:
-        str or None: The absolute path to the first matched CSV file, or None if not found.
+        str or None: Absolute path to matched CSV, or None if not found.
     """
     # The processed directory mirrors the raw structure:
     # processed_dir/PCAP/01-12/DrDoS_LDAP/labeled_flows.csv (or similar)
@@ -180,13 +190,13 @@ def resolve_path(processed_dir, relative_suffix):
 def get_relative_key(file_path, processed_dir):
     """
     Extract the relative path key from a dataset file path.
-    
+
     Args:
-        file_path (str): The absolute path to the CSV file.
-        processed_dir (str): The root dataset directory to relativize against.
-        
+        file_path (str): Absolute path to the CSV file.
+        processed_dir (str): Root dataset directory to relativize against.
+
     Returns:
-        str: The extracted logical key (e.g., 'PCAP/01-12/DrDoS_DNS').
+        str: Extracted logical key (e.g., 'PCAP/01-12/DrDoS_DNS').
     """
     rel = os.path.relpath(os.path.dirname(file_path), processed_dir)
     return rel
@@ -196,9 +206,10 @@ def run_benchmark():
     """
     Main orchestration routine for the Lynceus Hybrid Validation Benchmark.
 
-    Parses CLI arguments to establish the feature drop matrix (Conservative vs Realistic).
-    Discovers all available datasets, cross-references them against the CROSS_DAY_PAIRS
-    dictionary, and executes either Cross-Day validation or Split validation accordingly.
+    Parses CLI arguments to establish the feature drop matrix (Conservative vs
+    Realistic). Discovers all available datasets, cross-references them against
+    the CROSS_DAY_PAIRS dictionary, and executes either Cross-Day or Split
+    validation accordingly.
     """
     parser = argparse.ArgumentParser(
         description="Lynceus Hybrid Validation Benchmark v2.0"
@@ -320,8 +331,8 @@ def _run_split_validation(file_path, attack_name, drop_cols):
     Validate a dataset using a standard 70/30 stochastic split.
 
     Args:
-        file_path (str): The absolute path to the labeled CSV dataset.
-        attack_name (str): The canonical name or path suffix for reporting.
+        file_path (str): Absolute path to the labeled CSV dataset.
+        attack_name (str): Canonical name or path suffix for reporting.
         drop_cols (list): List of columns to purge during loading.
     """
     print(f"\n>>> SPLIT VALIDATION: {attack_name} <<<")
