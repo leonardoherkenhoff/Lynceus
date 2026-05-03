@@ -73,6 +73,7 @@ static void w_init(struct welford_stat *w) {
 static inline void w_update(struct welford_stat *w, double x) {
     /* Online Welford Algorithm: Higher-Order Statistical Moments (Kurtosis/Skewness) */
     uint64_t n1 = w->n; w->n++;
+#ifndef PARITY_NFX
     double delta = x - w->M1, delta_n = delta / w->n, delta_n2 = delta_n * delta_n, term1 = delta * delta_n * n1;
     w->M1 += delta_n;
     w->M4 += term1 * delta_n2 * (w->n * w->n - 3 * w->n + 3) + 6 * delta_n2 * w->M2 - 4 * delta_n * w->M3;
@@ -120,6 +121,7 @@ static inline void w_update(struct welford_stat *w, double x) {
             w->pn[i] += s;
         }
     }
+#endif
 }
 
 static inline double w_mean(struct welford_stat *w) { return w->M1; }
@@ -243,6 +245,9 @@ static double calculate_entropy(const uint8_t *data, size_t len) {
 
 /* Numerical Estimation: Histogram-based Median via Linear Interpolation */
 static double median_from_hist(const uint64_t *hist, int bins, int step, uint64_t n) {
+#ifdef PARITY_NFX
+    return 0.0;
+#endif
     if (n == 0) return 0.0;
     uint64_t half = (n + 1) / 2, acc = 0;
     for (int i = 0; i < bins; i++) {
@@ -330,9 +335,11 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
     s->snmp_pdu_type = e->rec.snmp_pdu_type;
     s->ssdp_method = e->rec.ssdp_method;
 
+#ifndef PARITY_NFX
     uint32_t b_idx = e->rec.payload_len / HIST_STEP;
     if (b_idx >= HIST_BINS) b_idx = HIST_BINS - 1;
     s->t_hist[b_idx]++;
+#endif
 
     if (e->rec.is_fwd) {
         if (s->f_last > 0) {
@@ -343,7 +350,10 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
         }
         s->f_last = e->timestamp_ns; w_update(&s->f_pay, e->rec.payload_len); w_update(&s->f_hdr, e->rec.header_len);
         if (s->f_pay.n > 1) w_update(&s->f_delta, abs((int)e->rec.payload_len - (int)s->last_f_pay));
-        s->last_f_pay = e->rec.payload_len; s->f_hist[b_idx]++;
+        s->last_f_pay = e->rec.payload_len; 
+#ifndef PARITY_NFX
+        s->f_hist[b_idx]++;
+#endif
         s->f_bytes += e->rec.payload_len;
         for (int i=0; i<8; i++) if (e->rec.tcp_flags & (1<<i)) { s->flags[i]++; s->f_flags[i]++; }
     } else {
@@ -355,7 +365,10 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
         }
         s->b_last = e->timestamp_ns; w_update(&s->b_pay, e->rec.payload_len); w_update(&s->b_hdr, e->rec.header_len);
         if (s->b_pay.n > 1) w_update(&s->b_delta, abs((int)e->rec.payload_len - (int)s->last_b_pay));
-        s->last_b_pay = e->rec.payload_len; s->b_hist[b_idx]++;
+        s->last_b_pay = e->rec.payload_len; 
+#ifndef PARITY_NFX
+        s->b_hist[b_idx]++;
+#endif
         s->b_bytes += e->rec.payload_len;
         for (int i=0; i<8; i++) if (e->rec.tcp_flags & (1<<i)) { s->flags[i]++; s->b_flags[i]++; }
     }
