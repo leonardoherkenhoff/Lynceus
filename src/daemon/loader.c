@@ -425,7 +425,15 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
     fprintf(mem_f, "%lu,%lu,%lu,%lu,%lu,%lu,%u,%u,%u,",
             s->f_bulk_bytes, s->f_bulk_pkts, s->f_bulk_cnt,
             s->b_bulk_bytes, s->b_bulk_pkts, s->b_bulk_cnt,
+            s->b_bulk_bytes, s->b_bulk_pkts, s->b_bulk_cnt,
             s->dns_answer_count, s->dns_qtype, s->dns_qclass);
+            
+    /**
+     * @brief [L7 and Histogram Mutilation]
+     * In PARITY_NETFLOWLYZER mode, we omit printing the 240+ histogram bins 
+     * and complex tunnel IDs, keeping the geometric output exactly aligned 
+     * with the NTLFlowLyzer/ALFlowLyzer CSV schema.
+     */
 #ifndef PARITY_NETFLOWLYZER
     fprintf(mem_f, "%u,%u,%u,%u,%u,%u,",
             s->tunnel_id, s->tunnel_type, s->ntp_mode, s->ntp_stratum,
@@ -557,6 +565,12 @@ int main(int argc, char **argv) {
     fprintf(g_out_f, "BytesRate,FwdBytesRate,BwdBytesRate,PacketsRate,FwdPacketsRate,BwdPacketsRate,DownUpRatio,"
                      "FwdBulkBytes,FwdBulkPkts,FwdBulkCnt,BwdBulkBytes,BwdBulkPkts,BwdBulkCnt,"
                      "DNSAnswerCount,DNSQueryType,DNSQueryClass,");
+                     
+    /**
+     * @brief [CSV Header Mutilation]
+     * Omits histogram and L7 tunnel column headers in parity mode to match 
+     * the rigid dimensions of legacy extractors.
+     */
 #ifndef PARITY_NETFLOWLYZER
     fprintf(g_out_f, "TunnelId,TunnelType,NTP_Mode,NTP_Stratum,SNMP_PDU_Type,SSDP_Method,");
     for (int i=0; i<HIST_BINS; i++) fprintf(g_out_f, "Hist_Tot_%d,", i);

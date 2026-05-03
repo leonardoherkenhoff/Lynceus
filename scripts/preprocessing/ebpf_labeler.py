@@ -32,6 +32,12 @@ CHUNK_SIZE = 500000
 def process_file_auto(file_path):
     """
     Applies the topological labeling rule to a single extraction result set.
+
+    Args:
+        file_path (str): The absolute or relative path to the raw CSV telemetry file.
+
+    Returns:
+        bool: True if the file was processed and attributed successfully, False otherwise.
     """
     try:
         rel_from_input = os.path.relpath(file_path, INPUT_DIR)
@@ -72,6 +78,12 @@ def process_file_auto(file_path):
         return False
 
 def main():
+    """
+    Main entry point for the Lynceus Topological Attributor.
+    
+    Parses CLI arguments, discovers raw CSV files iteratively, and orchestrates
+    the labeling process. Optionally purges the interim files post-processing.
+    """
     parser = argparse.ArgumentParser(description="Lynceus Topological Attributor")
     parser.add_argument("--path", type=str, help="Specific interim directory to attribute")
     parser.add_argument("--cleanup", action="store_true", help="Deterministic purge of interim files")

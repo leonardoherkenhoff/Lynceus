@@ -151,7 +151,11 @@ int xdp_prog(struct xdp_md *ctx) {
         return XDP_PASS;
     }
 
-    /* --- [Virtual Network Stack Decapsulation] --- */
+    /**
+     * @brief [Virtual Network Stack Decapsulation]
+     * In PARITY_NETFLOWLYZER mode, we disable complex tunnel decapsulation (GRE/VXLAN)
+     * to match the L3/L4 simplistic geometric extraction of ALFlowLyzer/NTLFlowLyzer.
+     */
 #ifndef PARITY_NETFLOWLYZER
     if (protocol == 47) { /* GRE */
         struct { __u16 flags; __u16 proto; } *gre = p_ptr;
@@ -199,6 +203,11 @@ int xdp_prog(struct xdp_md *ctx) {
             p_ptr = (void *)(udp + 1);
 
             /* VXLAN Decapsulation (UDP 4789) */
+    /**
+     * @brief [Payload Hint Extraction]
+     * Disabled in parity mode. NTLFlowLyzer and ALFlowLyzer do not perform raw
+     * payload inspection for histogram tracking.
+     */
 #ifndef PARITY_NETFLOWLYZER
             if (dst_p == bpf_htons(4789)) {
                 struct { __u32 flags; __u32 vni; } *vxlan = p_ptr;
@@ -280,6 +289,10 @@ int xdp_prog(struct xdp_md *ctx) {
          * VERIFIER OPTIMIZATION: We use a single boundary check before copying
          * the 64-byte block. This avoids state explosion (E2BIG) in the 
          * kernel verifier by reducing branches from O(N) to O(1). */
+    /**
+     * @brief [Tunnel Metadata Injection]
+     * Disabled in parity mode to restrict the structure's telemetry to legacy L4 features.
+     */
 #ifndef PARITY_NETFLOWLYZER
         if (p_ptr + 64 <= data_end) {
             #pragma unroll
