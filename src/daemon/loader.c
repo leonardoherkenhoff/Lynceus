@@ -425,7 +425,6 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
     fprintf(mem_f, "%lu,%lu,%lu,%lu,%lu,%lu,%u,%u,%u,",
             s->f_bulk_bytes, s->f_bulk_pkts, s->f_bulk_cnt,
             s->b_bulk_bytes, s->b_bulk_pkts, s->b_bulk_cnt,
-            s->b_bulk_bytes, s->b_bulk_pkts, s->b_bulk_cnt,
             s->dns_answer_count, s->dns_qtype, s->dns_qclass);
             
     /**
