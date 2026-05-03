@@ -164,6 +164,7 @@ def extract_attack(exp, category, pcap_dir):
         total_packets = 0
         start_time = time.time()
         for p in pcaps:
+            print(f"     -> Streaming: {os.path.basename(p)}...")
             cmd = f"tcpreplay -i {INJECT_IFACE} --topspeed {p} 2>&1"
             try:
                 res = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
