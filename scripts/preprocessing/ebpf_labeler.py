@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """
-Lynceus Pre-processing - Topological Ground-Truth Attributor (v1.1)
+Lynceus Pre-processing - Topological Ground-Truth Attributor (v2.0)
 ---------------------------------------------------------------------------
-Scientific Milestone: v1.1 (Parallel I/O)
+Scientific Milestone: v2.0 (High-Performance I/O)
 
 Research Objective:
     Performs deterministic labeling of extraction results based on network
     topology and known attacker vectors.
+
+Performance:
+    Uses Polars (Rust-backed) for multi-threaded CSV parsing when available,
+    falling back to Pandas for compatibility. Polars achieves 5-10x speedup
+    on large CSVs via SIMD-accelerated, zero-copy columnar reads.
 
 Methodology:
     1. Recursive Discovery: Traverses interim directories to find raw CSV telemetry.
@@ -15,13 +20,19 @@ Methodology:
     4. Iterative Cleanup: Purges source files post-labeling to maintain storage integrity.
 """
 
-import pandas as pd
-import numpy as np
 import os
 import glob
 import argparse
-from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
+try:
+    import polars as pl
+    USE_POLARS = True
+except ImportError:
+    import pandas as pd
+    import numpy as np
+    USE_POLARS = False
 
 # --- Topological Configuration ---
 BASE_DIR = "/opt/eBPFNetFlowLyzer"
@@ -29,8 +40,12 @@ INPUT_DIR = os.path.join(BASE_DIR, "data/interim/EBPF_RAW")
 OUTPUT_DIR = os.path.join(BASE_DIR, "data/processed/EBPF")
 
 # ATTACKER_IPS must be calibrated to the specific research testbed topology.
-ATTACKER_IPS_SET = frozenset(["172.16.0.5", "2001:db8:acad:10::5", "fe80::215:5dff:fe00:5"])
-CHUNK_SIZE = 1_000_000
+ATTACKER_IPS = ["172.16.0.5", "2001:db8:acad:10::5", "fe80::215:5dff:fe00:5"]
+ATTACKER_IPS_SET = frozenset(ATTACKER_IPS)
+CHUNK_SIZE = 1_000_000  # Pandas fallback only
+
+# Candidate source IP column names across competitor schemas.
+IP_CANDIDATES = ['src_ip', 'Src IP', 'Source IP', 'source_ip', 'src']
 
 
 def _detect_ip_column(columns):
@@ -43,18 +58,78 @@ def _detect_ip_column(columns):
     Returns:
         str or None: The matched column name, or None if no candidate is found.
     """
-    for col in ['src_ip', 'Src IP', 'Source IP', 'source_ip', 'src']:
+    for col in IP_CANDIDATES:
         if col in columns:
             return col
     return None
+
+
+def _process_polars(file_path, category, output_file):
+    """
+    Label a CSV file using Polars (multi-threaded Rust backend).
+
+    Args:
+        file_path (str): Path to the raw CSV.
+        category (str): Attack category label to apply.
+        output_file (str): Destination path for the labeled CSV.
+
+    Returns:
+        int: Number of rows processed.
+    """
+    df = pl.read_csv(file_path, infer_schema_length=10000, ignore_errors=True)
+    ip_col = _detect_ip_column(df.columns)
+
+    if ip_col:
+        df = df.with_columns(
+            pl.when(pl.col(ip_col).cast(pl.Utf8).is_in(ATTACKER_IPS))
+              .then(pl.lit(category))
+              .otherwise(pl.lit("BENIGN"))
+              .alias("Label")
+        )
+
+    df.write_csv(output_file)
+    return len(df)
+
+
+def _process_pandas(file_path, category, output_file):
+    """
+    Label a CSV file using Pandas (single-threaded fallback).
+
+    Args:
+        file_path (str): Path to the raw CSV.
+        category (str): Attack category label to apply.
+        output_file (str): Destination path for the labeled CSV.
+
+    Returns:
+        int: Number of rows processed.
+    """
+    import pandas as pd
+    import numpy as np
+
+    header = pd.read_csv(file_path, nrows=0)
+    ip_col = _detect_ip_column(header.columns.tolist())
+
+    total_rows = 0
+    first_chunk = True
+    reader = pd.read_csv(file_path, chunksize=CHUNK_SIZE, low_memory=False)
+    for chunk in reader:
+        if ip_col and ip_col in chunk.columns:
+            chunk['Label'] = np.where(
+                chunk[ip_col].astype(str).isin(ATTACKER_IPS_SET),
+                category, 'BENIGN'
+            )
+        chunk.to_csv(output_file, mode='a', header=first_chunk, index=False)
+        first_chunk = False
+        total_rows += len(chunk)
+
+    return total_rows
 
 
 def process_file_auto(file_path):
     """
     Apply the topological labeling rule to a single extraction result set.
 
-    Uses vectorized pandas operations with large chunks for maximum throughput.
-    The IP column is detected once from the header and reused across all chunks.
+    Dispatches to Polars or Pandas backend based on availability.
 
     Args:
         file_path (str): Absolute path to the raw CSV telemetry file.
@@ -70,25 +145,14 @@ def process_file_auto(file_path):
         output_folder = os.path.join(OUTPUT_DIR, rel_path)
         os.makedirs(output_folder, exist_ok=True)
 
-        output_file_name = os.path.basename(os.path.dirname(file_path)) if os.path.dirname(file_path) != INPUT_DIR else category
+        output_file_name = (os.path.basename(os.path.dirname(file_path))
+                            if os.path.dirname(file_path) != INPUT_DIR else category)
         output_file = os.path.join(output_folder, f"labeled_{output_file_name}.csv")
-        first_chunk = not os.path.exists(output_file)
 
-        # Detect IP column from header only (avoids per-chunk detection).
-        header = pd.read_csv(file_path, nrows=0)
-        ip_col = _detect_ip_column(header.columns.tolist())
-
-        total_rows = 0
-        reader = pd.read_csv(file_path, chunksize=CHUNK_SIZE, low_memory=False)
-        for chunk in reader:
-            if ip_col and ip_col in chunk.columns:
-                chunk['Label'] = np.where(
-                    chunk[ip_col].astype(str).isin(ATTACKER_IPS_SET),
-                    category, 'BENIGN'
-                )
-            chunk.to_csv(output_file, mode='a', header=first_chunk, index=False)
-            first_chunk = False
-            total_rows += len(chunk)
+        if USE_POLARS:
+            total_rows = _process_polars(file_path, category, output_file)
+        else:
+            total_rows = _process_pandas(file_path, category, output_file)
 
         return (file_path, True, total_rows)
     except Exception as e:
@@ -110,7 +174,8 @@ def main():
                         help="Number of parallel labeling workers (default: min(4, cpu_count))")
     args = parser.parse_args()
 
-    print("=== Lynceus Pre-processing: Topological Ground-Truth Attribution ===")
+    backend = "Polars (multi-threaded)" if USE_POLARS else "Pandas (single-threaded)"
+    print(f"=== Lynceus Pre-processing: Topological Ground-Truth Attribution [{backend}] ===")
 
     if args.path:
         target_dir = os.path.abspath(args.path)
@@ -131,7 +196,6 @@ def main():
     total_rows = 0
 
     if len(files) == 1 or args.workers <= 1:
-        # Single-file path: sequential (avoids fork overhead for one file).
         for f in files:
             _, success, rows = process_file_auto(f)
             if success:
@@ -140,7 +204,6 @@ def main():
                 if args.cleanup:
                     os.remove(f)
     else:
-        # Multi-file path: parallel processing.
         with ProcessPoolExecutor(max_workers=args.workers) as executor:
             futures = {executor.submit(process_file_auto, f): f for f in files}
             for future in as_completed(futures):
