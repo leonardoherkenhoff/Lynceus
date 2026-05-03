@@ -21,7 +21,6 @@ Usage:
   python3 ebpf_run_benchmark.py --with-ttl   # Realistic (with TTL)
 """
 
-import pandas as pd
 import numpy as np
 import os
 import glob
@@ -30,6 +29,14 @@ import argparse
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_score
+
+try:
+    import polars as pl
+    import pandas as pd
+    USE_POLARS = True
+except ImportError:
+    import pandas as pd
+    USE_POLARS = False
 
 # =============================================================================
 # [Cross-Day Attack Pairing Matrix]
@@ -79,21 +86,74 @@ def load_dataset(file_path, drop_cols):
     """
     Load a dataset with column filtering, type coercion, and sample cap.
 
-    Uses pre-computed column selection and vectorized numeric conversion
-    to minimize per-chunk overhead.
+    Uses Polars (multi-threaded Rust backend) when available for 5-10x
+    faster CSV parsing, falling back to Pandas chunked reading.
 
     Args:
         file_path (str): Path to the labeled CSV dataset.
         drop_cols (list): List of column names to aggressively drop during load.
 
     Returns:
-        tuple: (X, y) where X is the feature matrix (DataFrame) and y is the
-               label vector (Series). Returns (None, None) if loading fails.
+        tuple: (X, y) where X is the feature matrix (pd.DataFrame) and y is the
+               label vector (pd.Series). Returns (None, None) if loading fails.
+    """
+    if USE_POLARS:
+        return _load_polars(file_path, drop_cols)
+    return _load_pandas(file_path, drop_cols)
+
+
+def _load_polars(file_path, drop_cols):
+    """
+    Load dataset using Polars multi-threaded CSV reader.
+
+    Args:
+        file_path (str): Path to the labeled CSV dataset.
+        drop_cols (list): Columns to drop.
+
+    Returns:
+        tuple: (X, y) as pandas objects for sklearn compatibility.
+    """
+    df = pl.read_csv(file_path, n_rows=MAX_SAMPLES, infer_schema_length=10000,
+                     ignore_errors=True)
+
+    # Drop unwanted columns (only those that exist).
+    existing_drops = [c for c in drop_cols if c in df.columns]
+    if existing_drops:
+        df = df.drop(existing_drops)
+
+    if 'Label' not in df.columns:
+        return None, None
+
+    # Extract labels.
+    y = (df['Label'].cast(pl.Utf8).str.to_uppercase() != 'BENIGN').cast(pl.UInt8)
+    df = df.drop('Label')
+
+    # Cast all columns to Float32 (coerce errors to null, fill with 0).
+    for col in df.columns:
+        df = df.with_columns(pl.col(col).cast(pl.Float32, strict=False).fill_null(0))
+
+    # Convert to pandas for sklearn.
+    X = df.to_pandas()
+    y_pd = y.to_pandas()
+
+    del df
+    gc.collect()
+    return X, y_pd
+
+
+def _load_pandas(file_path, drop_cols):
+    """
+    Load dataset using Pandas chunked CSV reader (fallback).
+
+    Args:
+        file_path (str): Path to the labeled CSV dataset.
+        drop_cols (list): Columns to drop.
+
+    Returns:
+        tuple: (X, y) as pandas objects.
     """
     sample_df = pd.read_csv(file_path, nrows=1, low_memory=False)
     use_cols = [c for c in sample_df.columns if c not in drop_cols]
-
-    # Pre-compute feature columns (everything except Label).
     feature_cols = [c for c in use_cols if c != 'Label']
 
     X_list, y_list = [], []
@@ -105,8 +165,6 @@ def load_dataset(file_path, drop_cols):
             continue
 
         y_chunk = (chunk['Label'].str.upper() != 'BENIGN').astype(np.uint8)
-
-        # Vectorized numeric conversion (much faster than apply + to_numeric).
         X_chunk = chunk[feature_cols]
         for col in X_chunk.columns:
             X_chunk[col] = pd.to_numeric(X_chunk[col], errors='coerce')
