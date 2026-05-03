@@ -164,6 +164,10 @@ def run_benchmark():
         '--with-ttl', action='store_true',
         help='Include TTL and TTL_Var_* features (Realistic mode)'
     )
+    parser.add_argument(
+        '--dataset', type=str, default="/opt/eBPFNetFlowLyzer/data/processed/EBPF",
+        help='Path to labeled dataset directory'
+    )
     args = parser.parse_args()
 
     # Build drop_cols based on mode
@@ -173,7 +177,7 @@ def run_benchmark():
 
     mode_label = "REALISTIC (with TTL)" if args.with_ttl else "CONSERVATIVE (no TTL)"
 
-    processed_dir = "/opt/eBPFNetFlowLyzer/data/processed/EBPF"
+    processed_dir = os.path.abspath(args.dataset)
     all_csvs = glob.glob(os.path.join(processed_dir, "**", "*.csv"), recursive=True)
     all_csvs = [c for c in all_csvs if 'resource_metrics' not in os.path.basename(c)]
 
