@@ -124,20 +124,17 @@ static inline void w_update(struct welford_stat *w, double x) {
     }
 }
 
-static inline double w_mean(struct welford_stat *w) { return w->M1; }
-static inline double w_std(struct welford_stat *w)  { return (w->n > 1) ? sqrt(w->M2 / (w->n - 1)) : 0; }
+static inline double w_mean(struct welford_stat *w) { return w->n > 0 ? w->M1 : 0; }
 static inline double w_var(struct welford_stat *w)  { return (w->n > 1) ? w->M2 / (w->n - 1) : 0; }
+static inline double w_std(struct welford_stat *w)  { return sqrt(w_var(w)); }
 static inline double w_skew(struct welford_stat *w) { return (w->M2 > 1e-9) ? sqrt(w->n) * w->M3 / pow(w->M2, 1.5) : 0; }
 static inline double w_kurt(struct welford_stat *w) { return (w->M2 > 1e-9) ? (double)w->n * w->M4 / (w->M2 * w->M2) - 3.0 : 0; }
-static inline double w_p2_median(struct welford_stat *w) {
-    if (w->n == 0) return 0.0;
-    if (w->n < 5) { /* sort partial buffer and return middle element */
-        double tmp[5]; int k=(int)w->n;
-        for(int i=0;i<k;i++) tmp[i]=w->pq[i];
-        for(int i=1;i<k;i++){double t=tmp[i];int j=i-1;while(j>=0&&tmp[j]>t){tmp[j+1]=tmp[j];j--;}tmp[j+1]=t;}
-        return tmp[k/2];
+
+static double calculate_entropy(const uint8_t *data, size_t len) {
+    if (len == 0) return 0;
+    uint32_t counts[256] = {0};
     }
-    return w->pq[2]; /* P² median marker */
+    return entropy;
 }
 
 static uint64_t boot_time_ns = 0;
@@ -229,19 +226,7 @@ static void *writer_fn(void *arg) {
     return NULL;
 }
 
-static double calculate_entropy(const uint8_t *data, size_t len) {
-    if (len == 0) return 0;
-    uint64_t counts[256] = {0};
-    for (size_t i = 0; i < len; i++) counts[data[i]]++;
-    double ent = 0;
-    for (int i = 0; i < 256; i++) {
-        if (counts[i] > 0) {
-            double p = (double)counts[i] / len;
-            ent -= p * log2(p);
-        }
-    }
-    return ent;
-}
+/* End of utility functions */
 
 /* Numerical Estimation: Histogram-based Median via Linear Interpolation */
 static double median_from_hist(const uint64_t *hist, int bins, int step, uint64_t n) {
@@ -396,32 +381,33 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
     sprintf(smac, "%02x:%02x:%02x:%02x:%02x:%02x", s->src_mac[0], s->src_mac[1], s->src_mac[2], s->src_mac[3], s->src_mac[4], s->src_mac[5]);
     sprintf(dmac, "%02x:%02x:%02x:%02x:%02x:%02x", s->dst_mac[0], s->dst_mac[1], s->dst_mac[2], s->dst_mac[3], s->dst_mac[4], s->dst_mac[5]);
 
-    /* Block 1: Identification and Moments (Precision: 6f/2f) */
+    /* Block 1: Identification and Derived Welford Metrics (Mean, Std) */
     off += snprintf(buf + off, MAX_RECORD - off, 
         "%s-%s-%u-%u-%u,%s,%s,%u,%u,%u,%u,%u,%u,%u,%s,%s,%.6f,%.6f,%lu,%lu,%lu,%lu,%lu,%lu,%.2f,%.2f,"
         "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,"
         "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%u,%u,",
-        sip, dip, ntohs(s->key.src_port), ntohs(s->key.dst_port), s->key.protocol,
-        sip, dip, ntohs(s->key.src_port), ntohs(s->key.dst_port), s->key.protocol,
-        s->ip_ver, ntohs(s->eth_proto), s->traffic_class, s->flow_label, smac, dmac, ts, duration,
+        sip, dip, ntohs(s->key.src_port), ntohs(s->key.dst_port), (uint32_t)s->key.protocol,
+        sip, dip, ntohs(s->key.src_port), ntohs(s->key.dst_port), (uint32_t)s->key.protocol,
+        (uint32_t)s->ip_ver, (uint32_t)ntohs(s->eth_proto), (uint32_t)s->traffic_class, s->flow_label, smac, dmac, ts, duration,
         s->t_pay.n, s->f_pay.n, s->b_pay.n, (uint64_t)(s->f_bytes + s->b_bytes), (uint64_t)s->f_bytes, (uint64_t)s->b_bytes,
         (s->b_pay.n > 0 ? (double)s->f_pay.n/s->b_pay.n : (double)s->f_pay.n),
         (s->b_bytes > 0 ? (double)s->f_bytes/s->b_bytes : (double)s->f_bytes),
         median_from_hist(s->t_hist, HIST_BINS, HIST_STEP, s->t_pay.n), median_from_hist(s->f_hist, HIST_BINS, HIST_STEP, s->f_pay.n), median_from_hist(s->b_hist, HIST_BINS, HIST_STEP, s->b_pay.n),
-        s->t_hdr.M1, s->t_hdr.M2, s->f_hdr.M1, s->f_hdr.M2, s->b_hdr.M1, s->b_hdr.M2,
-        s->t_iat.M1, s->t_iat.M2, s->f_iat.M1, s->f_iat.M2, s->b_iat.M1, s->b_iat.M2,
-        s->t_delta.M1, s->t_delta.M2, s->f_delta.M1, s->f_delta.M2, s->b_delta.M1, s->b_delta.M2,
-        s->win_s.M1, s->win_s.M2, s->ip_id_s.M1, s->ip_id_s.M2, s->frag_s.M1, s->frag_s.M2, s->ttl_s.M1, s->ttl_s.M2,
-        s->f_win_init, s->b_win_init);
+        w_mean(&s->t_hdr), w_std(&s->t_hdr), w_mean(&s->f_hdr), w_std(&s->f_hdr), w_mean(&s->b_hdr), w_std(&s->b_hdr),
+        w_mean(&s->t_iat), w_std(&s->t_iat), w_mean(&s->f_iat), w_std(&s->f_iat), w_mean(&s->b_iat), w_std(&s->b_iat),
+        w_mean(&s->t_delta), w_std(&s->t_delta), w_mean(&s->f_delta), w_std(&s->f_delta), w_mean(&s->b_delta), w_std(&s->b_delta),
+        w_mean(&s->win_s), w_std(&s->win_s), w_mean(&s->ip_id_s), w_std(&s->ip_id_s), w_mean(&s->frag_s), w_std(&s->frag_s), w_mean(&s->ttl_s), w_std(&s->ttl_s),
+        (uint32_t)s->f_win_init, (uint32_t)s->b_win_init);
 
     /* Block 2: Flags and Bulk Metrics */
     for (int i=0; i<8; i++) off += snprintf(buf + off, MAX_RECORD - off, "%lu,%lu,%lu,", s->flags[i], s->f_flags[i], s->b_flags[i]);
 
     /* Block 3: ICMP, Active/Idle and L7 metadata */
     off += snprintf(buf + off, MAX_RECORD - off, 
-        "0.00,%u,%u,%u,%u,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%lu,%lu,%lu,%lu,%lu,%lu,%u,%u,%u,%u,%u,%u,%u,%u,%u,",
-        s->last_icmp_type, s->last_icmp_code, s->last_ttl, s->last_icmp_id,
-        s->active_s.M1, s->active_s.M2, s->idle_s.M1, s->idle_s.M2,
+        "%.2f,%u,%u,%u,%u,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%lu,%lu,%lu,%lu,%lu,%lu,%u,%u,%u,%u,%u,%u,%u,%u,%u,",
+        calculate_entropy(s->key.src_ip, 16),
+        (uint32_t)s->last_icmp_type, (uint32_t)s->last_icmp_code, (uint32_t)s->last_ttl, (uint32_t)s->last_icmp_id,
+        w_mean(&s->active_s), w_std(&s->active_s), w_mean(&s->idle_s), w_std(&s->idle_s),
         (duration > 0 ? (double)(s->f_bytes+s->b_bytes)/duration : 0), (duration > 0 ? (double)s->f_bytes/duration : 0), (duration > 0 ? (double)s->b_bytes/duration : 0),
         (duration > 0 ? (double)s->t_pay.n/duration : 0), (duration > 0 ? (double)s->f_pay.n/duration : 0), (duration > 0 ? (double)s->b_pay.n/duration : 0),
         (s->f_pay.n > 0 ? (double)s->b_pay.n/s->f_pay.n : 0),
