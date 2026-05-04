@@ -121,16 +121,14 @@ static inline double w_median(struct welford_stat *w) { return (w->n < 5) ? w->M
 static double calculate_entropy(const uint8_t *data, size_t len) {
     if (len == 0) return 0;
     uint32_t counts[256] = {0};
-    uint8_t unique[256]; int num_unique = 0;
-    for (size_t i = 0; i < len; i++) {
-        if (counts[data[i]] == 0) unique[num_unique++] = data[i];
-        counts[data[i]]++;
-    }
+    for (size_t i = 0; i < len; i++) counts[data[i]]++;
     double entropy = 0;
     double inv_len = 1.0 / (double)len;
-    for (int i = 0; i < num_unique; i++) {
-        double p = (double)counts[unique[i]] * inv_len;
-        entropy -= p * log2(p);
+    for (int i = 0; i < 256; i++) {
+        if (counts[i] > 0) {
+            double p = (double)counts[i] * inv_len;
+            entropy -= p * log2(p);
+        }
     }
     return entropy;
 }
@@ -244,15 +242,30 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
         (s->b_pay.n > 0 ? (double)s->f_pay.n/s->b_pay.n : (double)s->f_pay.n), (s->b_bytes > 0 ? (double)s->f_bytes/s->b_bytes : (double)s->f_bytes));
 
     struct welford_stat *st[] = {&s->t_pay,&s->f_pay,&s->b_pay,&s->t_hdr,&s->f_hdr,&s->b_hdr,&s->t_iat,&s->f_iat,&s->b_iat,&s->t_delta,&s->f_delta,&s->b_delta,&s->win_s,&s->ip_id_s,&s->frag_s,&s->ttl_s};
-    #pragma GCC unroll 16
-    for (int i=0; i<16; i++) {
-        double med = (i<3) ? median_from_hist((i==0?s->t_hist:(i==1?s->f_hist:s->b_hist)), HIST_BINS, HIST_STEP, st[i]->n) : w_median(st[i]);
-        off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,0.00,",
-            (double)st[i]->max, (double)st[i]->min, w_mean(st[i]), w_std(st[i]), w_var(st[i]), med, w_skew(st[i]), w_kurt(st[i]), (w_mean(st[i])>0?w_std(st[i])/w_mean(st[i]):0));
+    /* Optimized: 4 metrics per block to balance function call overhead and stack pressure */
+    for (int j=0; j<4; j++) {
+        int i = j * 4;
+        double m0 = (i+0 < 3) ? median_from_hist((i+0==0?s->t_hist:(i+0==1?s->f_hist:s->b_hist)), HIST_BINS, HIST_STEP, st[i+0]->n) : w_median(st[i+0]);
+        double m1 = (i+1 < 3) ? median_from_hist((i+1==0?s->t_hist:(i+1==1?s->f_hist:s->b_hist)), HIST_BINS, HIST_STEP, st[i+1]->n) : w_median(st[i+1]);
+        double m2 = (i+2 < 3) ? median_from_hist((i+2==0?s->t_hist:(i+2==1?s->f_hist:s->b_hist)), HIST_BINS, HIST_STEP, st[i+2]->n) : w_median(st[i+2]);
+        double m3 = (i+3 < 3) ? median_from_hist((i+3==0?s->t_hist:(i+3==1?s->f_hist:s->b_hist)), HIST_BINS, HIST_STEP, st[i+3]->n) : w_median(st[i+3]);
+
+        off += snprintf(buf + off, MAX_RECORD - off, 
+            "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,0.00,"
+            "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,0.00,"
+            "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,0.00,"
+            "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,0.00,",
+            (double)st[i+0]->max, (double)st[i+0]->min, w_mean(st[i+0]), w_std(st[i+0]), w_var(st[i+0]), m0, w_skew(st[i+0]), w_kurt(st[i+0]), (w_mean(st[i+0])>0?w_std(st[i+0])/w_mean(st[i+0]):0),
+            (double)st[i+1]->max, (double)st[i+1]->min, w_mean(st[i+1]), w_std(st[i+1]), w_var(st[i+1]), m1, w_skew(st[i+1]), w_kurt(st[i+1]), (w_mean(st[i+1])>0?w_std(st[i+1])/w_mean(st[i+1]):0),
+            (double)st[i+2]->max, (double)st[i+2]->min, w_mean(st[i+2]), w_std(st[i+2]), w_var(st[i+2]), m2, w_skew(st[i+2]), w_kurt(st[i+2]), (w_mean(st[i+2])>0?w_std(st[i+2])/w_mean(st[i+2]):0),
+            (double)st[i+3]->max, (double)st[i+3]->min, w_mean(st[i+3]), w_std(st[i+3]), w_var(st[i+3]), m3, w_skew(st[i+3]), w_kurt(st[i+3]), (w_mean(st[i+3])>0?w_std(st[i+3])/w_mean(st[i+3]):0));
     }
+
     off += snprintf(buf + off, MAX_RECORD - off, "%u,%u,", (uint32_t)s->f_win_init, (uint32_t)s->b_win_init);
     for (int i=0; i<8; i++) off += snprintf(buf + off, MAX_RECORD - off, "%lu,%lu,%lu,", s->flags[i], s->f_flags[i], s->b_flags[i]);
-    off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%u,%u,%u,%u,", calculate_entropy(s->key.src_ip, 16), (uint32_t)s->last_icmp_type, (uint32_t)s->last_icmp_code, (uint32_t)s->last_ttl, (uint32_t)s->last_icmp_id);
+    
+    double entropy = calculate_entropy(s->ip_ver == 4 ? &s->key.src_ip[12] : s->key.src_ip, s->ip_ver == 4 ? 4 : 16);
+    off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%u,%u,%u,%u,", entropy, (uint32_t)s->last_icmp_type, (uint32_t)s->last_icmp_code, (uint32_t)s->last_ttl, (uint32_t)s->last_icmp_id);
     struct welford_stat *ext[] = {&s->active_s, &s->idle_s};
     for (int i=0; i<2; i++) {
         off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,0.00,",
