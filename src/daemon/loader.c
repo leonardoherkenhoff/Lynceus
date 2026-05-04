@@ -43,7 +43,7 @@
 #define IDLE_SCAN_BATCH     10000
 
 /* [Lock-Free Concurrency] Single-Producer Single-Consumer (SPSC) Rings */
-#define SPSC_SLOTS    1024     /* per-worker queue depth (power of 2) */
+#define SPSC_SLOTS    32768    /* per-worker queue depth (power of 2) */
 #define MAX_RECORD    16384    /* max serialized record size (incl. histograms) */
 
 struct spsc_queue {
@@ -361,7 +361,8 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
     }
 
     /* Instant Flush for high-volume flows or TCP completion */
-    if (s->t_pay.n >= 50 || (e->rec.tcp_flags & 0x05)) {
+    /* ENHANCED: Threshold raised to 500,000 to eliminate string-formatting bottleneck during massive DDoS. */
+    if (s->t_pay.n >= 500000 || (e->rec.tcp_flags & 0x05)) {
         flush_flow_record(w, s, e->timestamp_ns);
         s->active = 0; /* Reset state after flush */
     }
@@ -422,29 +423,15 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
             (duration > 0 ? s->f_pay.n/duration : 0),
             (duration > 0 ? s->b_pay.n/duration : 0),
             (s->f_pay.n > 0 ? (double)s->b_pay.n/s->f_pay.n : 0));
-    fprintf(mem_f, "%lu,%lu,%lu,%lu,%lu,%lu,%u,%u,%u,",
+    fprintf(mem_f, "%lu,%lu,%lu,%lu,%lu,%lu,%u,%u,%u,%u,%u,%u,%u,%u,%u,",
             s->f_bulk_bytes, s->f_bulk_pkts, s->f_bulk_cnt,
             s->b_bulk_bytes, s->b_bulk_pkts, s->b_bulk_cnt,
-            s->dns_answer_count, s->dns_qtype, s->dns_qclass);
-            
-    /**
-     * @brief [L7 and Histogram Mutilation]
-     * In PARITY_NETFLOWLYZER mode, we omit printing the 240+ histogram bins 
-     * and complex tunnel IDs, keeping the geometric output exactly aligned 
-     * with the NTLFlowLyzer/ALFlowLyzer CSV schema.
-     */
-#ifndef PARITY_NETFLOWLYZER
-    fprintf(mem_f, "%u,%u,%u,%u,%u,%u,",
+            s->dns_answer_count, s->dns_qtype, s->dns_qclass,
             s->tunnel_id, s->tunnel_type, s->ntp_mode, s->ntp_stratum,
             s->snmp_pdu_type, s->ssdp_method);
     for (int i=0; i<HIST_BINS; i++) fprintf(mem_f, "%lu,", s->t_hist[i]);
     for (int i=0; i<HIST_BINS; i++) fprintf(mem_f, "%lu,", s->f_hist[i]);
     for (int i=0; i<HIST_BINS; i++) fprintf(mem_f, "%lu%s", s->b_hist[i], (i == HIST_BINS - 1 ? "" : ","));
-#else
-    fprintf(mem_f, "%u,%u,%u,%u",
-            s->ntp_mode, s->ntp_stratum,
-            s->snmp_pdu_type, s->ssdp_method);
-#endif
     fprintf(mem_f, "\n");
     
     q->lens[idx] = ftell(mem_f);
@@ -563,21 +550,11 @@ int main(int argc, char **argv) {
                 ext[i],ext[i],ext[i],ext[i],ext[i],ext[i],ext[i],ext[i],ext[i],ext[i]);
     fprintf(g_out_f, "BytesRate,FwdBytesRate,BwdBytesRate,PacketsRate,FwdPacketsRate,BwdPacketsRate,DownUpRatio,"
                      "FwdBulkBytes,FwdBulkPkts,FwdBulkCnt,BwdBulkBytes,BwdBulkPkts,BwdBulkCnt,"
-                     "DNSAnswerCount,DNSQueryType,DNSQueryClass,");
-                     
-    /**
-     * @brief [CSV Header Mutilation]
-     * Omits histogram and L7 tunnel column headers in parity mode to match 
-     * the rigid dimensions of legacy extractors.
-     */
-#ifndef PARITY_NETFLOWLYZER
-    fprintf(g_out_f, "TunnelId,TunnelType,NTP_Mode,NTP_Stratum,SNMP_PDU_Type,SSDP_Method,");
+                     "DNSAnswerCount,DNSQueryType,DNSQueryClass,"
+                     "TunnelId,TunnelType,NTP_Mode,NTP_Stratum,SNMP_PDU_Type,SSDP_Method,");
     for (int i=0; i<HIST_BINS; i++) fprintf(g_out_f, "Hist_Tot_%d,", i);
     for (int i=0; i<HIST_BINS; i++) fprintf(g_out_f, "Hist_Fwd_%d,", i);
     for (int i=0; i<HIST_BINS; i++) fprintf(g_out_f, "Hist_Bwd_%d%s", i, (i == HIST_BINS-1 ? "" : ","));
-#else
-    fprintf(g_out_f, "NTP_Mode,NTP_Stratum,SNMP_PDU_Type,SSDP_Method");
-#endif
     fprintf(g_out_f, "\n");
     fflush(g_out_f);
 
