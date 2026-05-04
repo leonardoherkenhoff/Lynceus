@@ -20,7 +20,7 @@
 #include <stdint.h>
 #endif
 
-#define FLOW_HASH_SIZE 131072
+#define FLOW_HASH_SIZE 524288
 #define ETH_P_IP 0x0800
 #define ETH_P_IPV6 0x86DD
 #define IPPROTO_ICMPV6 58
