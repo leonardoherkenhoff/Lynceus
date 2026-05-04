@@ -80,7 +80,6 @@ static __always_inline void parse_snmp(void *data, void *data_end, flow_record_t
     if (ptr + 2 > (__u8 *)data_end) return;
     /* ASN.1 BER/DER Dissection: Sequence(0x30) -> Len -> Version(0x02) -> Len -> Value */
     if (ptr[0] != 0x30) return;
-    __u8 seq_len = ptr[1];
     ptr += 2;
     if (ptr + 3 > (__u8 *)data_end) return;
     if (ptr[0] != 0x02) return; /* Integer tag for version */
