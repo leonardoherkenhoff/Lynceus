@@ -16,15 +16,16 @@ import re
 BASE_DIR = "/opt/eBPFNetFlowLyzer"
 DATA_RAW = os.path.join(BASE_DIR, "data/raw/PCAP")
 
-INJECT_IFACE = "lo"
-SENSOR_IFACE = "lo"
+INJECT_IFACE = "eno12399np0"
+SENSOR_IFACE = "eno12399np0"
 
 def setup_veth():
-    # Bypassing VETH overhead by injecting and listening directly on the host loopback stack
-    subprocess.run(["sysctl", "-w", f"net.ipv6.conf.lo.disable_ipv6=0"], check=False, stderr=subprocess.DEVNULL)
+    # Hardware ASIC Loopback
+    subprocess.run(["ip", "link", "set", INJECT_IFACE, "up"], check=False, stderr=subprocess.DEVNULL)
+    subprocess.run(["ethtool", "-K", INJECT_IFACE, "loopback", "on"], check=False, stderr=subprocess.DEVNULL)
 
 def teardown_veth():
-    pass
+    subprocess.run(["ethtool", "-K", INJECT_IFACE, "loopback", "off"], check=False, stderr=subprocess.DEVNULL)
 
 def run_blackhole_test():
     print("=== eBPF Zero-IO Extraction Benchmark ===")
