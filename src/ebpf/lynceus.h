@@ -23,7 +23,9 @@
 #define FLOW_HASH_SIZE 524288
 #define ETH_P_IP 0x0800
 #define ETH_P_IPV6 0x86DD
+#ifndef IPPROTO_ICMPV6
 #define IPPROTO_ICMPV6 58
+#endif
 
 /* [Agnostic Protocol Definition] Universal Flow Identity (5-Tuple Matrix) */
 typedef struct {
