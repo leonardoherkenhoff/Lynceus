@@ -20,9 +20,15 @@ INJECT_IFACE = "eno12399np0"
 SENSOR_IFACE = "eno12399np0"
 
 def setup_veth():
-    # Hardware ASIC Loopback
-    subprocess.run(["ip", "link", "set", INJECT_IFACE, "up"], check=False, stderr=subprocess.DEVNULL)
-    subprocess.run(["ethtool", "-K", INJECT_IFACE, "loopback", "on"], check=False, stderr=subprocess.DEVNULL)
+    # Hardware ASIC Loopback Agressivo
+    print(f"[*] Attempting Hardware Link-Up on {INJECT_IFACE}...")
+    subprocess.run(["ip", "link", "set", INJECT_IFACE, "up"], check=False)
+    # Tenta forçar o estado UP ignorando o cabo (alguns drivers suportam)
+    subprocess.run(["ip", "link", "set", INJECT_IFACE, "promisc", "on"], check=False)
+    # Tenta habilitar o loopback
+    subprocess.run(["ethtool", "-K", INJECT_IFACE, "loopback", "on"], check=False)
+    # Força duplex e velocidade para "acordar" o ASIC
+    subprocess.run(["ethtool", "-s", INJECT_IFACE, "speed", "1000", "duplex", "full", "autoneg", "off"], check=False)
 
 def teardown_veth():
     subprocess.run(["ethtool", "-K", INJECT_IFACE, "loopback", "off"], check=False, stderr=subprocess.DEVNULL)
