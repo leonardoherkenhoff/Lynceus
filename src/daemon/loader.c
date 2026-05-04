@@ -36,6 +36,9 @@
 
 #define IDLE_THRESHOLD      1.0
 #define HIST_BINS           80
+#ifndef IPPROTO_ICMPV6
+#define IPPROTO_ICMPV6 58
+#endif
 #define HIST_STEP           20
 #define BULK_THRESHOLD      1.0
 #define IDLE_FLOW_TIMEOUT_S 5.0
@@ -411,15 +414,21 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
             s->f_win_init, s->b_win_init);
 
     for (int i=0; i<8; i++) off += snprintf(buf + off, MAX_RECORD - off, "%lu,%lu,%lu,", s->flags[i], s->f_flags[i], s->b_flags[i]);
+    
     off += snprintf(buf + off, MAX_RECORD - off, "0.00,%u,%u,%u,%u,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,",
             s->last_icmp_type, s->last_icmp_code, s->last_ttl, s->last_icmp_id,
             s->active_s.M1, s->active_s.M2, s->idle_s.M1, s->idle_s.M2,
-            (duration > 0 ? (double)(s->f_bytes+s->b_bytes)/duration : 0), (duration > 0 ? (double)s->f_bytes/duration : 0), (duration > 0 ? (double)s->b_bytes/duration : 0),
-            (duration > 0 ? (double)s->t_pay.n/duration : 0), (duration > 0 ? (double)s->f_pay.n/duration : 0), (duration > 0 ? (double)s->b_pay.n/duration : 0));
+            (duration > 0 ? (double)(s->f_bytes+s->b_bytes)/duration : 0),
+            (duration > 0 ? (double)s->f_bytes/duration : 0),
+            (duration > 0 ? (double)s->b_bytes/duration : 0),
+            (duration > 0 ? (double)s->t_pay.n/duration : 0),
+            (duration > 0 ? (double)s->f_pay.n/duration : 0),
+            (duration > 0 ? (double)s->b_pay.n/duration : 0));
 
     off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%lu,%lu,%lu,%lu,%lu,%lu,",
             (s->f_pay.n > 0 ? (double)s->b_pay.n/s->f_pay.n : 0),
-            s->f_bulk_bytes, s->f_bulk_pkts, s->f_bulk_cnt, s->b_bulk_bytes, s->b_bulk_pkts, s->b_bulk_cnt);
+            s->f_bulk_bytes, s->f_bulk_pkts, s->f_bulk_cnt,
+            s->b_bulk_bytes, s->b_bulk_pkts, s->b_bulk_cnt);
 
     off += snprintf(buf + off, MAX_RECORD - off, "%u,%u,%u,%u,%u,%u,%u,%u,%u,",
             s->dns_answer_count, s->dns_qtype, s->dns_qclass, s->tunnel_id, s->tunnel_type, s->ntp_mode, s->ntp_stratum,
