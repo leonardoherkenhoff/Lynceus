@@ -20,8 +20,8 @@ LABELER_SCRIPT = os.path.join(BASE_DIR, "scripts/preprocessing/ebpf_labeler.py")
 ML_SCRIPT = os.path.join(BASE_DIR, "scripts/analysis/ebpf_run_benchmark.py")
 
 # --- Topology Vectors ---
-INJECT_IFACE = "veth0"
-SENSOR_IFACE = "veth1"
+INJECT_IFACE = "eno12399np0"
+SENSOR_IFACE = "eno12399np0"
 
 def get_engine_config():
     """
@@ -44,17 +44,14 @@ PARITY_FLAG = f"-DPARITY_{PARITY_SUFFIX}"
 PCAP_CATEGORIES = ["PCAP"]
 
 def setup_veth():
-    """Instantiate the isolated virtual network stack."""
-    subprocess.run(["ip", "link", "delete", INJECT_IFACE], check=False, stderr=subprocess.DEVNULL)
-    subprocess.run(["ip", "link", "add", INJECT_IFACE, "type", "veth", "peer", "name", SENSOR_IFACE], check=True)
-    subprocess.run(["ip", "link", "set", INJECT_IFACE, "up"], check=True)
-    subprocess.run(["ip", "link", "set", SENSOR_IFACE, "up"], check=True)
-    subprocess.run(["sysctl", "-w", f"net.ipv6.conf.{INJECT_IFACE}.disable_ipv6=0"], check=False, stderr=subprocess.DEVNULL)
-    subprocess.run(["sysctl", "-w", f"net.ipv6.conf.{SENSOR_IFACE}.disable_ipv6=0"], check=False, stderr=subprocess.DEVNULL)
+    """Configure the Broadcom physical interface for ASIC Hardware Loopback."""
+    subprocess.run(["ip", "link", "set", INJECT_IFACE, "up"], check=False, stderr=subprocess.DEVNULL)
+    subprocess.run(["ethtool", "-K", INJECT_IFACE, "loopback", "on"], check=False, stderr=subprocess.DEVNULL)
+    subprocess.run(["sysctl", "-w", f"net.ipv6.conf.{INJECT_IFACE}.disable_ipv6=1"], check=False, stderr=subprocess.DEVNULL)
 
 def teardown_veth():
-    """Destroy the virtual topology to prevent MAC/MTU state leakage."""
-    subprocess.run(["ip", "link", "delete", INJECT_IFACE], check=False, stderr=subprocess.DEVNULL)
+    """Restores the physical interface state."""
+    subprocess.run(["ethtool", "-K", INJECT_IFACE, "loopback", "off"], check=False, stderr=subprocess.DEVNULL)
 
 def get_attack_dirs():
     attack_dirs = []
