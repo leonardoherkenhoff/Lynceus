@@ -80,7 +80,6 @@ static __always_inline void parse_snmp(void *data, void *data_end, flow_record_t
     if (ptr + 2 > (__u8 *)data_end) return;
     /* ASN.1 BER/DER Dissection: Sequence(0x30) -> Len -> Version(0x02) -> Len -> Value */
     if (ptr[0] != 0x30) return;
-    __u8 seq_len = ptr[1];
     ptr += 2;
     if (ptr + 3 > (__u8 *)data_end) return;
     if (ptr[0] != 0x02) return; /* Integer tag for version */
@@ -225,7 +224,6 @@ int xdp_prog(struct xdp_md *ctx) {
             }
 
             /* [Application Layer Protocol Discovery] */
-#ifndef PARITY_RUSTIFLOW
             __u16 sp = bpf_ntohs(src_p), dp = bpf_ntohs(dst_p);
             if (sp == 53 || dp == 53) {
                 parse_dns(p_ptr, data_end, &new_rec);
@@ -246,7 +244,6 @@ int xdp_prog(struct xdp_md *ctx) {
                     }
                 }
             }
-#endif
         }
     }
     
@@ -278,14 +275,12 @@ int xdp_prog(struct xdp_md *ctx) {
          * VERIFIER OPTIMIZATION: We use a single boundary check before copying
          * the 64-byte block. This avoids state explosion (E2BIG) in the 
          * kernel verifier by reducing branches from O(N) to O(1). */
-#ifndef PARITY_RUSTIFLOW
         if (p_ptr + 64 <= data_end) {
             #pragma unroll
             for (int i = 0; i < 64; i++) {
                 new_rec.payload_hint[i] = ((__u8 *)p_ptr)[i];
             }
         }
-#endif
 
         bpf_map_update_elem(&flow_table, &key, &new_rec, BPF_ANY);
         
