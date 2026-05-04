@@ -404,7 +404,7 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
         sip, dip, ntohs(s->key.src_port), ntohs(s->key.dst_port), s->key.protocol,
         sip, dip, ntohs(s->key.src_port), ntohs(s->key.dst_port), s->key.protocol,
         s->ip_ver, ntohs(s->eth_proto), s->traffic_class, s->flow_label, smac, dmac, ts, duration,
-        s->t_pay.n, s->f_pay.n, s->b_pay.n, s->f_bytes + s->b_bytes, s->f_bytes, s->b_bytes,
+        s->t_pay.n, s->f_pay.n, s->b_pay.n, (uint64_t)(s->f_bytes + s->b_bytes), (uint64_t)s->f_bytes, (uint64_t)s->b_bytes,
         (s->b_pay.n > 0 ? (double)s->f_pay.n/s->b_pay.n : (double)s->f_pay.n),
         (s->b_bytes > 0 ? (double)s->f_bytes/s->b_bytes : (double)s->f_bytes),
         median_from_hist(s->t_hist, HIST_BINS, HIST_STEP, s->t_pay.n), median_from_hist(s->f_hist, HIST_BINS, HIST_STEP, s->f_pay.n), median_from_hist(s->b_hist, HIST_BINS, HIST_STEP, s->b_pay.n),
@@ -419,14 +419,15 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
 
     /* Block 3: ICMP, Active/Idle and L7 metadata */
     off += snprintf(buf + off, MAX_RECORD - off, 
-        "0.00,%u,%u,%u,%u,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%lu,%lu,%lu,%lu,%lu,%lu,%u,%u,%u,%u,%u,%u,%u,%u,%u,",
+        "0.00,%u,%u,%u,%u,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%lu,%lu,%lu,%lu,%lu,%lu,%u,%u,%u,%u,%u,%u,%u,%u,%u,",
         s->last_icmp_type, s->last_icmp_code, s->last_ttl, s->last_icmp_id,
         s->active_s.M1, s->active_s.M2, s->idle_s.M1, s->idle_s.M2,
         (duration > 0 ? (double)(s->f_bytes+s->b_bytes)/duration : 0), (duration > 0 ? (double)s->f_bytes/duration : 0), (duration > 0 ? (double)s->b_bytes/duration : 0),
         (duration > 0 ? (double)s->t_pay.n/duration : 0), (duration > 0 ? (double)s->f_pay.n/duration : 0), (duration > 0 ? (double)s->b_pay.n/duration : 0),
         (s->f_pay.n > 0 ? (double)s->b_pay.n/s->f_pay.n : 0),
-        s->f_bulk_bytes, s->f_bulk_pkts, s->f_bulk_cnt, s->b_bulk_bytes, s->b_bulk_pkts, s->b_bulk_cnt,
-        s->dns_answer_count, s->dns_qtype, s->dns_qclass, s->tunnel_id, s->tunnel_type, s->ntp_mode, s->ntp_stratum, s->snmp_pdu_type, s->ssdp_method);
+        (uint64_t)s->f_bulk_bytes, (uint64_t)s->f_bulk_pkts, (uint64_t)s->f_bulk_cnt, (uint64_t)s->b_bulk_bytes, (uint64_t)s->b_bulk_pkts, (uint64_t)s->b_bulk_cnt,
+        (uint32_t)s->dns_answer_count, (uint32_t)s->dns_qtype, (uint32_t)s->dns_qclass, (uint32_t)s->tunnel_id, (uint32_t)s->tunnel_type, 
+        (uint32_t)s->ntp_mode, (uint32_t)s->ntp_stratum, (uint32_t)s->snmp_pdu_type, (uint32_t)s->ssdp_method);
 
     /* Block 4: Histograms (Payload Distribution) */
     for (int i=0; i<HIST_BINS; i++) off += snprintf(buf + off, MAX_RECORD - off, "%lu,", s->t_hist[i]);
