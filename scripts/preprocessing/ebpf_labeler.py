@@ -66,30 +66,36 @@ def _detect_ip_column(columns):
 
 def _process_polars(file_path, category, output_file):
     """
-    Label a CSV file using Polars (multi-threaded Rust backend).
+    Label a CSV file using Polars Lazy API (streaming).
+    Ensures constant memory usage regardless of file size.
     """
     if os.path.getsize(file_path) == 0:
         return 0
         
     try:
-        df = pl.read_csv(file_path, infer_schema_length=10000, ignore_errors=True)
-        if df.is_empty():
-            return 0
-    except Exception:
+        # Scan lazy (does not load to RAM yet)
+        q = pl.scan_csv(file_path, infer_schema_length=10000, ignore_errors=True)
+        
+        # Detect IP column from first few bytes
+        columns = pl.read_csv(file_path, n_rows=0).columns
+        ip_col = _detect_ip_column(columns)
+
+        if ip_col:
+            q = q.with_columns(
+                pl.when(pl.col(ip_col).cast(pl.Utf8).is_in(ATTACKER_IPS))
+                  .then(pl.lit(category))
+                  .otherwise(pl.lit("BENIGN"))
+                  .alias("Label")
+            )
+        
+        # Sink to CSV (streaming write)
+        q.sink_csv(output_file)
+        
+        # Get count for reporting (requires one pass)
+        return pl.scan_csv(output_file).select(pl.len()).collect().item()
+    except Exception as e:
+        print(f"   ⚠️ Polars Streaming Error: {e}")
         return 0
-
-    ip_col = _detect_ip_column(df.columns)
-
-    if ip_col:
-        df = df.with_columns(
-            pl.when(pl.col(ip_col).cast(pl.Utf8).is_in(ATTACKER_IPS))
-              .then(pl.lit(category))
-              .otherwise(pl.lit("BENIGN"))
-              .alias("Label")
-        )
-
-    df.write_csv(output_file)
-    return len(df)
 
 
 def _process_pandas(file_path, category, output_file):
