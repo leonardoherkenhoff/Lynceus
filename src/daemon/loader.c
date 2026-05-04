@@ -124,8 +124,6 @@ static inline void w_update(struct welford_stat *w, double x) {
     }
 }
 
-static inline double w_mean(struct welford_stat *w) { return w->M1; }
-static inline double w_std(struct welford_stat *w)  { return (w->n > 1) ? sqrt(w->M2 / (w->n - 1)) : 0; }
 static inline double w_var(struct welford_stat *w)  { return (w->n > 1) ? w->M2 / (w->n - 1) : 0; }
 static inline double w_skew(struct welford_stat *w) { return (w->M2 > 1e-9) ? sqrt(w->n) * w->M3 / pow(w->M2, 1.5) : 0; }
 static inline double w_kurt(struct welford_stat *w) { return (w->M2 > 1e-9) ? (double)w->n * w->M4 / (w->M2 * w->M2) - 3.0 : 0; }
@@ -229,9 +227,6 @@ static void *writer_fn(void *arg) {
     return NULL;
 }
 
-static double calculate_entropy(const uint8_t *data, size_t len) {
-    if (len == 0) return 0;
-    uint64_t counts[256] = {0};
     for (size_t i = 0; i < len; i++) counts[data[i]]++;
     double ent = 0;
     for (int i = 0; i < 256; i++) {
