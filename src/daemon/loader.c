@@ -382,7 +382,7 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
     if ((t - h) >= SPSC_SLOTS) return; /* Queue full (backpressure) */
     uint32_t idx = t & (SPSC_SLOTS - 1);
     
-    /* Serialization into memory buffer using direct pointer arithmetic for max PPS */
+    /* Serialization into memory buffer using optimized monolithic blocks */
     char *buf = (char *)q->data[idx];
     int off = 0;
 
@@ -390,50 +390,45 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
     uint64_t norm_start = (s->active_start > 1700000000000000000ULL) ? (s->active_start - boot_time_ns) : s->active_start;
     double ts = (double)(norm_now + boot_time_ns) / 1e9;
     double duration = (norm_now > norm_start) ? (double)(norm_now - norm_start) / 1e9 : 0.001;
-    char sip[64], dip[64];
+    char sip[64], dip[64], smac[20], dmac[20];
     if (s->ip_ver == 4) { inet_ntop(AF_INET, &s->key.src_ip[12], sip, 64); inet_ntop(AF_INET, &s->key.dst_ip[12], dip, 64); }
     else { inet_ntop(AF_INET6, s->key.src_ip, sip, 64); inet_ntop(AF_INET6, s->key.dst_ip, dip, 64); }
-    char smac[20], dmac[20];
     sprintf(smac, "%02x:%02x:%02x:%02x:%02x:%02x", s->src_mac[0], s->src_mac[1], s->src_mac[2], s->src_mac[3], s->src_mac[4], s->src_mac[5]);
     sprintf(dmac, "%02x:%02x:%02x:%02x:%02x:%02x", s->dst_mac[0], s->dst_mac[1], s->dst_mac[2], s->dst_mac[3], s->dst_mac[4], s->dst_mac[5]);
 
-    off += snprintf(buf + off, MAX_RECORD - off, "%s-%s-%u-%u-%u,%s,%s,%u,%u,%u,%u,%u,%u,%u,%s,%s,%.6f,%.6f,%lu,%lu,%lu,%lu,%lu,%lu,%.2f,%.2f,",
-            sip, dip, ntohs(s->key.src_port), ntohs(s->key.dst_port), s->key.protocol,
-            sip, dip, ntohs(s->key.src_port), ntohs(s->key.dst_port), s->key.protocol,
-            s->ip_ver, ntohs(s->eth_proto), s->traffic_class, s->flow_label, smac, dmac, ts, duration,
-            s->t_pay.n, s->f_pay.n, s->b_pay.n, s->f_bytes + s->b_bytes, s->f_bytes, s->b_bytes,
-            (s->b_pay.n > 0 ? (double)s->f_pay.n/s->b_pay.n : (double)s->f_pay.n),
-            (s->b_bytes > 0 ? (double)s->f_bytes/s->b_bytes : (double)s->f_bytes));
+    /* Block 1: Identification and Moments (Precision: 6f/2f) */
+    off += snprintf(buf + off, MAX_RECORD - off, 
+        "%s-%s-%u-%u-%u,%s,%s,%u,%u,%u,%u,%u,%u,%u,%s,%s,%.6f,%.6f,%lu,%lu,%lu,%lu,%lu,%lu,%.2f,%.2f,"
+        "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,"
+        "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%u,%u,",
+        sip, dip, ntohs(s->key.src_port), ntohs(s->key.dst_port), s->key.protocol,
+        sip, dip, ntohs(s->key.src_port), ntohs(s->key.dst_port), s->key.protocol,
+        s->ip_ver, ntohs(s->eth_proto), s->traffic_class, s->flow_label, smac, dmac, ts, duration,
+        s->t_pay.n, s->f_pay.n, s->b_pay.n, s->f_bytes + s->b_bytes, s->f_bytes, s->b_bytes,
+        (s->b_pay.n > 0 ? (double)s->f_pay.n/s->b_pay.n : (double)s->f_pay.n),
+        (s->b_bytes > 0 ? (double)s->f_bytes/s->b_bytes : (double)s->f_bytes),
+        median_from_hist(s->t_hist, HIST_BINS, HIST_STEP, s->t_pay.n), median_from_hist(s->f_hist, HIST_BINS, HIST_STEP, s->f_pay.n), median_from_hist(s->b_hist, HIST_BINS, HIST_STEP, s->b_pay.n),
+        s->t_hdr.M1, s->t_hdr.M2, s->f_hdr.M1, s->f_hdr.M2, s->b_hdr.M1, s->b_hdr.M2,
+        s->t_iat.M1, s->t_iat.M2, s->f_iat.M1, s->f_iat.M2, s->b_iat.M1, s->b_iat.M2,
+        s->t_delta.M1, s->t_delta.M2, s->f_delta.M1, s->f_delta.M2, s->b_delta.M1, s->b_delta.M2,
+        s->win_s.M1, s->win_s.M2, s->ip_id_s.M1, s->ip_id_s.M2, s->frag_s.M1, s->frag_s.M2, s->ttl_s.M1, s->ttl_s.M2,
+        s->f_win_init, s->b_win_init);
 
-    off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%u,%u,",
-            median_from_hist(s->t_hist, HIST_BINS, HIST_STEP, s->t_pay.n), median_from_hist(s->f_hist, HIST_BINS, HIST_STEP, s->f_pay.n), median_from_hist(s->b_hist, HIST_BINS, HIST_STEP, s->b_pay.n),
-            s->t_hdr.M1, s->t_hdr.M2, s->f_hdr.M1, s->f_hdr.M2, s->b_hdr.M1, s->b_hdr.M2,
-            s->t_iat.M1, s->t_iat.M2, s->f_iat.M1, s->f_iat.M2, s->b_iat.M1, s->b_iat.M2,
-            s->t_delta.M1, s->t_delta.M2, s->f_delta.M1, s->f_delta.M2, s->b_delta.M1, s->b_delta.M2,
-            s->win_s.M1, s->win_s.M2, s->ip_id_s.M1, s->ip_id_s.M2, s->frag_s.M1, s->frag_s.M2, s->ttl_s.M1, s->ttl_s.M2,
-            s->f_win_init, s->b_win_init);
-
+    /* Block 2: Flags and Bulk Metrics */
     for (int i=0; i<8; i++) off += snprintf(buf + off, MAX_RECORD - off, "%lu,%lu,%lu,", s->flags[i], s->f_flags[i], s->b_flags[i]);
-    
-    off += snprintf(buf + off, MAX_RECORD - off, "0.00,%u,%u,%u,%u,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,",
-            s->last_icmp_type, s->last_icmp_code, s->last_ttl, s->last_icmp_id,
-            s->active_s.M1, s->active_s.M2, s->idle_s.M1, s->idle_s.M2,
-            (duration > 0 ? (double)(s->f_bytes+s->b_bytes)/duration : 0),
-            (duration > 0 ? (double)s->f_bytes/duration : 0),
-            (duration > 0 ? (double)s->b_bytes/duration : 0),
-            (duration > 0 ? (double)s->t_pay.n/duration : 0),
-            (duration > 0 ? (double)s->f_pay.n/duration : 0),
-            (duration > 0 ? (double)s->b_pay.n/duration : 0));
 
-    off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%lu,%lu,%lu,%lu,%lu,%lu,",
-            (s->f_pay.n > 0 ? (double)s->b_pay.n/s->f_pay.n : 0),
-            s->f_bulk_bytes, s->f_bulk_pkts, s->f_bulk_cnt,
-            s->b_bulk_bytes, s->b_bulk_pkts, s->b_bulk_cnt);
+    /* Block 3: ICMP, Active/Idle and L7 metadata */
+    off += snprintf(buf + off, MAX_RECORD - off, 
+        "0.00,%u,%u,%u,%u,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%lu,%lu,%lu,%lu,%lu,%lu,%u,%u,%u,%u,%u,%u,%u,%u,%u,",
+        s->last_icmp_type, s->last_icmp_code, s->last_ttl, s->last_icmp_id,
+        s->active_s.M1, s->active_s.M2, s->idle_s.M1, s->idle_s.M2,
+        (duration > 0 ? (double)(s->f_bytes+s->b_bytes)/duration : 0), (duration > 0 ? (double)s->f_bytes/duration : 0), (duration > 0 ? (double)s->b_bytes/duration : 0),
+        (duration > 0 ? (double)s->t_pay.n/duration : 0), (duration > 0 ? (double)s->f_pay.n/duration : 0), (duration > 0 ? (double)s->b_pay.n/duration : 0),
+        (s->f_pay.n > 0 ? (double)s->b_pay.n/s->f_pay.n : 0),
+        s->f_bulk_bytes, s->f_bulk_pkts, s->f_bulk_cnt, s->b_bulk_bytes, s->b_bulk_pkts, s->b_bulk_cnt,
+        s->dns_answer_count, s->dns_qtype, s->dns_qclass, s->tunnel_id, s->tunnel_type, s->ntp_mode, s->ntp_stratum, s->snmp_pdu_type, s->ssdp_method);
 
-    off += snprintf(buf + off, MAX_RECORD - off, "%u,%u,%u,%u,%u,%u,%u,%u,%u,",
-            s->dns_answer_count, s->dns_qtype, s->dns_qclass, s->tunnel_id, s->tunnel_type, s->ntp_mode, s->ntp_stratum,
-            s->snmp_pdu_type, s->ssdp_method);
-
+    /* Block 4: Histograms (Payload Distribution) */
     for (int i=0; i<HIST_BINS; i++) off += snprintf(buf + off, MAX_RECORD - off, "%lu,", s->t_hist[i]);
     for (int i=0; i<HIST_BINS; i++) off += snprintf(buf + off, MAX_RECORD - off, "%lu,", s->f_hist[i]);
     for (int i=0; i<HIST_BINS; i++) off += snprintf(buf + off, MAX_RECORD - off, "%lu%s", s->b_hist[i], (i == HIST_BINS - 1 ? "" : ","));
