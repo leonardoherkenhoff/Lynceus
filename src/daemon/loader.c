@@ -2,12 +2,7 @@
  * @file loader.c
  * @brief User-Space Control Plane - General Purpose Network Feature Extractor.
  *
- * @details
- * High-performance extraction engine for MAPE-K (Monitor) loops.
- * Features: Welford Moments, P² Medians, L7 Metadata, and Payload Histograms.
- * Built for high-fidelity network introspection and autonomous security.
- *
- * @version 1.0 (Science Parity Fix)
+ * @version 1.1 (Performance & Dual-Stack Optimization)
  */
 
 #define _GNU_SOURCE
@@ -44,9 +39,8 @@
 #define IDLE_FLOW_TIMEOUT_S 5.0
 #define IDLE_SCAN_BATCH     10000
 
-/* [Lock-Free Concurrency] Single-Producer Single-Consumer (SPSC) Rings */
 #define SPSC_SLOTS    1024
-#define MAX_RECORD    32768    /* Increased for full 495+ features + Histograms */
+#define MAX_RECORD    32768
 
 struct spsc_queue {
     char     data[SPSC_SLOTS][MAX_RECORD];
@@ -73,7 +67,7 @@ static inline void w_update(struct welford_stat *w, double x) {
     w->M4 += term1 * delta_n2 * (w->n * w->n - 3 * w->n + 3) + 6 * delta_n2 * w->M2 - 4 * delta_n * w->M3;
     w->M3 += term1 * delta_n * (w->n - 2) - 3 * delta_n * w->M2;
     w->M2 += term1;
-    if (x > w->max) w->max = (uint32_t)x; if (x < w->min) w->min = (uint32_t)x;
+    if (x > (double)w->max) w->max = (uint32_t)x; if (x < (double)w->min) w->min = (uint32_t)x;
     uint64_t cnt = w->n;
     if (cnt <= 5) {
         w->pq[cnt-1] = x;
@@ -234,6 +228,7 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
     sprintf(smac, "%02x:%02x:%02x:%02x:%02x:%02x", s->src_mac[0], s->src_mac[1], s->src_mac[2], s->src_mac[3], s->src_mac[4], s->src_mac[5]);
     sprintf(dmac, "%02x:%02x:%02x:%02x:%02x:%02x", s->dst_mac[0], s->dst_mac[1], s->dst_mac[2], s->dst_mac[3], s->dst_mac[4], s->dst_mac[5]);
 
+    /* Block 1: Identification & Basic Counters */
     off += snprintf(buf + off, MAX_RECORD - off, "%s-%s-%u-%u-%u,%s,%s,%u,%u,%u,%u,%u,%u,%u,%s,%s,%.6f,%.6f,%lu,%lu,%lu,%lu,%lu,%lu,%.2f,%.2f,",
         sip, dip, ntohs(s->key.src_port), ntohs(s->key.dst_port), (uint32_t)s->key.protocol,
         sip, dip, ntohs(s->key.src_port), ntohs(s->key.dst_port), (uint32_t)s->key.protocol,
@@ -241,8 +236,8 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
         s->t_pay.n, s->f_pay.n, s->b_pay.n, (uint64_t)(s->f_bytes + s->b_bytes), (uint64_t)s->f_bytes, (uint64_t)s->b_bytes,
         (s->b_pay.n > 0 ? (double)s->f_pay.n/s->b_pay.n : (double)s->f_pay.n), (s->b_bytes > 0 ? (double)s->f_bytes/s->b_bytes : (double)s->f_bytes));
 
+    /* Block 2: Consolidated Statistical Metrics (4 blocks of 4 for speed) */
     struct welford_stat *st[] = {&s->t_pay,&s->f_pay,&s->b_pay,&s->t_hdr,&s->f_hdr,&s->b_hdr,&s->t_iat,&s->f_iat,&s->b_iat,&s->t_delta,&s->f_delta,&s->b_delta,&s->win_s,&s->ip_id_s,&s->frag_s,&s->ttl_s};
-    /* Optimized: 4 metrics per block to balance function call overhead and stack pressure */
     for (int j=0; j<4; j++) {
         int i = j * 4;
         double m0 = (i+0 < 3) ? median_from_hist((i+0==0?s->t_hist:(i+0==1?s->f_hist:s->b_hist)), HIST_BINS, HIST_STEP, st[i+0]->n) : w_median(st[i+0]);
@@ -261,11 +256,12 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
             (double)st[i+3]->max, (double)st[i+3]->min, w_mean(st[i+3]), w_std(st[i+3]), w_var(st[i+3]), m3, w_skew(st[i+3]), w_kurt(st[i+3]), (w_mean(st[i+3])>0?w_std(st[i+3])/w_mean(st[i+3]):0));
     }
 
+    /* Block 3: Flags, Dual-Stack Entropy & L7 Metadata */
     off += snprintf(buf + off, MAX_RECORD - off, "%u,%u,", (uint32_t)s->f_win_init, (uint32_t)s->b_win_init);
     for (int i=0; i<8; i++) off += snprintf(buf + off, MAX_RECORD - off, "%lu,%lu,%lu,", s->flags[i], s->f_flags[i], s->b_flags[i]);
-    
     double entropy = calculate_entropy(s->ip_ver == 4 ? &s->key.src_ip[12] : s->key.src_ip, s->ip_ver == 4 ? 4 : 16);
     off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%u,%u,%u,%u,", entropy, (uint32_t)s->last_icmp_type, (uint32_t)s->last_icmp_code, (uint32_t)s->last_ttl, (uint32_t)s->last_icmp_id);
+
     struct welford_stat *ext[] = {&s->active_s, &s->idle_s};
     for (int i=0; i<2; i++) {
         off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,0.00,",
@@ -277,6 +273,8 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
         (s->f_pay.n > 0 ? (double)s->b_pay.n/s->f_pay.n : 0),
         (uint64_t)s->f_bulk_bytes, (uint64_t)s->f_bulk_pkts, (uint64_t)s->f_bulk_cnt, (uint64_t)s->b_bulk_bytes, (uint64_t)s->b_bulk_pkts, (uint64_t)s->b_bulk_cnt,
         (uint32_t)s->dns_answer_count, (uint32_t)s->dns_qtype, (uint32_t)s->dns_qclass, (uint32_t)s->tunnel_id, (uint32_t)s->tunnel_type, (uint32_t)s->ntp_mode, (uint32_t)s->ntp_stratum, (uint32_t)s->snmp_pdu_type, (uint32_t)s->ssdp_method);
+
+    /* Block 4: Histograms */
     for (int i=0; i<HIST_BINS; i++) off += snprintf(buf + off, MAX_RECORD - off, "%lu,", s->t_hist[i]);
     for (int i=0; i<HIST_BINS; i++) off += snprintf(buf + off, MAX_RECORD - off, "%lu,", s->f_hist[i]);
     for (int i=0; i<HIST_BINS; i++) off += snprintf(buf + off, MAX_RECORD - off, "%lu%s", s->b_hist[i], (i == HIST_BINS-1 ? "" : ","));
