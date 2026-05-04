@@ -78,7 +78,7 @@ TTL_DROP = [
     'TTL_Var_CoV', 'TTL_Var_Mode',
 ]
 
-MAX_SAMPLES = None
+MAX_SAMPLES = 5_000_000
 CHUNK_SIZE = 500_000
 
 
@@ -174,7 +174,7 @@ def _load_pandas(file_path, drop_cols):
         y_list.append(y_chunk)
         total_loaded += len(X_chunk)
 
-        if MAX_SAMPLES is not None and total_loaded >= MAX_SAMPLES:
+        if total_loaded >= MAX_SAMPLES:
             break
 
     if not X_list:
