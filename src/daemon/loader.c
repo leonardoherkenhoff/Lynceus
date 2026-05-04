@@ -35,8 +35,8 @@
 #include "../ebpf/lynceus.h"
 
 #define IDLE_THRESHOLD      1.0
-#define HIST_BINS           20
-#define HIST_STEP           80
+#define HIST_BINS           80
+#define HIST_STEP           20
 #define BULK_THRESHOLD      1.0
 #define IDLE_FLOW_TIMEOUT_S 5.0
 #define IDLE_SCAN_BATCH     10000
