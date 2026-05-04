@@ -78,7 +78,7 @@ TTL_DROP = [
     'TTL_Var_CoV', 'TTL_Var_Mode',
 ]
 
-MAX_SAMPLES = 10_000_000
+MAX_SAMPLES = 5_000_000
 CHUNK_SIZE = 500_000
 
 
