@@ -121,13 +121,16 @@ static inline double w_median(struct welford_stat *w) { return (w->n < 5) ? w->M
 static double calculate_entropy(const uint8_t *data, size_t len) {
     if (len == 0) return 0;
     uint32_t counts[256] = {0};
-    for (size_t i = 0; i < len; i++) counts[data[i]]++;
+    uint8_t unique[256]; int num_unique = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (counts[data[i]] == 0) unique[num_unique++] = data[i];
+        counts[data[i]]++;
+    }
     double entropy = 0;
-    for (int i = 0; i < 256; i++) {
-        if (counts[i] > 0) {
-            double p = (double)counts[i] / (double)len;
-            entropy -= p * log2(p);
-        }
+    double inv_len = 1.0 / (double)len;
+    for (int i = 0; i < num_unique; i++) {
+        double p = (double)counts[unique[i]] * inv_len;
+        entropy -= p * log2(p);
     }
     return entropy;
 }
@@ -241,6 +244,7 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
         (s->b_pay.n > 0 ? (double)s->f_pay.n/s->b_pay.n : (double)s->f_pay.n), (s->b_bytes > 0 ? (double)s->f_bytes/s->b_bytes : (double)s->f_bytes));
 
     struct welford_stat *st[] = {&s->t_pay,&s->f_pay,&s->b_pay,&s->t_hdr,&s->f_hdr,&s->b_hdr,&s->t_iat,&s->f_iat,&s->b_iat,&s->t_delta,&s->f_delta,&s->b_delta,&s->win_s,&s->ip_id_s,&s->frag_s,&s->ttl_s};
+    #pragma GCC unroll 16
     for (int i=0; i<16; i++) {
         double med = (i<3) ? median_from_hist((i==0?s->t_hist:(i==1?s->f_hist:s->b_hist)), HIST_BINS, HIST_STEP, st[i]->n) : w_median(st[i]);
         off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,0.00,",
