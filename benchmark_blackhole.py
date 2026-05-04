@@ -16,19 +16,15 @@ import re
 BASE_DIR = "/opt/eBPFNetFlowLyzer"
 DATA_RAW = os.path.join(BASE_DIR, "data/raw/PCAP")
 
-INJECT_IFACE = "veth0"
-SENSOR_IFACE = "veth1"
+INJECT_IFACE = "lo"
+SENSOR_IFACE = "lo"
 
 def setup_veth():
-    subprocess.run(["ip", "link", "delete", INJECT_IFACE], check=False, stderr=subprocess.DEVNULL)
-    subprocess.run(["ip", "link", "add", INJECT_IFACE, "type", "veth", "peer", "name", SENSOR_IFACE], check=True)
-    subprocess.run(["ip", "link", "set", INJECT_IFACE, "up"], check=True)
-    subprocess.run(["ip", "link", "set", SENSOR_IFACE, "up"], check=True)
-    subprocess.run(["sysctl", "-w", f"net.ipv6.conf.{INJECT_IFACE}.disable_ipv6=0"], check=False, stderr=subprocess.DEVNULL)
-    subprocess.run(["sysctl", "-w", f"net.ipv6.conf.{SENSOR_IFACE}.disable_ipv6=0"], check=False, stderr=subprocess.DEVNULL)
+    # Bypassing VETH overhead by injecting and listening directly on the host loopback stack
+    subprocess.run(["sysctl", "-w", f"net.ipv6.conf.lo.disable_ipv6=0"], check=False, stderr=subprocess.DEVNULL)
 
 def teardown_veth():
-    subprocess.run(["ip", "link", "delete", INJECT_IFACE], check=False, stderr=subprocess.DEVNULL)
+    pass
 
 def run_blackhole_test():
     print("=== eBPF Zero-IO Extraction Benchmark ===")
