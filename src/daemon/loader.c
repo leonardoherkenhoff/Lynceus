@@ -43,7 +43,7 @@
 #define IDLE_SCAN_BATCH     10000
 
 /* [Lock-Free Concurrency] Single-Producer Single-Consumer (SPSC) Rings */
-#define SPSC_SLOTS    1024     /* per-worker queue depth (power of 2) */
+#define SPSC_SLOTS    32768    /* per-worker queue depth (power of 2) */
 #define MAX_RECORD    16384    /* max serialized record size (incl. histograms) */
 
 struct spsc_queue {
@@ -75,13 +75,10 @@ static inline void w_update(struct welford_stat *w, double x) {
     uint64_t n1 = w->n; w->n++;
     double delta = x - w->M1, delta_n = delta / w->n, delta_n2 = delta_n * delta_n, term1 = delta * delta_n * n1;
     w->M1 += delta_n;
-#ifndef PARITY_RUSTIFLOW
     w->M4 += term1 * delta_n2 * (w->n * w->n - 3 * w->n + 3) + 6 * delta_n2 * w->M2 - 4 * delta_n * w->M3;
     w->M3 += term1 * delta_n * (w->n - 2) - 3 * delta_n * w->M2;
-#endif
     w->M2 += term1;
     if (x > w->max) w->max = (uint32_t)x; if (x < w->min) w->min = (uint32_t)x;
-#ifndef PARITY_RUSTIFLOW
     /* P² (Piecewise-Parabolic) Online Quantile Estimation (Jain & Chlamtac) */
     uint64_t cnt = w->n; /* already incremented */
     if (cnt <= 5) {
@@ -123,7 +120,6 @@ static inline void w_update(struct welford_stat *w, double x) {
             w->pn[i] += s;
         }
     }
-#endif
 }
 
 static inline double w_mean(struct welford_stat *w) { return w->M1; }
@@ -365,7 +361,8 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
     }
 
     /* Instant Flush for high-volume flows or TCP completion */
-    if (s->t_pay.n >= 50 || (e->rec.tcp_flags & 0x05)) {
+    /* ENHANCED: Threshold raised to 500,000 to eliminate string-formatting bottleneck during massive DDoS. */
+    if (s->t_pay.n >= 500000 || (e->rec.tcp_flags & 0x05)) {
         flush_flow_record(w, s, e->timestamp_ns);
         s->active = 0; /* Reset state after flush */
     }
