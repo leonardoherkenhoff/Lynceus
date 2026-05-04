@@ -45,8 +45,22 @@ ML_SCRIPT = os.path.join(BASE_DIR, "scripts/analysis/ebpf_run_benchmark.py")
 INJECT_IFACE = "veth0"
 SENSOR_IFACE = "veth1"
 
-# --- Engine Namespace ---
-ENGINE_NAME = "Lynceus_Parity_NetFlowLyzer"
+def get_engine_config():
+    """
+    Detect engine name and parity flag from current git branch.
+    """
+    try:
+        branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).decode().strip()
+        if "rustiflow" in branch.lower():
+            return "Lynceus_Parity_RustiFlow", "RUSTIFLOW"
+        if "nfx" in branch.lower():
+            return "Lynceus_Parity_NFX", "NFX"
+        return "Lynceus_Parity_NetFlowLyzer", "NETFLOWLYZER"
+    except Exception:
+        return "Lynceus_Parity_NetFlowLyzer", "NETFLOWLYZER"
+
+ENGINE_NAME, PARITY_SUFFIX = get_engine_config()
+PARITY_FLAG = f"-DPARITY_{PARITY_SUFFIX}"
 
 # --- PCAP Categories (IPv4-only: legacy tools lack IPv6 support) ---
 PCAP_CATEGORIES = ["PCAP"]
@@ -210,7 +224,7 @@ def main():
     attack directory, extracting per-attack telemetry. After all extractions,
     invokes the ML benchmark on the complete labeled tree.
     """
-    print("=== Lynceus eBPF Benchmark Pipeline (NetFlowLyzer Parity) ===")
+    print(f"=== Lynceus eBPF Benchmark Pipeline ({ENGINE_NAME}) ===")
     if os.geteuid() != 0:
         print("FATAL: Root privileges required (BPF/XDP).")
         exit(1)
@@ -223,13 +237,13 @@ def main():
     print(f"[*] Discovered {len(attack_dirs)} attack vectors.")
 
     # --- One-time Parity Compilation ---
-    print("[1/3] Compiling Lynceus under -DPARITY_NETFLOWLYZER...")
+    print(f"[1/3] Compiling Lynceus under {PARITY_FLAG}...")
     compilation_cmd = (
-        "make clean && make "
-        "CFLAGS='-g -O2 -Wall -Wextra -std=gnu11 -DPARITY_NETFLOWLYZER' "
-        "BPF_CFLAGS='-g -O2 -target bpf -D__TARGET_ARCH_x86 -Isrc/ebpf "
-        "-Wall -Wno-missing-declarations -Wno-compare-distinct-pointer-types "
-        "-DPARITY_NETFLOWLYZER'"
+        f"make clean && make "
+        f"CFLAGS='-g -O2 -Wall -Wextra -std=gnu11 {PARITY_FLAG}' "
+        f"BPF_CFLAGS='-g -O2 -target bpf -D__TARGET_ARCH_x86 -Isrc/ebpf "
+        f"-Wall -Wno-missing-declarations -Wno-compare-distinct-pointer-types "
+        f"{PARITY_FLAG}'"
     )
     subprocess.run(compilation_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, cwd=BASE_DIR)
 
@@ -258,7 +272,7 @@ def main():
     print(f"\n{'='*60}")
     print(f"  AGGREGATE: {len(summaries)} attacks | {total_pkts:,} pkts | {total_time:.1f}s")
     print(f"{'='*60}")
-    print("\n[✔] NetFlowLyzer Parity Assessment Concluded.")
+    print(f"\n[✔] {ENGINE_NAME} Assessment Concluded.")
 
 
 if __name__ == "__main__":
