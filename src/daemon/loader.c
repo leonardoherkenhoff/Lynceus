@@ -404,16 +404,16 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
 
     off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%u,%u,",
             median_from_hist(s->t_hist, HIST_BINS, HIST_STEP, s->t_pay.n), median_from_hist(s->f_hist, HIST_BINS, HIST_STEP, s->f_pay.n), median_from_hist(s->b_hist, HIST_BINS, HIST_STEP, s->b_pay.n),
-            s->t_hdr.m1, s->t_hdr.m2, s->f_hdr.m1, s->f_hdr.m2, s->b_hdr.m1, s->b_hdr.m2,
-            s->t_iat.m1, s->t_iat.m2, s->f_iat.m1, s->f_iat.m2, s->b_iat.m1, s->b_iat.m2,
-            s->t_delta.m1, s->t_delta.m2, s->f_delta.m1, s->f_delta.m2, s->b_delta.m1, s->b_delta.m2,
-            s->win_s.m1, s->win_s.m2, s->ip_id_s.m1, s->ip_id_s.m2, s->frag_s.m1, s->frag_s.m2, s->ttl_s.m1, s->ttl_s.m2,
+            s->t_hdr.M1, s->t_hdr.M2, s->f_hdr.M1, s->f_hdr.M2, s->b_hdr.M1, s->b_hdr.M2,
+            s->t_iat.M1, s->t_iat.M2, s->f_iat.M1, s->f_iat.M2, s->b_iat.M1, s->b_iat.M2,
+            s->t_delta.M1, s->t_delta.M2, s->f_delta.M1, s->f_delta.M2, s->b_delta.M1, s->b_delta.M2,
+            s->win_s.M1, s->win_s.M2, s->ip_id_s.M1, s->ip_id_s.M2, s->frag_s.M1, s->frag_s.M2, s->ttl_s.M1, s->ttl_s.M2,
             s->f_win_init, s->b_win_init);
 
     for (int i=0; i<8; i++) off += snprintf(buf + off, MAX_RECORD - off, "%lu,%lu,%lu,", s->flags[i], s->f_flags[i], s->b_flags[i]);
     off += snprintf(buf + off, MAX_RECORD - off, "0.00,%u,%u,%u,%u,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,",
             s->last_icmp_type, s->last_icmp_code, s->last_ttl, s->last_icmp_id,
-            s->active_s.m1, s->active_s.m2, s->idle_s.m1, s->idle_s.m2,
+            s->active_s.M1, s->active_s.M2, s->idle_s.M1, s->idle_s.M2,
             (duration > 0 ? (s->f_bytes+s->b_bytes)/duration : 0), (duration > 0 ? s->f_bytes/duration : 0), (duration > 0 ? s->b_bytes/duration : 0),
             (duration > 0 ? s->t_pay.n/duration : 0), (duration > 0 ? s->f_pay.n/duration : 0), (duration > 0 ? s->b_pay.n/duration : 0),
             (s->f_pay.n > 0 ? (double)s->b_pay.n/s->f_pay.n : 0),
