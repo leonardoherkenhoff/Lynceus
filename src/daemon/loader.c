@@ -578,13 +578,21 @@ int main(int argc, char **argv) {
         /* Step 2: remove any legacy direct XDP attachments (DRV + SKB) */
         bpf_xdp_detach(ifindex, XDP_FLAGS_DRV_MODE, NULL);
         bpf_xdp_detach(ifindex, XDP_FLAGS_SKB_MODE, NULL);
-        /* Step 3: attach in SKB (generic) mode. 
-         * NOTE: SKB mode is required for veth pairs on many kernels and 
-         * ensures compatibility in virtualised research environments. */
-        int ret = bpf_xdp_attach(ifindex, prog_fd, XDP_FLAGS_SKB_MODE, NULL);
+        /* Step 3: Auto-Negotiate XDP Attach Mode 
+         * Attempt Native Driver Mode (DRV_MODE) for SmartNICs (Intel/Broadcom)
+         * to achieve millions of PPS (Zero-Copy). If it fails (e.g., on VETH or LO),
+         * fallback gracefully to SKB_MODE. */
+        int flags = XDP_FLAGS_DRV_MODE;
+        int ret = bpf_xdp_attach(ifindex, prog_fd, flags, NULL);
+        if (ret < 0) {
+            fprintf(stderr, "[-] Native DRV_MODE failed. Falling back to Generic SKB_MODE...\n");
+            flags = XDP_FLAGS_SKB_MODE;
+            ret = bpf_xdp_attach(ifindex, prog_fd, flags, NULL);
+        }
         if (ret) { fprintf(stderr, "FATAL: XDP attach on '%s' failed: %s\n", argv[i], strerror(-ret)); return 1; }
         ifindexes[num_ifaces++] = ifindex;
-        fprintf(stderr, "✅ XDP attached to %s (ifindex=%d, SKB mode)\n", argv[i], ifindex);
+        fprintf(stderr, "✅ XDP attached to %s (ifindex=%d, mode=%s)\n", argv[i], ifindex, 
+                (flags == XDP_FLAGS_DRV_MODE) ? "DRV/Native" : "SKB/Generic");
     }
 
     printf("🚀 [v1.0] %d Workers | Total Hash Cap: %.1fM | Flush: FIN/RST + N=100 + Idle(%.0fs)\n",
