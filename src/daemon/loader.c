@@ -43,7 +43,7 @@
 #define IDLE_SCAN_BATCH     10000
 
 /* [Lock-Free Concurrency] Single-Producer Single-Consumer (SPSC) Rings */
-#define SPSC_SLOTS    1024     /* per-worker queue depth (power of 2) */
+#define SPSC_SLOTS    32768    /* per-worker queue depth (power of 2) */
 #define MAX_RECORD    16384    /* max serialized record size (incl. histograms) */
 
 struct spsc_queue {
@@ -361,7 +361,8 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
     }
 
     /* Instant Flush for high-volume flows or TCP completion */
-    if (s->t_pay.n >= 50 || (e->rec.tcp_flags & 0x05)) {
+    /* ENHANCED: Threshold raised to 500,000 to eliminate string-formatting bottleneck during massive DDoS. */
+    if (s->t_pay.n >= 500000 || (e->rec.tcp_flags & 0x05)) {
         flush_flow_record(w, s, e->timestamp_ns);
         s->active = 0; /* Reset state after flush */
     }

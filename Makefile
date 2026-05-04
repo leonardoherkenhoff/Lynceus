@@ -27,7 +27,7 @@ DAEMON_BIN = $(BUILD_DIR)/loader
 
 # --- Compilation Flags ---
 # User-Space: Standard C99/GNU11 with libbpf and math linkage
-CFLAGS = -g -O2 -Wall -Wextra -std=gnu11
+CFLAGS = -g -O3 -march=native -flto -Wall -Wextra -std=gnu11
 # Kernel-Space: BPF architecture target with BTF alignment
 BPF_CFLAGS = -g -O2 -target bpf -D__TARGET_ARCH_x86 -I$(EBPF_DIR) \
              -Wall -Wno-missing-declarations -Wno-compare-distinct-pointer-types
