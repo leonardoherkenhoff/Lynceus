@@ -1,29 +1,30 @@
 #!/usr/bin/env python3
 """
-Lynceus Empirical Validation Pipeline - NFX (XFAST) Parity Orchestrator
------------------------------------------------------------------------
+Lynceus Empirical Validation Pipeline - NetFlowLyzer Parity Orchestrator
+------------------------------------------------------------------------
 Scientific Milestone: Comparative Architecture Validation (SBSeg)
 
 Research Objective:
-    Automates the isolated benchmarking of eBPF telemetry engines under strict
-    architectural parity constraints against the NetFeatureXtract (XFAST)
-    baseline. IPv4-only injection (XFAST lacks IPv6 support).
+    Automates the isolated benchmarking of the Lynceus eBPF engine under
+    semantic parity constraints against NTLFlowLyzer and ALFlowLyzer.
+    Compiles under -DPARITY_NETFLOWLYZER to suppress histogram bins and
+    tunnel metadata. IPv4-only injection (legacy tools lack IPv6 support).
 
     Extraction is performed **per attack vector directory**, matching the
     methodology of the original ``ebpf_wrapper.py`` pipeline. Each attack
-    gets its own engine instance, CSV output, resource profiling, and
+    gets its own Lynceus instance, CSV output, resource profiling, and
     ground-truth labeling.
 
-Pipeline (per engine, per attack directory):
+Pipeline (per attack directory):
     1. Virtual Topology: Instantiates VETH pair (Injector -> Sensor).
-    2. Engine Ignition: Spawns the engine daemon, stdout -> per-attack CSV.
+    2. Engine Ignition: Spawns the Lynceus daemon, stdout -> per-attack CSV.
     3. Resource Profiling: Captures CPU/Memory via ``scripts/testbed/monitor.py``.
     4. Volumetric Injection: Replays PCAPs from a single attack directory.
     5. Graceful Termination: Synchronizes engine buffers and exports summary.json.
     6. Ground-Truth Labeling: Invokes ``ebpf_labeler.py`` on the per-attack output.
 
 Post-Extraction:
-    7. ML Analysis: Invokes ``ebpf_run_benchmark.py`` over each engine's labeled tree.
+    7. ML Analysis: Invokes ``ebpf_run_benchmark.py`` over the full labeled tree.
 """
 
 import subprocess
@@ -44,28 +45,11 @@ ML_SCRIPT = os.path.join(BASE_DIR, "scripts/analysis/ebpf_run_benchmark.py")
 INJECT_IFACE = "veth0"
 SENSOR_IFACE = "veth1"
 
-# --- IPv4-only Categories (XFAST lacks IPv6 support) ---
-PCAP_CATEGORIES = ["PCAP"]
+# --- Engine Namespace ---
+ENGINE_NAME = "Lynceus_Parity_NetFlowLyzer"
 
-# --- Orthogonal Test Matrix ---
-EXPERIMENTS = [
-    {
-        "name": "XFAST_Adaptive_Baseline",
-        "cmd": ["/opt/XFAST/ebpf/xdp_user", "-i", SENSOR_IFACE],
-        "setup_cmd": None
-    },
-    {
-        "name": "Lynceus_Parity_NFX",
-        "cmd": ["./build/loader", SENSOR_IFACE],
-        "setup_cmd": (
-            "make clean && make "
-            "CFLAGS='-g -O2 -Wall -Wextra -std=gnu11 -DPARITY_NFX' "
-            "BPF_CFLAGS='-g -O2 -target bpf -D__TARGET_ARCH_x86 -Isrc/ebpf "
-            "-Wall -Wno-missing-declarations -Wno-compare-distinct-pointer-types "
-            "-DPARITY_NFX'"
-        )
-    }
-]
+# --- PCAP Categories (IPv4-only: legacy tools lack IPv6 support) ---
+PCAP_CATEGORIES = ["PCAP"]
 
 
 def setup_veth():
@@ -94,7 +78,9 @@ def get_attack_dirs():
     """
     Discover per-attack PCAP directories from the raw dataset.
 
-    Scans only IPv4 PCAPs (XFAST does not support IPv6).
+    Each subdirectory under PCAP/{day}/ represents a single attack vector
+    (e.g., PCAP/01-12/DrDoS_DNS/). Returns a sorted list of (category,
+    attack_dir) tuples for deterministic execution order.
 
     Returns:
         list: Sorted list of (category, absolute_pcap_dir) tuples.
@@ -111,23 +97,22 @@ def get_attack_dirs():
     return attack_dirs
 
 
-def extract_attack(exp, category, pcap_dir):
+def extract_attack(category, pcap_dir):
     """
-    Execute a single-attack extraction cycle for a given engine.
+    Execute a single-attack extraction cycle.
 
-    Spawns a fresh engine instance per attack directory, producing an isolated
+    Spawns a fresh Lynceus instance per attack directory, producing an isolated
     CSV, resource metrics, and performance summary.
 
     Args:
-        exp (dict): Engine descriptor with keys 'name', 'cmd'.
-        category (str): PCAP category ('PCAP').
+        category (str): PCAP category ('PCAP' or 'PCAPv6').
         pcap_dir (str): Absolute path to the attack directory containing PCAPs.
 
     Returns:
-        dict or None: Summary with packets, elapsed time, PPS, and output dir.
+        dict: Summary with packets, elapsed time, PPS, and output directory.
     """
     rel_path = os.path.relpath(pcap_dir, os.path.join(DATA_RAW, category))
-    output_dir = os.path.join(DATA_INTERIM, exp["name"], category, rel_path)
+    output_dir = os.path.join(DATA_INTERIM, ENGINE_NAME, category, rel_path)
     os.makedirs(output_dir, exist_ok=True)
 
     experiment_name = f"{category}/{rel_path}"
@@ -138,7 +123,7 @@ def extract_attack(exp, category, pcap_dir):
     if not pcaps:
         return None
 
-    print(f"\n  🚀 [{exp['name']}] {experiment_name}")
+    print(f"\n  🚀 EXTRACTION: {experiment_name}")
 
     # --- Step 1: Virtual Topology ---
     setup_veth()
@@ -147,9 +132,10 @@ def extract_attack(exp, category, pcap_dir):
         # --- Step 2: Engine Ignition ---
         f_csv = open(csv_out_path, 'w')
         extractor = subprocess.Popen(
-            exp["cmd"], stdout=f_csv, stderr=subprocess.DEVNULL, cwd=BASE_DIR
+            ["./build/loader", SENSOR_IFACE],
+            stdout=f_csv, stderr=subprocess.DEVNULL, cwd=BASE_DIR
         )
-        time.sleep(3)  # BPF map / engine allocation stabilization
+        time.sleep(3)  # BPF map allocation stabilization
 
         # --- Step 3: Resource Profiling ---
         proc_mon = None
@@ -205,7 +191,7 @@ def extract_attack(exp, category, pcap_dir):
 
     # Persist summary
     summary = {
-        "experiment": experiment_name, "engine": exp["name"],
+        "experiment": experiment_name, "engine": ENGINE_NAME,
         "packets_sent": total_packets, "time_seconds": round(elapsed, 2),
         "pps": round(pps, 2), "timestamp": time.ctime()
     }
@@ -220,11 +206,11 @@ def main():
     """
     Main orchestration entry point.
 
-    Iterates over the engine matrix (XFAST, then Lynceus parity).
-    For each engine, iterates over every attack directory, extracting
-    per-attack telemetry. After each engine completes, invokes ML analysis.
+    Compiles once under -DPARITY_NETFLOWLYZER, then iterates over every
+    attack directory, extracting per-attack telemetry. After all extractions,
+    invokes the ML benchmark on the complete labeled tree.
     """
-    print("=== Lynceus eBPF Benchmark Pipeline (NFX/XFAST Parity) ===")
+    print("=== Lynceus eBPF Benchmark Pipeline (NetFlowLyzer Parity) ===")
     if os.geteuid() != 0:
         print("FATAL: Root privileges required (BPF/XDP).")
         exit(1)
@@ -236,45 +222,43 @@ def main():
 
     print(f"[*] Discovered {len(attack_dirs)} attack vectors.")
 
-    for exp in EXPERIMENTS:
-        print(f"\n{'='*60}")
-        print(f"  ENGINE: {exp['name']}")
-        print(f"{'='*60}")
+    # --- One-time Parity Compilation ---
+    print("[1/3] Compiling Lynceus under -DPARITY_NETFLOWLYZER...")
+    compilation_cmd = (
+        "make clean && make "
+        "CFLAGS='-g -O2 -Wall -Wextra -std=gnu11 -DPARITY_NETFLOWLYZER' "
+        "BPF_CFLAGS='-g -O2 -target bpf -D__TARGET_ARCH_x86 -Isrc/ebpf "
+        "-Wall -Wno-missing-declarations -Wno-compare-distinct-pointer-types "
+        "-DPARITY_NETFLOWLYZER'"
+    )
+    subprocess.run(compilation_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, cwd=BASE_DIR)
 
-        # --- Conditional Compilation ---
-        if exp["setup_cmd"]:
-            print(f"  Compiling under parity constraints...")
-            subprocess.run(exp["setup_cmd"], shell=True, check=True,
-                           stdout=subprocess.DEVNULL, cwd=BASE_DIR)
+    # --- Per-Attack Extraction ---
+    print(f"\n[2/3] Extracting {len(attack_dirs)} attack vectors...")
+    summaries = []
+    for category, pcap_dir in attack_dirs:
+        result = extract_attack(category, pcap_dir)
+        if result:
+            summaries.append(result)
 
-        # --- Per-Attack Extraction ---
-        summaries = []
-        for category, pcap_dir in attack_dirs:
-            result = extract_attack(exp, category, pcap_dir)
-            if result:
-                summaries.append(result)
+    # --- Global ML Analysis ---
+    engine_processed = os.path.join(BASE_DIR, "data/processed/EBPF", ENGINE_NAME)
+    if os.path.exists(engine_processed):
+        print(f"\n[3/3] Executing Random Forest Analysis (SBSeg Parity)...")
+        subprocess.run(
+            ["python3", ML_SCRIPT, "--dataset", engine_processed],
+            check=False, cwd=BASE_DIR
+        )
+    else:
+        print(f"\n[3/3] ⚠️  No labeled data found at {engine_processed}")
 
-        # --- ML Analysis for this engine ---
-        engine_processed = os.path.join(BASE_DIR, "data/processed/EBPF", exp["name"])
-        if os.path.exists(engine_processed):
-            print(f"\n  📊 ML Analysis for {exp['name']}...")
-            subprocess.run(
-                ["python3", ML_SCRIPT, "--dataset", engine_processed],
-                check=False, cwd=BASE_DIR
-            )
-        else:
-            print(f"\n  ⚠️  No labeled data found at {engine_processed}")
-
-        # Aggregate
-        total_pkts = sum(s["packets_sent"] for s in summaries)
-        total_time = sum(s["time_seconds"] for s in summaries)
-        print(f"\n  AGGREGATE [{exp['name']}]: {len(summaries)} attacks | "
-              f"{total_pkts:,} pkts | {total_time:.1f}s")
-
-        time.sleep(5)  # Cooldown between engines
-
+    # --- Aggregate Report ---
+    total_pkts = sum(s["packets_sent"] for s in summaries)
+    total_time = sum(s["time_seconds"] for s in summaries)
     print(f"\n{'='*60}")
-    print("[✔] NFX/XFAST Parity Assessment Concluded.")
+    print(f"  AGGREGATE: {len(summaries)} attacks | {total_pkts:,} pkts | {total_time:.1f}s")
+    print(f"{'='*60}")
+    print("\n[✔] NetFlowLyzer Parity Assessment Concluded.")
 
 
 if __name__ == "__main__":

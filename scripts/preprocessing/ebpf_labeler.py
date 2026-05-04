@@ -67,16 +67,17 @@ def _detect_ip_column(columns):
 def _process_polars(file_path, category, output_file):
     """
     Label a CSV file using Polars (multi-threaded Rust backend).
-
-    Args:
-        file_path (str): Path to the raw CSV.
-        category (str): Attack category label to apply.
-        output_file (str): Destination path for the labeled CSV.
-
-    Returns:
-        int: Number of rows processed.
     """
-    df = pl.read_csv(file_path, infer_schema_length=10000, ignore_errors=True)
+    if os.path.getsize(file_path) == 0:
+        return 0
+        
+    try:
+        df = pl.read_csv(file_path, infer_schema_length=10000, ignore_errors=True)
+        if df.is_empty():
+            return 0
+    except Exception:
+        return 0
+
     ip_col = _detect_ip_column(df.columns)
 
     if ip_col:
