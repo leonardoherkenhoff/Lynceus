@@ -183,7 +183,6 @@ static void *writer_fn(void *arg) {
                 atomic_store_explicit(&q->head, h, memory_order_release);
             }
         }
-        if (flushed) fflush(g_out_f);
         if (!flushed && !exiting) { struct timespec ts = {0, 1000000}; nanosleep(&ts, NULL); }
     } while (!exiting || flushed);
     return NULL;
@@ -211,7 +210,6 @@ static inline void fast_ip_to_str(char *buf, int *off, uint8_t ver, const uint8_
 
 static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t now_ns) {
     if (!s->active || s->t_pay.n == 0) return;
-    fprintf(stderr, "[DEBUG] Flush: worker %d, pkts %lu\n", w->id, s->t_pay.n);
     struct spsc_queue *q = &g_queues[w->id];
     uint32_t t = atomic_load_explicit(&q->tail, memory_order_relaxed);
     uint32_t h = atomic_load_explicit(&q->head, memory_order_acquire);
@@ -319,7 +317,7 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
         s->last_b_pay = e->rec.payload_len; s->b_hist[b_idx]++; s->b_bytes += e->rec.payload_len;
         for (int i=0; i<8; i++) if (e->rec.tcp_flags & (1<<i)) { s->flags[i]++; s->b_flags[i]++; }
     }
-    if (s->t_pay.n >= 100 || (e->rec.tcp_flags & 0x05)) { flush_flow_record(w, s, e->timestamp_ns); s->active = 0; }
+    if (s->t_pay.n >= 1000 || (e->rec.tcp_flags & 0x05)) { flush_flow_record(w, s, e->timestamp_ns); s->active = 0; }
     w->processed_events++; return 0;
 }
 
