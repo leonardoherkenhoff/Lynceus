@@ -62,8 +62,8 @@ def run_benchmark():
             if matches:
                 total_packets += int(matches[0])
                 
-        time.sleep(2) # Allow RingBuffers to drain and daemon to flush
         elapsed = time.time() - start_time
+        time.sleep(2) # Allow RingBuffers to drain and daemon to flush
         pps = total_packets / elapsed if elapsed > 0 else 0
         
         print("[*] Stopping engine...")
