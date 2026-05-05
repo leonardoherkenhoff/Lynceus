@@ -40,7 +40,7 @@
 #define IDLE_SCAN_BATCH     10000
 
 #define SPSC_SLOTS    1024
-#define MAX_RECORD    32768
+#define MAX_RECORD    16384
 
 struct spsc_queue {
     char     data[SPSC_SLOTS][MAX_RECORD];
@@ -211,9 +211,24 @@ static inline double median_from_hist(const uint64_t *hist, uint64_t n) {
 
 static inline void fast_ip_to_str(char *buf, int *off, uint8_t ver, const uint8_t *addr) {
     if (ver == 4) {
-        *off += sprintf(buf + *off, "%u.%u.%u.%u", addr[12], addr[13], addr[14], addr[15]);
+        uint8_t a = addr[12], b = addr[13], c = addr[14], d = addr[15];
+        if (a >= 100) { buf[(*off)++] = (a / 100) + '0'; a %= 100; buf[(*off)++] = (a / 10) + '0'; buf[(*off)++] = (a % 10) + '0'; }
+        else if (a >= 10) { buf[(*off)++] = (a / 10) + '0'; buf[(*off)++] = (a % 10) + '0'; }
+        else buf[(*off)++] = a + '0';
+        buf[(*off)++] = '.';
+        if (b >= 100) { buf[(*off)++] = (b / 100) + '0'; b %= 100; buf[(*off)++] = (b / 10) + '0'; buf[(*off)++] = (b % 10) + '0'; }
+        else if (b >= 10) { buf[(*off)++] = (b / 10) + '0'; buf[(*off)++] = (b % 10) + '0'; }
+        else buf[(*off)++] = b + '0';
+        buf[(*off)++] = '.';
+        if (c >= 100) { buf[(*off)++] = (c / 100) + '0'; c %= 100; buf[(*off)++] = (c / 10) + '0'; buf[(*off)++] = (c % 10) + '0'; }
+        else if (c >= 10) { buf[(*off)++] = (c / 10) + '0'; buf[(*off)++] = (c % 10) + '0'; }
+        else buf[(*off)++] = c + '0';
+        buf[(*off)++] = '.';
+        if (d >= 100) { buf[(*off)++] = (d / 100) + '0'; d %= 100; buf[(*off)++] = (d / 10) + '0'; buf[(*off)++] = (d % 10) + '0'; }
+        else if (d >= 10) { buf[(*off)++] = (d / 10) + '0'; buf[(*off)++] = (d % 10) + '0'; }
+        else buf[(*off)++] = d + '0';
     } else {
-        *off += sprintf(buf + *off, "%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
+        *off += snprintf(buf + *off, 40, "%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
             addr[0], addr[1], addr[2], addr[3], addr[4], addr[5], addr[6], addr[7],
             addr[8], addr[9], addr[10], addr[11], addr[12], addr[13], addr[14], addr[15]);
     }
@@ -274,8 +289,8 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
 
 static int handle_event(void *ctx, void *data, size_t data_sz) {
     (void)data_sz; struct worker_t *w = ctx; const packet_event_t *e = data;
-    uint32_t h = 0; const uint8_t *p = (const uint8_t *)&e->key;
-    for (size_t i = 0; i < sizeof(flow_id_t); i++) h = h * 31 + p[i];
+    uint32_t h = 2166136261U; const uint8_t *p = (const uint8_t *)&e->key;
+    for (size_t i = 0; i < sizeof(flow_id_t); i++) { h ^= p[i]; h *= 16777619; }
     uint32_t idx = h % FLOW_HASH_SIZE, probes = 0;
     while (w->flow_table[idx].active && memcmp(&w->flow_table[idx].key, &e->key, sizeof(flow_id_t)) != 0) {
         idx = (idx + 1) % FLOW_HASH_SIZE; if (++probes > 4096) return 0;

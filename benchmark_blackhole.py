@@ -15,7 +15,7 @@ import re
 BASE_DIR = "/opt/eBPFNetFlowLyzer"
 DATA_RAW = os.path.join(BASE_DIR, "data/raw/PCAP")
 INJECT_IFACE = "eno12399np0"
-SENSOR_IFACE = "eno12399np0"
+SENSOR_IFACE = "eno12409np1"
 
 def setup_nic():
     print(f"[*] Configuring hardware: {INJECT_IFACE}")
