@@ -228,7 +228,7 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
     sprintf(smac, "%02x:%02x:%02x:%02x:%02x:%02x", s->src_mac[0], s->src_mac[1], s->src_mac[2], s->src_mac[3], s->src_mac[4], s->src_mac[5]);
     sprintf(dmac, "%02x:%02x:%02x:%02x:%02x:%02x", s->dst_mac[0], s->dst_mac[1], s->dst_mac[2], s->dst_mac[3], s->dst_mac[4], s->dst_mac[5]);
 
-    /* Block 1: Identification & Basic Counters */
+    /* Block 1: Identification & Base Counters */
     off += snprintf(buf + off, MAX_RECORD - off, "%s-%s-%u-%u-%u,%s,%s,%u,%u,%u,%u,%u,%u,%u,%s,%s,%.6f,%.6f,%lu,%lu,%lu,%lu,%lu,%lu,%.2f,%.2f,",
         sip, dip, ntohs(s->key.src_port), ntohs(s->key.dst_port), (uint32_t)s->key.protocol,
         sip, dip, ntohs(s->key.src_port), ntohs(s->key.dst_port), (uint32_t)s->key.protocol,
@@ -236,7 +236,7 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
         s->t_pay.n, s->f_pay.n, s->b_pay.n, (uint64_t)(s->f_bytes + s->b_bytes), (uint64_t)s->f_bytes, (uint64_t)s->b_bytes,
         (s->b_pay.n > 0 ? (double)s->f_pay.n/s->b_pay.n : (double)s->f_pay.n), (s->b_bytes > 0 ? (double)s->f_bytes/s->b_bytes : (double)s->f_bytes));
 
-    /* Block 2: Consolidated Statistical Metrics (4 blocks of 4 for speed) */
+    /* Block 2: Consolidated Statistical Metrics (4 blocks of 4 metrics) */
     struct welford_stat *st[] = {&s->t_pay,&s->f_pay,&s->b_pay,&s->t_hdr,&s->f_hdr,&s->b_hdr,&s->t_iat,&s->f_iat,&s->b_iat,&s->t_delta,&s->f_delta,&s->b_delta,&s->win_s,&s->ip_id_s,&s->frag_s,&s->ttl_s};
     for (int j=0; j<4; j++) {
         int i = j * 4;
