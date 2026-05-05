@@ -42,11 +42,11 @@ def run_benchmark():
     test_pcaps = pcaps[:3]
     
     try:
-        print("[*] Starting engine...")
-        with open("extractor.log", "w") as log_f:
+        print("[*] Starting engine (Telemetry sample redirected to sample_flows.csv)...")
+        with open("extractor.log", "w") as log_f, open("sample_flows.csv", "w") as out_f:
             extractor = subprocess.Popen(
                 ["./build/loader", SENSOR_IFACE],
-                stdout=subprocess.DEVNULL, stderr=log_f, cwd=BASE_DIR
+                stdout=out_f, stderr=log_f, cwd=BASE_DIR
             )
         time.sleep(3)
         
