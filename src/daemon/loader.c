@@ -408,7 +408,9 @@ int main(int argc, char **argv) {
         detach_xdp_links_on_iface(ifindex);
         bpf_xdp_detach(ifindex, XDP_FLAGS_DRV_MODE, NULL); bpf_xdp_detach(ifindex, XDP_FLAGS_SKB_MODE, NULL);
         int flags = XDP_FLAGS_DRV_MODE;
-        if (getenv("LYNCEUS_FORCE_SKB")) flags = XDP_FLAGS_SKB_MODE;
+        if (argc > 2 && strcmp(argv[2], "skb") == 0) {
+            flags = XDP_FLAGS_SKB_MODE;
+        }
 
         if (bpf_xdp_attach(ifindex, prog_fd, flags, NULL) < 0) {
             flags = XDP_FLAGS_SKB_MODE;
