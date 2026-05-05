@@ -1,0 +1,80 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[portuguese]{babel}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{geometry}
+\usepackage{hyperref}
+\hypersetup{hidelinks}
+\usepackage{graphicx}
+\usepackage{titlesec}
+
+\geometry{margin=1in}
+
+\title{Plano de Evolução Estratégica: Lynceus v2.0 \\ \large Arquitetura Zero-Copy, Aceleração SIMD e Mitigação Autônoma para Scrubbing Centers}
+\author{Leonardo Herkenhoff \\ \small Instituto Federal do Espírito Santo (IFES) - PPComp}
+\date{Abril de 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Este documento apresenta o plano de pesquisa e desenvolvimento para a evolução do motor de extração Lynceus. O foco central é a transição para uma arquitetura de ultra-alta performance capaz de operar em ambientes de Scrubbing Centers, utilizando tecnologias de ponta como AF\_XDP, aceleração vetorial AVX-512 e mitigação em malha fechada diretamente no plano de dados do kernel.
+\end{abstract}
+
+\tableofcontents
+
+\newpage
+
+\section{Introdução e Contexto}
+A versão 1.0 do Lynceus consolidou uma base de extração de telemetria de rede baseada em eBPF/XDP com fidelidade estatística. Contudo, para aplicação em cenários de \textit{Scrubbing Centers} de escala Terabit, limitações relacionadas ao overhead de cópia de memória e serialização de texto devem ser superadas. Este plano detalha o roteiro técnico para a v2.0.
+
+\section{Objetivos Técnicos}
+
+\subsection{Performance de Vazão (Zero-Copy)}
+O objetivo primário é a eliminação de cópias desnecessárias entre o kernel e o espaço de usuário.
+\begin{itemize}
+    \item \textbf{Implementação de AF\_XDP:} Migração para o modo \textit{Native Zero-Copy} para entrega direta de frames à memória compartilhada (\textit{UMEM}).
+    \item \textbf{HugePages (SHM):} Utilização de páginas de memória de 1GB para armazenamento da tabela de fluxos, minimizando a latência de acesso e as faltas no \textit{Translation Lookaside Buffer} (TLB).
+\end{itemize}
+
+\subsection{Eficiência Computacional (AVX-512)}
+O cálculo de 495 features por fluxo em tempo de linha exige otimização a nível de instrução de CPU.
+\begin{itemize}
+    \item \textbf{Vetorização de Momentos:} Refatoração dos algoritmos de Welford e P² para utilizar instruções SIMD AVX-512, permitindo o processamento paralelo de múltiplos fluxos por ciclo de \textit{clock}.
+\end{itemize}
+
+\subsection{Resiliência de Estado (LRU Maps)}
+Para resistir a ataques de exaustão (\textit{State Exhaustion}), o sistema deve ser auto-limpante.
+\begin{itemize}
+    \item \textbf{BPF\_MAP\_TYPE\_LRU\_HASH:} Substituição do mapa estático por uma estrutura de \textit{Least Recently Used}, garantindo que ataques de inundação não saturem a memória do monitor.
+\end{itemize}
+
+\section{Metodologia de Evolução (Phases 2 \& 3)}
+
+\subsection{Fase 2: Arquitetura Zero-Copy}
+Nesta fase, o foco será a transição do modelo de submissão via RingBuffer para o modelo de memória compartilhada. A serialização CSV será substituída por \textbf{FlatBuffers}, reduzindo o custo de processamento de exportação em até 80\%.
+
+\subsection{Fase 3: Mitigação Autônoma (MAPE-K Loop)}
+A evolução para mitigação ativa envolve a criação de um loop de controle:
+\begin{enumerate}
+    \item \textbf{Monitor:} Extração de telemetria v2.0.
+    \item \textbf{Analyze:} Modelos de Machine Learning (Random Forest/LSTM) em user-space.
+    \item \textbf{Plan:} Decisão de bloqueio ou limitação de taxa (\textit{Rate-Limiting}).
+    \item \textbf{Execute:} Atualização de mapas BPF (\textit{LPM Trie}) para \textit{XDP\_DROP} ou \textit{XDP\_REDIRECT}.
+\end{enumerate}
+
+\section{Especificação de Melhorias Críticas}
+O plano abordará as falhas identificadas na v1.0:
+\begin{itemize}
+    \item \textbf{L7 Deep Inspection:} Uso de \textit{Tail Calls} para dissecação recursiva de etiquetas DNS sem restrição de profundidade.
+    \item \textbf{IP Reassembly:} Implementação de um buffer de fragmentos em kernel para reconstrução de sessões fragmentadas maliciosas.
+\end{itemize}
+
+\section{Resultados Esperados}
+Espera-se que o Lynceus v2.0 atinja vazões superiores a 40M PPS por core físico em hardware moderno, com latência de detecção de anomalias inferior a 1ms, consolidando-se como uma ferramenta de referência para a segurança de infraestruturas críticas.
+
+\end{document}

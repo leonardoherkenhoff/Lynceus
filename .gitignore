@@ -1,0 +1,33 @@
+# Lynceus - Git Ignore Policy
+# -----------------------------------------------------------------------------
+
+# Build Artifacts
+build/
+*.o
+
+# Virtual Environments
+venv_lynceus/
+.venv/
+env/
+
+# Telemetry Data
+flows.csv
+*.csv
+worker_telemetry/
+
+# Captures & Logs
+*.pcap
+*.log
+matrix_audit.log
+loader_audit.log
+
+# Operating System
+.DS_Store
+Thumbs.db
+
+# Documentation Assets (Temporary)
+lynceus_feature_importance.png
+logo.png
+
+# Scripts (Release Policy: ignored in master via branching strategy)
+# Note: scripts/ directory is maintained in develop but excluded from master merges.

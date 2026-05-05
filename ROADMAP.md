@@ -1,10 +1,10 @@
-# 🗺️ Lynceus: Requirements Matrix, Technical Specification, and Definitive Roadmap
+# Lynceus: Requirements Matrix, Technical Specification, and Roadmap
 
 This document serves as the technical authority record for the **Lynceus** engine. It details every component, algorithm, and metric implemented, serving as the verification guide for the project's scientific "Totality."
 
 ---
 
-## 🏛️ 1. Architecture and Design Philosophy
+## 1. Architecture and Design Philosophy
 *Lynceus was built to eliminate contention bottlenecks and ensure absolute statistical fidelity.*
 
 ### 1.1. Core Parallelism: Shared-Nothing
@@ -14,7 +14,7 @@ This document serves as the technical authority record for the **Lynceus** engin
 
 ---
 
-## 🛡️ 2. Data Plane: Visibility and Dissection (eBPF/XDP)
+## 2. Data Plane: Visibility and Dissection (eBPF/XDP)
 *The capture engine operates at Layer 2 for total visibility before the kernel network stack.*
 
 ### 2.1. Normalization and Protocols
@@ -25,7 +25,7 @@ This document serves as the technical authority record for the **Lynceus** engin
 
 ---
 
-## 📊 3. Statistical Engine: The 494-Feature Matrix
+## 3. Statistical Engine: Feature Matrix
 *Rigorous unification of NTLFlowLyzer and ALFlowLyzer with 4th-order precision.*
 
 ### 3.1. Welford Algorithm (Numerical Stability)
@@ -48,7 +48,7 @@ This document serves as the technical authority record for the **Lynceus** engin
 
 ---
 
-## ⚙️ 4. Control Plane: State Management and I/O
+## 4. Control Plane: State Management and I/O
 ### 4.1. Flow-Level Paradigm
 - **Micro-Temporal Segmentation**: The engine flushes statistics every **100 packets** ($N=100$), allowing high-resolution time-series analysis.
 - **Export Triggers**:
@@ -59,7 +59,7 @@ This document serves as the technical authority record for the **Lynceus** engin
 
 ---
 
-## 🚀 5. Strategic Evolution Roadmap
+## 5. Strategic Evolution Roadmap
 
 ### Phase 2: Extreme Performance & Zero-Copy Architecture (v2.0)
 - [ ] **Shared Memory Telemetry (SHM)**: Implementation of 1GB HugePages-backed shared memory for zero-copy IPC between Lynceus and external mitigators.
@@ -73,4 +73,4 @@ This document serves as the technical authority record for the **Lynceus** engin
 - [ ] **AI-Driven Thresholding**: Real-time adjustment of sampling and extraction depth based on traffic entropy.
 
 ---
-**Lynceus: Precise Vision, Absolute Integrity.**
+**Lynceus: High-Fidelity Network Telemetry.**
