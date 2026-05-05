@@ -370,7 +370,15 @@ int main(int argc, char **argv) {
     for (int i = 0; i < num_workers; i++) {
         workers[i].id = i;
         workers[i].rb_fd = bpf_map_create(BPF_MAP_TYPE_RINGBUF, NULL, 0, 0, 32 * 1024 * 1024, NULL);
+        if (workers[i].rb_fd < 0) { fprintf(stderr, "ERR: RB create failed for worker %d\n", i); continue; }
+        /* Map multiple potential CPU IDs to the same worker pool if necessary, 
+         * but for now we ensure at least indices 0-255 are covered if possible. */
         bpf_map_update_elem(outer_fd, &i, &workers[i].rb_fd, BPF_ANY);
+    }
+    /* Robustness: fill remaining slots with worker 0's RB if system has more CPUs than workers */
+    for (int i = num_workers; i < 256; i++) {
+        int zero_fd = workers[0].rb_fd;
+        bpf_map_update_elem(outer_fd, &i, &zero_fd, BPF_ANY);
     }
     g_out_f = stdout; setvbuf(g_out_f, NULL, _IOFBF, 4 * 1024 * 1024);
     fprintf(g_out_f, "flow_id,src_ip,dst_ip,src_port,dst_port,protocol,ip_ver,eth_proto,traffic_class,flow_label,src_mac,dst_mac,timestamp,duration,"
@@ -417,5 +425,13 @@ int main(int argc, char **argv) {
     }
     pthread_join(g_writer_thread, NULL);
     for (int i = 0; i < num_ifaces; i++) bpf_xdp_detach(ifindexes[i], XDP_FLAGS_SKB_MODE, NULL);
+    int stats_fd = bpf_object__find_map_fd_by_name(obj, "global_stats");
+    __u32 stats_key = 0; uint64_t *cpu_stats = calloc(cores, sizeof(uint64_t));
+    uint64_t total_ingress = 0;
+    if (bpf_map_lookup_elem(stats_fd, &stats_key, cpu_stats) == 0) {
+        for (int i = 0; i < cores; i++) total_ingress += cpu_stats[i];
+    }
+    fprintf(stderr, "[*] Kernel-Space Total Ingress: %lu packets\n", total_ingress);
+    free(cpu_stats);
     fflush(g_out_f); free(ifindexes); bpf_object__close(obj); return 0;
 }
