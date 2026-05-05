@@ -18,10 +18,11 @@ INJECT_IFACE = "eno12399np0"
 SENSOR_IFACE = "eno12409np1"
 
 def setup_nic():
-    print(f"[*] Configuring hardware: {INJECT_IFACE}")
-    subprocess.run(["bash", "scripts/fix_nic_xdp.sh", INJECT_IFACE], check=False)
-    subprocess.run(["ip", "link", "set", INJECT_IFACE, "up"], check=False)
-    subprocess.run(["ip", "link", "set", INJECT_IFACE, "promisc", "on"], check=False)
+    print(f"[*] Configuring hardware (Injector: {INJECT_IFACE}, Sensor: {SENSOR_IFACE})")
+    for iface in [INJECT_IFACE, SENSOR_IFACE]:
+        subprocess.run(["bash", "scripts/fix_nic_xdp.sh", iface], check=False)
+        subprocess.run(["ip", "link", "set", iface, "up"], check=False)
+        subprocess.run(["ip", "link", "set", iface, "promisc", "on"], check=False)
 
 def teardown_nic():
     pass
