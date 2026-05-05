@@ -4,7 +4,7 @@ Thank you for your interest in contributing to **Lynceus**! As a high-performanc
 
 ---
 
-## 🛠️ Development Workflow
+## Development Workflow
 
 1.  **Fork the Repository**: Create your own fork of the project.
 2.  **Branching Strategy**:
@@ -15,7 +15,7 @@ Thank you for your interest in contributing to **Lynceus**! As a high-performanc
 
 ---
 
-## 📜 Technical Guidelines
+## Technical Guidelines
 
 ### 1. eBPF Data Plane (C)
 - **Style**: Follow the [Linux Kernel coding style](https://www.kernel.org/doc/html/latest/process/coding-style.html).
@@ -32,7 +32,7 @@ Thank you for your interest in contributing to **Lynceus**! As a high-performanc
 
 ---
 
-## 🧪 Testing Requirements
+## Testing Requirements
 
 - All contributions must be tested against real or simulated network traffic using `tcpreplay` or `scapy`.
 - Verify XDP loading and map integrity:
@@ -43,9 +43,9 @@ Thank you for your interest in contributing to **Lynceus**! As a high-performanc
 
 ---
 
-## ⚖️ License & Sign-off
+## License and Sign-off
 
 By contributing, you agree that your contributions will be licensed under the **GNU General Public License v2.0**. We require a **Developer Certificate of Origin (DCO)** sign-off (e.g., `git commit -s`) for all commits.
 
 ---
-**Lynceus: Precise Vision, Absolute Integrity.**
+**Lynceus: High-Fidelity Network Telemetry.**

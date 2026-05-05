@@ -1,24 +1,24 @@
 <div align="center">
     <img src="assets/logo.png" width="400" alt="Lynceus Logo">
-    <h1>🛡️ Lynceus</h1>
-    <i>High-Performance, Dual-Stack (IPv4/IPv6), Stateful Network Feature Extractor Powered by 100% C-eBPF.</i>
+    <h1>Lynceus</h1>
+    <i>High-Performance, Dual-Stack (IPv4/IPv6), Stateful Network Feature Extractor Powered by C-eBPF.</i>
     <br>
     <b>Version: 1.0</b>
 </div>
 
 <br>
 
-## 📌 Abstract
+## Abstract
 
-**Lynceus** is a next-generation network traffic feature extractor designed to resolve the systematic biases and performance bottlenecks in legacy IDS benchmarking. By unrolling the extraction logic into a **100% End-to-End C Architecture** utilizing eBPF/XDP for the Data Plane and a deeply optimized libbpf daemon for the Control Plane, it achieves high-throughput processing with minimal overhead.
+**Lynceus** is a network traffic feature extractor designed to resolve systematic biases and performance bottlenecks in legacy IDS benchmarking. By unrolling the extraction logic into a 100% End-to-End C Architecture utilizing eBPF/XDP for the Data Plane and a deeply optimized libbpf daemon for the Control Plane, it achieves high-throughput processing with minimal overhead.
 
-It implements a **Unified Dual-Stack Engine** through IPv4-Mapped IPv6 address space, ensuring that both IPv4 and IPv6 traffic are processed through the same O(1) statistical pipeline.
+It implements a Unified Dual-Stack Engine through IPv4-Mapped IPv6 address space, ensuring that both IPv4 and IPv6 traffic are processed through the same O(1) statistical pipeline.
 
-## 🎓 Etymology & Concept
+## Etymology and Concept
 
-The name is inspired by **Lynceus**, the Argonaut possessing legendary vision. In Greek mythology, Lynceus was capable of seeing through any physical barrier—be it earth, stone, or deep water. This serves as the perfect metaphor for this engine's mission: utilizing eBPF/XDP to provide deep, "X-ray" introspection into kernel-space network flows, exposing features that are invisible to traditional observation methods.
+The name is derived from Lynceus, the Argonaut of Greek mythology. Lynceus was known for his ability to see through physical barriers. This serves as a metaphor for the engine's capability to utilize eBPF/XDP for deep introspection into kernel-space network flows.
 
-## 🎯 Key Features
+## Key Features
 
 1. **Stateful eBPF Interception**: Implements stateful tracking via lock-free `BPF_MAP_TYPE_HASH` tables to ensure stability during high-volume traffic.
 2. **Native Tunnel Decapsulation (GRE/VXLAN)**: Performs recursive dissection of encapsulated traffic (GRE/VXLAN) directly in the kernel fast-path, capturing **Tunnel IDs** (GRE Keys / VXLAN VNIs) for infrastructure-aware telemetry.
@@ -32,7 +32,7 @@ The name is inspired by **Lynceus**, the Argonaut possessing legendary vision. I
 
 ---
 
-## 🏛️ Architecture Blueprint
+## Architecture Blueprint
 
 ```mermaid
 graph TD
@@ -56,7 +56,7 @@ graph TD
 
 ---
 
-## 🛠️ Build & Usage
+## Build and Usage
 
 ### Prerequisites
 - Linux Kernel 5.15+
@@ -80,4 +80,4 @@ Distributed under the **GNU General Public License v2.0**.
 Designed for high-performance network analysis and community-driven security research.
 
 ---
-**Lynceus: Precise Vision, Absolute Integrity.**
+**Lynceus: High-Fidelity Network Telemetry.**

@@ -1,0 +1,111 @@
+\documentclass[aspectratio=169]{beamer}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{graphicx}
+
+\usetheme{Madrid}
+\usecolortheme{default}
+
+\title[Lynceus]{Lynceus}
+\subtitle{Motor de Extração eBPF/XDP para Ambientes DDoS}
+\author{Leonardo Herkenhoff}
+\institute[PPComp/IFES]{Mestrado Profissional em Computação Aplicada (PPComp) -- IFES}
+\date{\today}
+
+\begin{document}
+
+\frame{\titlepage}
+
+\begin{frame}{O Problema}
+    \textbf{Contexto e Desafio}
+    \begin{itemize}
+        \item \textbf{Limitações Atuais:} Extratores clássicos (NetFlow/sFlow) operam no espaço de usuário (\textit{user-space}) ou via amostragem (\textit{sampling}), omitindo a granularidade microscópica necessária para Aprendizado de Máquina.
+        \item \textbf{Problema Central:} Centros de mitigação DDoS exigem captura de pacotes na velocidade máxima da interface (\textit{wire-speed}), sem esgotar I/O ou memória do servidor.
+        \item \textbf{Proposta (Lynceus):} Arquitetura híbrida. O \textit{kernel} (via eBPF/XDP) disseca os pacotes e o \textit{user-space} consolida a taxonomia estatística, resultando em \textbf{495 atributos} (\textit{features}) extraídos em tempo real.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Arquitetura de Extração}
+    O processamento é dividido em dois planos concorrentes:
+    \vspace{0.3cm}
+    
+    \textbf{1. Plano de Dados (\textit{Data Plane} - Kernel-Space)}
+    \begin{itemize}
+        \item Análise de pacotes L2 a L7 diretamente no buffer do \textit{driver} da placa de rede.
+        \item \textbf{Desencapsulamento Nativo:} Extração do conteúdo interno de túneis GRE e VXLAN.
+        \item \textbf{Descoberta L7:} Acesso à carga útil (\textit{payload}) para identificar vetores volumétricos críticos (DNS, SNMP, NTP, SSDP).
+    \end{itemize}
+    \vspace{0.2cm}
+    
+    \textbf{2. Plano de Controle (\textit{Control Plane} - User-Space)}
+    \begin{itemize}
+        \item Processamento assíncrono e massivo dos pacotes classificados pelo \textit{kernel}.
+        \item \textbf{Exportação Agnóstica:} Envio de dados diretamente via \texttt{stdout}, neutralizando gargalos de escrita em disco.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Superando Restrições do Kernel}
+    O verificador do eBPF (\textit{Verifier}) bloqueia execuções lentas, loops ilimitados e complexidade de memória $O(N)$.
+    \vspace{0.3cm}
+    
+    \textbf{Solução 1: Verificação de Limite Único (\textit{Single Boundary Check})}
+    \begin{itemize}
+        \item A dissecação restringe-se aos primeiros 64 bytes de cada pacote. Isso fixa o custo computacional em $O(1)$, independente do tamanho real do tráfego.
+    \end{itemize}
+
+    \textbf{Solução 2: Independência Estrutural (\textit{Purity})}
+    \begin{itemize}
+        \item Para assegurar portabilidade em kernels LTS (5.15+) sem falhas de biblioteca (BTF), funções críticas como \texttt{memcmp} foram escritas nativamente (\textit{unrolled}) no código BPF.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Estatísticas em Tempo Contínuo}
+    Cálculos de fluxo não podem armazenar o histórico completo de pacotes devido à limitação de memória RAM.
+    
+    \vspace{0.3cm}
+    \textbf{1. Algoritmo de Welford}
+    \begin{itemize}
+        \item Atualiza recursivamente a Média ($\mu$), Variância ($\sigma^2$), Assimetria e Curtose a cada novo pacote lido, viabilizando métricas de 4ª ordem.
+    \end{itemize}
+    
+    \vspace{0.2cm}
+    \textbf{2. Estimador P2}
+    \begin{itemize}
+        \item Extrair a Mediana exigiria a ordenação de vetores em $O(N \log N)$. A heurística $P^2$ aproxima percentis em tempo real com uso constante de memória $O(1)$.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Alta Performance e Paralelismo}
+    \textbf{O Desafio da Concorrência}
+    \begin{itemize}
+        \item Centralizar os eventos do \textit{kernel} em um único buffer gera contenção de concorrência (\textit{lock contention}) em arquiteturas \textit{multi-core}.
+    \end{itemize}
+    
+    \textbf{Solução: Canais Independentes}
+    \begin{itemize}
+        \item A infraestrutura aloca um buffer de comunicação dedicado para cada núcleo lógico da CPU (\texttt{ARRAY\_OF\_MAPS}).
+        \item O código eBPF identifica o núcleo atual (\texttt{bpf\_get\_smp\_processor\_id()}) e despacha os dados no canal correspondente.
+        \item Processos \textit{workers} em \textit{user-space} efetuam a leitura paralela e livre de bloqueios (\textit{lockless}), aproximando-se da escalabilidade linear.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Validação e Próximos Passos}
+    \textbf{O Ciclo de Experimentação (\textit{Extract-Label-Purge})}
+    \begin{itemize}
+        \item Automação inicializa redes efêmeras virtuais (\texttt{veth pairs}).
+        \item Injeção de bancos de dados (\textit{datasets}) de DDoS na velocidade nominal da placa.
+        \item O sistema gera as matrizes de características matemáticas, rotula e purga as conexões virtuais.
+    \end{itemize}
+    
+    \textbf{Resultados Finais}
+    \begin{itemize}
+        \item Entrega estruturada de \textbf{495 atributos de rede} por fluxo analisado.
+        \item \textbf{Trabalhos Futuros:} Adição de bloqueio ativo no plano de dados e otimização de exportação usando Memória Compartilhada Interprocessos (SHM IPC).
+    \end{itemize}
+\end{frame}
+
+\end{document}

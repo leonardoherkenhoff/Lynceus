@@ -1,0 +1,16 @@
+\babel@toc {portuguese}{}\relax 
+\contentsline {section}{\numberline {1}Introdu\c {c}\~{a}o}{2}{section.1}%
+\contentsline {section}{\numberline {2}Arquitetura T\'{e}cnica}{2}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Data Plane (Kernel-space)}{2}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Control Plane (User-space)}{2}{subsection.2.2}%
+\contentsline {section}{\numberline {3}Dicion\'{a}rio de Features (495 Atributos)}{2}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Distribui\c {c}\~{a}o dos Atributos}{2}{subsection.3.1}%
+\contentsline {section}{\numberline {4}Auditoria de Performance Experimental}{3}{section.4}%
+\contentsline {subsection}{\numberline {4.1}M\'{e}tricas de Ingest\~{a}o e Vaz\~{a}o}{3}{subsection.4.1}%
+\contentsline {section}{\numberline {5}Valida\c {c}\~{a}o de Machine Learning}{4}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Metodologia}{4}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Resultados: Modo Conservador (sem TTL)}{4}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}An\'{a}lise Ablativa: Impacto do TTL}{4}{subsection.5.3}%
+\contentsline {subsection}{\numberline {5.4}Import\^{a}ncia de Features --- Modo Conservador (Top 5 por Vetor)}{5}{subsection.5.4}%
+\contentsline {subsection}{\numberline {5.5}Import\^{a}ncia de Features --- Modo Realista (Top 5 por Vetor, com TTL)}{6}{subsection.5.5}%
+\contentsline {section}{\numberline {6}Conclus\~{a}o e Trabalhos Futuros}{7}{section.6}%

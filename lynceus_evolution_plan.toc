@@ -1,0 +1,11 @@
+\babel@toc {portuguese}{}\relax 
+\contentsline {section}{\numberline {1}Introdução e Contexto}{2}{section.1}%
+\contentsline {section}{\numberline {2}Objetivos Técnicos}{2}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Performance de Vazão (Zero-Copy)}{2}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Eficiência Computacional (AVX-512)}{2}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}Resiliência de Estado (LRU Maps)}{2}{subsection.2.3}%
+\contentsline {section}{\numberline {3}Metodologia de Evolução (Phases 2 \& 3)}{2}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Fase 2: Arquitetura Zero-Copy}{2}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Fase 3: Mitigação Autônoma (MAPE-K Loop)}{3}{subsection.3.2}%
+\contentsline {section}{\numberline {4}Especificação de Melhorias Críticas}{3}{section.4}%
+\contentsline {section}{\numberline {5}Resultados Esperados}{3}{section.5}%
