@@ -57,12 +57,12 @@ def run_test():
                 stdout=out_f, stderr=log_f, cwd=BASE_DIR
             )
         
-        time.sleep(2)
-        print(f"[*] Injecting traffic on {VETH_TX}...")
-        subprocess.run(["tcpreplay", "-i", VETH_TX, "--topspeed", pcap_to_test], check=True)
+        time.sleep(5)
+        print(f"[*] Injecting traffic on {VETH_TX} (1000 PPS)...")
+        subprocess.run(["tcpreplay", "-i", VETH_TX, "--pps", "1000", pcap_to_test], check=True)
         
-        print("[*] Waiting for RingBuffer and Disk Flush...")
-        time.sleep(3)
+        print("[*] Waiting for RingBuffer and Disk Flush (10s)...")
+        time.sleep(10)
         
         print("[*] Stopping engine...")
         extractor.terminate()
