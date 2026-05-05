@@ -223,11 +223,11 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
     /* Part 1: IP & Base Flow (Fast) */
     fast_ip_to_str(buf, &off, s->ip_ver, s->key.src_ip); buf[off++] = '-';
     fast_ip_to_str(buf, &off, s->ip_ver, s->key.dst_ip);
-    off += sprintf(buf + off, "-%u-%u-%u,", ntohs(s->key.src_port), ntohs(s->key.dst_port), s->key.protocol);
+    off += snprintf(buf + off, MAX_RECORD - off, "-%u-%u-%u,", ntohs(s->key.src_port), ntohs(s->key.dst_port), s->key.protocol);
     
     fast_ip_to_str(buf, &off, s->ip_ver, s->key.src_ip); buf[off++] = ',';
     fast_ip_to_str(buf, &off, s->ip_ver, s->key.dst_ip);
-    off += sprintf(buf + off, ",%u,%u,%u,%u,%u,%u,%u,%02x:%02x:%02x:%02x:%02x:%02x,%02x:%02x:%02x:%02x:%02x:%02x,%.6f,%.6f,%lu,%lu,%lu,%lu,%lu,%lu,%.2f,%.2f,",
+    off += snprintf(buf + off, MAX_RECORD - off, ",%u,%u,%u,%u,%u,%u,%u,%02x:%02x:%02x:%02x:%02x:%02x,%02x:%02x:%02x:%02x:%02x:%02x,%.6f,%.6f,%lu,%lu,%lu,%lu,%lu,%lu,%.2f,%.2f,",
         ntohs(s->key.src_port), ntohs(s->key.dst_port), (uint32_t)s->key.protocol, (uint32_t)s->ip_ver, (uint32_t)ntohs(s->eth_proto), (uint32_t)s->traffic_class, (uint32_t)s->flow_label,
         s->src_mac[0], s->src_mac[1], s->src_mac[2], s->src_mac[3], s->src_mac[4], s->src_mac[5],
         s->dst_mac[0], s->dst_mac[1], s->dst_mac[2], s->dst_mac[3], s->dst_mac[4], s->dst_mac[5],
@@ -243,8 +243,8 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
     }
 
     /* Part 3: Rest of Features */
-    off += sprintf(buf + off, "%u,%u,", s->f_win_init, s->b_win_init);
-    for (int i=0; i<8; i++) off += sprintf(buf + off, "%lu,%lu,%lu,", s->flags[i], s->f_flags[i], s->b_flags[i]);
+    off += snprintf(buf + off, MAX_RECORD - off, "%u,%u,", s->f_win_init, s->b_win_init);
+    for (int i=0; i<8; i++) off += snprintf(buf + off, MAX_RECORD - off, "%lu,%lu,%lu,", s->flags[i], s->f_flags[i], s->b_flags[i]);
     off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%u,%u,%u,%u,", calculate_entropy(s->ip_ver == 4 ? &s->key.src_ip[12] : s->key.src_ip, s->ip_ver == 4 ? 4 : 16),
         (uint32_t)s->last_icmp_type, (uint32_t)s->last_icmp_code, (uint32_t)s->last_ttl, (uint32_t)s->last_icmp_id);
     struct welford_stat *ext[] = {&s->active_s, &s->idle_s};
