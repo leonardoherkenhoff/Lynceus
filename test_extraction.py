@@ -57,12 +57,25 @@ def run_test():
                 stdout=out_f, stderr=log_f, cwd=BASE_DIR
             )
         
-        time.sleep(5)
-        print(f"[*] Injecting traffic on {VETH_TX} (1000 PPS)...")
-        subprocess.run(["tcpreplay", "-i", VETH_TX, "--pps", "1000", pcap_to_test], check=True)
+        time.sleep(3)
+        print(f"[*] Injecting traffic on {VETH_TX} (TOPSPEED)...")
+        # Ensure SKB mode for virtual loopback stability
+        env = os.environ.copy()
+        env["LYNCEUS_FORCE_SKB"] = "1"
         
-        print("[*] Waiting for RingBuffer and Disk Flush (10s)...")
-        time.sleep(10)
+        # Start extractor with env
+        extractor.terminate() # Re-start with env
+        with open(OUT_CSV, "w") as out_f, open("validation.log", "w") as log_f:
+            extractor = subprocess.Popen(
+                ["./build/loader", VETH_RX],
+                stdout=out_f, stderr=log_f, cwd=BASE_DIR, env=env
+            )
+        time.sleep(3)
+        
+        subprocess.run(["tcpreplay", "-i", VETH_TX, "--topspeed", pcap_to_test], check=True)
+        
+        print("[*] Waiting for RingBuffer and Disk Flush (5s)...")
+        time.sleep(5)
         
         print("[*] Stopping engine...")
         extractor.terminate()
