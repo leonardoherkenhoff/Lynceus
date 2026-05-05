@@ -183,6 +183,7 @@ static void *writer_fn(void *arg) {
                 atomic_store_explicit(&q->head, h, memory_order_release);
             }
         }
+        if (flushed) fflush(g_out_f);
         if (!flushed && !exiting) { struct timespec ts = {0, 1000000}; nanosleep(&ts, NULL); }
     } while (!exiting || flushed);
     return NULL;
@@ -317,7 +318,7 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
         s->last_b_pay = e->rec.payload_len; s->b_hist[b_idx]++; s->b_bytes += e->rec.payload_len;
         for (int i=0; i<8; i++) if (e->rec.tcp_flags & (1<<i)) { s->flags[i]++; s->b_flags[i]++; }
     }
-    if (s->t_pay.n >= 10000 || (e->rec.tcp_flags & 0x05)) { flush_flow_record(w, s, e->timestamp_ns); s->active = 0; }
+    if (s->t_pay.n >= 100 || (e->rec.tcp_flags & 0x05)) { flush_flow_record(w, s, e->timestamp_ns); s->active = 0; }
     w->processed_events++; return 0;
 }
 
