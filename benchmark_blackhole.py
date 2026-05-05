@@ -22,13 +22,19 @@ SENSOR_IFACE = "eno12399np0"
 def setup_veth():
     # Hardware ASIC Loopback Agressivo
     print(f"[*] Attempting Hardware Link-Up on {INJECT_IFACE}...")
+    
+    # Executa o script de hardening para XDP Native
+    subprocess.run(["bash", "scripts/fix_nic_xdp.sh", INJECT_IFACE], check=False)
+    
     subprocess.run(["ip", "link", "set", INJECT_IFACE, "up"], check=False)
-    # Tenta forçar o estado UP ignorando o cabo (alguns drivers suportam)
     subprocess.run(["ip", "link", "set", INJECT_IFACE, "promisc", "on"], check=False)
-    # Tenta habilitar o loopback
+    
+    # Loopback é opcional e falha em algumas placas Broadcom sem firmware específico
+    print("[*] Optional: Attempting loopback mode...")
     subprocess.run(["ethtool", "-K", INJECT_IFACE, "loopback", "on"], check=False)
-    # Força duplex e velocidade para "acordar" o ASIC
-    subprocess.run(["ethtool", "-s", INJECT_IFACE, "speed", "1000", "duplex", "full", "autoneg", "off"], check=False)
+    
+    # Força duplex e velocidade apenas se necessário
+    # subprocess.run(["ethtool", "-s", INJECT_IFACE, "speed", "1000", "duplex", "full", "autoneg", "off"], check=False)
 
 def teardown_veth():
     subprocess.run(["ethtool", "-K", INJECT_IFACE, "loopback", "off"], check=False, stderr=subprocess.DEVNULL)
