@@ -226,8 +226,8 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
     off += sprintf(buf + off, "-%u-%u-%u,", ntohs(s->key.src_port), ntohs(s->key.dst_port), s->key.protocol);
     fast_ip_to_str(buf, &off, s->ip_ver, s->key.src_ip); buf[off++] = ',';
     fast_ip_to_str(buf, &off, s->ip_ver, s->key.dst_ip);
-    off += sprintf(buf + off, ",%u,%u,%u,%u,%u,%u,%02x:%02x:%02x:%02x:%02x:%02x,%02x:%02x:%02x:%02x:%02x:%02x,%.6f,%.6f,%lu,%lu,%lu,%lu,%lu,%lu,%.2f,%.2f,",
-        ntohs(s->key.src_port), ntohs(s->key.dst_port), (uint32_t)s->key.protocol, (uint32_t)s->ip_ver, (uint32_t)ntohs(s->eth_proto), (uint32_t)s->traffic_class,
+    off += sprintf(buf + off, ",%u,%u,%u,%u,%u,%u,%u,%02x:%02x:%02x:%02x:%02x:%02x,%02x:%02x:%02x:%02x:%02x:%02x,%.6f,%.6f,%lu,%lu,%lu,%lu,%lu,%lu,%.2f,%.2f,",
+        ntohs(s->key.src_port), ntohs(s->key.dst_port), (uint32_t)s->key.protocol, (uint32_t)s->ip_ver, (uint32_t)ntohs(s->eth_proto), (uint32_t)s->traffic_class, (uint32_t)s->flow_label,
         s->src_mac[0], s->src_mac[1], s->src_mac[2], s->src_mac[3], s->src_mac[4], s->src_mac[5],
         s->dst_mac[0], s->dst_mac[1], s->dst_mac[2], s->dst_mac[3], s->dst_mac[4], s->dst_mac[5],
         ts_val, duration, s->t_pay.n, s->f_pay.n, s->b_pay.n, (uint64_t)(s->f_bytes + s->b_bytes), (uint64_t)s->f_bytes, (uint64_t)s->b_bytes,
