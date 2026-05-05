@@ -58,12 +58,13 @@ def run_blackhole_test():
     test_pcaps = pcaps[:3]
     
     try:
-        # 3. Spawn Extractor pointing purely to DEVNULL (Zero-IO)
-        print("[*] Igniting Lynceus Engine -> /dev/null")
-        extractor = subprocess.Popen(
-            ["./build/loader", SENSOR_IFACE],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=BASE_DIR
-        )
+        # 3. Spawn Extractor pointing to log for diagnostic, but stdout to null for performance
+        print("[*] Igniting Lynceus Engine (Diagnostic logs in extractor.log) -> /dev/null")
+        with open("extractor.log", "w") as log_f:
+            extractor = subprocess.Popen(
+                ["./build/loader", SENSOR_IFACE],
+                stdout=subprocess.DEVNULL, stderr=log_f, cwd=BASE_DIR
+            )
         time.sleep(3) # Wait for map allocation
         
         # 4. Stream Traffic
@@ -96,6 +97,9 @@ def run_blackhole_test():
         print(" 📌 Analysis:")
         print(" If PPS > 500k: Disk I/O (Python pipe + Ext4) is the exact bottleneck.")
         print(" If PPS < 250k: SKB Kernel Allocation / String Serialization is the limit.")
+        
+        print(f"\n[*] Extractor Diagnostic Log:")
+        subprocess.run(["cat", "extractor.log"], check=False)
         
     finally:
         teardown_veth()
