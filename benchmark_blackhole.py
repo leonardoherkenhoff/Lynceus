@@ -34,6 +34,7 @@ def run_benchmark():
     subprocess.run("make clean && make", shell=True, check=True, stdout=subprocess.DEVNULL, cwd=BASE_DIR)
     
     setup_veth()
+    time.sleep(2) # Wait for link stabilization
     
     pcaps = sorted(glob.glob(os.path.join(DATA_RAW, "**", "*.pcap*"), recursive=True))
     if not pcaps:
@@ -41,21 +42,23 @@ def run_benchmark():
         cleanup_veth()
         return
     
-    test_pcap = pcaps[0]
-    
     try:
         print("[*] Starting engine (Zero-IO, SKB Mode)...")
         with open("benchmark_diag.log", "w") as log_f:
-            # Using 'skb' argument for veth stability
             extractor = subprocess.Popen(
                 ["./build/loader", VETH_RX, "skb"],
                 stdout=subprocess.DEVNULL, stderr=log_f, cwd=BASE_DIR
             )
         
-        time.sleep(5)
+        time.sleep(3) # Wait for engine/XDP attachment
         print(f"[*] Injecting traffic on {VETH_TX} (TOPSPEED)...")
         start_inject = time.time()
-        res = subprocess.run(["tcpreplay", "-i", VETH_TX, "--topspeed", test_pcap], capture_output=True, text=True, check=True)
+        
+        # Inject multiple PCAPs to increase test duration
+        for test_pcap in pcaps[:5]:
+            subprocess.run(["tcpreplay", "-i", VETH_TX, "--topspeed", test_pcap], 
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        
         inject_duration = time.time() - start_inject
         
         print("[*] Waiting for engine to process last packets...")

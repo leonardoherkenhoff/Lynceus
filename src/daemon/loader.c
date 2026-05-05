@@ -227,15 +227,20 @@ static inline int fast_mac_to_str(const uint8_t *mac, char *buf) {
 }
 
 static inline int fast_dtoa(double val, char *buf) {
-    if (isnan(val)) { memcpy(buf, "0.00", 4); return 4; }
+    if (isnan(val)) { memcpy(buf, "0.0000", 6); return 6; }
     if (val < 0) { *buf++ = '-'; return 1 + fast_dtoa(-val, buf); }
     uint64_t integral = (uint64_t)val;
     int len = fast_itoa(integral, buf);
     buf[len++] = '.';
-    uint32_t fractional = (uint32_t)((val - (double)integral) * 100 + 0.5);
-    if (fractional >= 100) fractional = 99;
-    buf[len++] = (fractional / 10) + '0';
-    buf[len++] = (fractional % 10) + '0';
+    uint32_t fractional = (uint32_t)((val - (double)integral) * 10000 + 0.5);
+    if (fractional >= 10000) fractional = 9999;
+    
+    // Padding zeros
+    if (fractional < 1000) buf[len++] = '0';
+    if (fractional < 100) buf[len++] = '0';
+    if (fractional < 10) buf[len++] = '0';
+    
+    len += fast_itoa(fractional, buf + len);
     return len;
 }
 
