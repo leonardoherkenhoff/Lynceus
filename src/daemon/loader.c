@@ -2,7 +2,7 @@
  * @file loader.c
  * @brief User-Space Control Plane - High Performance Network Feature Extractor.
  *
- * @version 1.2 (Turbo Serialization & Zero-Copy Optimization)
+ * @version 1.2 (High-Performance Serialization & Zero-Copy Optimization)
  */
 
 #define _GNU_SOURCE
