@@ -1,12 +1,4 @@
 #!/usr/bin/env python3
-"""
-Lynceus Full-Stack Validation (Extraction + Writing)
-------------------------------------------------------------------------
-Utilizes a VETH pair to bypass physical NIC loopback limitations.
-Proves that the Data Plane extracts features and the Control Plane
-writes them to a CSV file.
-"""
-
 import subprocess
 import time
 import os
@@ -20,13 +12,13 @@ VETH_RX = "veth_rx"
 OUT_CSV = "validation_output.csv"
 
 def setup_veth():
-    print(f"[*] Creating Virtual Topology: {VETH_TX} <-> {VETH_RX}")
+    print(f"[*] Creating Virtual Topology: {VETH_TX} <-> {VETH_RX} (MTU 9000)")
     subprocess.run(["ip", "link", "del", VETH_TX], check=False, stderr=subprocess.DEVNULL)
     subprocess.run(["ip", "link", "add", VETH_TX, "type", "veth", "peer", "name", VETH_RX], check=True)
+    subprocess.run(["ip", "link", "set", VETH_TX, "mtu", "9000"], check=True)
+    subprocess.run(["ip", "link", "set", VETH_RX, "mtu", "9000"], check=True)
     subprocess.run(["ip", "link", "set", VETH_TX, "up"], check=True)
     subprocess.run(["ip", "link", "set", VETH_RX, "up"], check=True)
-    # Disable offloads on virtual interface for consistency
-    subprocess.run(["ethtool", "-K", VETH_RX, "lro", "off", "gro", "off"], check=False)
 
 def cleanup_veth():
     print(f"[*] Cleaning up Virtual Topology...")
@@ -37,7 +29,7 @@ def run_test():
     
     if not os.path.exists(os.path.join(BASE_DIR, "build/loader")):
         print("[*] Compiling binaries...")
-        subprocess.run("make clean && make", shell=True, check=True, cwd=BASE_DIR)
+        subprocess.run("make clean && make", shell=True, check=True, stdout=subprocess.DEVNULL, cwd=BASE_DIR)
     
     setup_veth()
     
@@ -51,31 +43,21 @@ def run_test():
     
     try:
         print(f"[*] Starting engine (Output: {OUT_CSV})...")
-        with open(OUT_CSV, "w") as out_f, open("validation.log", "w") as log_f:
-            extractor = subprocess.Popen(
-                ["./build/loader", VETH_RX],
-                stdout=out_f, stderr=log_f, cwd=BASE_DIR
-            )
-        
-        time.sleep(3)
-        print(f"[*] Injecting traffic on {VETH_TX} (TOPSPEED)...")
-        # Ensure SKB mode for virtual loopback stability
         env = os.environ.copy()
         env["LYNCEUS_FORCE_SKB"] = "1"
         
-        # Start extractor with env
-        extractor.terminate() # Re-start with env
         with open(OUT_CSV, "w") as out_f, open("validation.log", "w") as log_f:
             extractor = subprocess.Popen(
                 ["./build/loader", VETH_RX],
                 stdout=out_f, stderr=log_f, cwd=BASE_DIR, env=env
             )
-        time.sleep(3)
         
+        time.sleep(5)
+        print(f"[*] Injecting traffic on {VETH_TX} (TOPSPEED)...")
         subprocess.run(["tcpreplay", "-i", VETH_TX, "--topspeed", pcap_to_test], check=True)
         
-        print("[*] Waiting for RingBuffer and Disk Flush (5s)...")
-        time.sleep(5)
+        print("[*] Waiting for RingBuffer and Disk Flush (10s)...")
+        time.sleep(10)
         
         print("[*] Stopping engine...")
         extractor.terminate()
@@ -84,14 +66,11 @@ def run_test():
         print(f"\n[*] Diagnostic Log (validation.log):")
         subprocess.run(["cat", "validation.log"], check=False)
         
-        if os.path.exists(OUT_CSV) and os.path.getsize(OUT_CSV) > 5000:
+        if os.path.exists(OUT_CSV) and os.path.getsize(OUT_CSV) > 6000:
             print(f"[+] Success: {OUT_CSV} generated ({os.path.getsize(OUT_CSV)} bytes).")
-            # Call the schema validator
             subprocess.run(["python3", "scripts/validate_schema.py", OUT_CSV], check=False)
         else:
-            print("[!] Error: No data written to CSV.")
-            print("[*] Diagnostic Log:")
-            subprocess.run(["cat", "validation.log"], check=False)
+            print(f"[!] Error: File too small ({os.path.getsize(OUT_CSV)} bytes). Check for drops.")
             
     finally:
         cleanup_veth()
