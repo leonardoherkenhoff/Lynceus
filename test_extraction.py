@@ -42,13 +42,11 @@ def run_test():
     
     try:
         print(f"[*] Starting engine (Output: {OUT_CSV})...")
-        env = os.environ.copy()
-        env["LYNCEUS_FORCE_SKB"] = "1"
-        
+        # Explicitly passing 'skb' as 2nd argument for virtual loopback stability
         with open(OUT_CSV, "w") as out_f, open("validation.log", "w") as log_f:
             extractor = subprocess.Popen(
-                ["./build/loader", VETH_RX],
-                stdout=out_f, stderr=log_f, cwd=BASE_DIR, env=env
+                ["./build/loader", VETH_RX, "skb"],
+                stdout=out_f, stderr=log_f, cwd=BASE_DIR
             )
         
         time.sleep(5)
@@ -65,11 +63,12 @@ def run_test():
         print(f"\n[*] Diagnostic Log (validation.log):")
         subprocess.run(["cat", "validation.log"], check=False)
         
-        if os.path.exists(OUT_CSV) and os.path.getsize(OUT_CSV) > 6000:
+        # We expect data if the engine caught anything
+        if os.path.exists(OUT_CSV) and os.path.getsize(OUT_CSV) > 6500:
             print(f"[+] Success: {OUT_CSV} generated ({os.path.getsize(OUT_CSV)} bytes).")
             subprocess.run(["python3", "scripts/validate_schema.py", OUT_CSV], check=False)
         else:
-            print(f"[!] Error: File too small ({os.path.getsize(OUT_CSV)} bytes). Check for drops.")
+            print(f"[!] Error: File too small ({os.path.getsize(OUT_CSV)} bytes). Ingress might have failed.")
             
     finally:
         cleanup_veth()
