@@ -27,9 +27,8 @@ def cleanup_veth():
 def run_test():
     print("=== Lynceus Extraction & Write Validation ===")
     
-    if not os.path.exists(os.path.join(BASE_DIR, "build/loader")):
-        print("[*] Compiling binaries...")
-        subprocess.run("make clean && make", shell=True, check=True, stdout=subprocess.DEVNULL, cwd=BASE_DIR)
+    print("[*] Compiling binaries...")
+    subprocess.run("make clean && make", shell=True, check=True, stdout=subprocess.DEVNULL, cwd=BASE_DIR)
     
     setup_veth()
     
