@@ -29,15 +29,13 @@ def setup_veth():
     subprocess.run(["ip", "link", "set", INJECT_IFACE, "up"], check=False)
     subprocess.run(["ip", "link", "set", INJECT_IFACE, "promisc", "on"], check=False)
     
-    # Loopback é opcional e falha em algumas placas Broadcom sem firmware específico
-    print("[*] Optional: Attempting loopback mode...")
-    subprocess.run(["ethtool", "-K", INJECT_IFACE, "loopback", "on"], check=False)
-    
-    # Força duplex e velocidade apenas se necessário
-    # subprocess.run(["ethtool", "-s", INJECT_IFACE, "speed", "1000", "duplex", "full", "autoneg", "off"], check=False)
+    # Loopback removido - Falha em Broadcom e causa erro de Netlink
+    # print("[*] Optional: Attempting loopback mode...")
+    # subprocess.run(["ethtool", "-K", INJECT_IFACE, "loopback", "on"], check=False)
 
 def teardown_veth():
-    subprocess.run(["ethtool", "-K", INJECT_IFACE, "loopback", "off"], check=False, stderr=subprocess.DEVNULL)
+    # subprocess.run(["ethtool", "-K", INJECT_IFACE, "loopback", "off"], check=False, stderr=subprocess.DEVNULL)
+    pass
 
 def run_blackhole_test():
     print("=== eBPF Zero-IO Extraction Benchmark ===")
