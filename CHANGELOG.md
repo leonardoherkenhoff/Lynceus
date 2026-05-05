@@ -16,4 +16,4 @@ All notable changes to the **Lynceus** project will be documented in this file.
 
 ---
 
-**Lynceus: Precise Vision, Absolute Integrity.**
+**Lynceus: High-Fidelity Network Telemetry.**
