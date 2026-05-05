@@ -27,6 +27,13 @@ struct {
 } flow_table SEC(".maps");
 
 struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, __u64);
+} global_stats SEC(".maps");
+
+struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
     __uint(max_entries, 4096 * 4096); /* 16MB per core */
 } inner_rb SEC(".maps");
@@ -100,6 +107,9 @@ int xdp_prog(struct xdp_md *ctx) {
     void *data_end = (void *)(long)ctx->data_end;
     void *data = (void *)(long)ctx->data;
     __u32 cpu_id = bpf_get_smp_processor_id();
+    __u32 stats_key = 0;
+    __u64 *total_pkts = bpf_map_lookup_elem(&global_stats, &stats_key);
+    if (total_pkts) __sync_fetch_and_add(total_pkts, 1);
 
     struct ethhdr *eth = data;
     if ((void *)(eth + 1) > data_end) return XDP_PASS;
