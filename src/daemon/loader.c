@@ -288,63 +288,7 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
 }
 
 static int handle_event(void *ctx, void *data, size_t data_sz) {
-    (void)data_sz; struct worker_t *w = ctx; const packet_event_t *e = data;
-    uint32_t h = 2166136261U; const uint8_t *p = (const uint8_t *)&e->key;
-    for (size_t i = 0; i < sizeof(flow_id_t); i++) { h ^= p[i]; h *= 16777619; }
-    uint32_t idx = h % FLOW_HASH_SIZE, probes = 0;
-    while (w->flow_table[idx].active && memcmp(&w->flow_table[idx].key, &e->key, sizeof(flow_id_t)) != 0) {
-        idx = (idx + 1) % FLOW_HASH_SIZE; if (++probes > 4096) return 0;
-    }
-    struct flow_state *s = &w->flow_table[idx];
-    if (!s->active) {
-        memset(s, 0, sizeof(*s)); s->key = e->key; s->active = 1;
-        s->active_start = e->rec.start_ts ? e->rec.start_ts : e->timestamp_ns;
-        s->ip_ver = e->rec.ip_ver; s->eth_proto = e->rec.eth_proto;
-        s->traffic_class = e->rec.traffic_class; s->flow_label = e->rec.flow_label;
-        memcpy(s->src_mac, e->rec.src_mac, 6); memcpy(s->dst_mac, e->rec.dst_mac, 6);
-        w_init(&s->t_pay); w_init(&s->f_pay); w_init(&s->b_pay);
-        w_init(&s->t_hdr); w_init(&s->f_hdr); w_init(&s->b_hdr);
-        w_init(&s->t_iat); w_init(&s->f_iat); w_init(&s->b_iat);
-        w_init(&s->t_delta); w_init(&s->f_delta); w_init(&s->b_delta);
-        w_init(&s->win_s); w_init(&s->ip_id_s); w_init(&s->frag_s); w_init(&s->ttl_s);
-        w_init(&s->active_s); w_init(&s->idle_s); s->f_win_init = e->rec.window_size;
-    }
-    s->last_icmp_type = e->rec.icmp_type; s->last_icmp_code = e->rec.icmp_code; s->last_icmp_id = e->rec.icmp_id; s->last_ttl = e->rec.ttl;
-    if (s->t_last > 0) {
-        double iat = (double)(e->timestamp_ns - s->t_last) / 1e9; w_update(&s->t_iat, iat);
-        if (iat > IDLE_THRESHOLD) { w_update(&s->active_s, (double)(s->t_last - s->active_start) / 1e9); w_update(&s->idle_s, iat); s->active_start = e->timestamp_ns; }
-    }
-    s->t_last = e->timestamp_ns;
-    w_update(&s->t_pay, e->rec.payload_len); w_update(&s->t_hdr, e->rec.header_len); w_update(&s->win_s, e->rec.window_size);
-    w_update(&s->ip_id_s, e->rec.ip_id); w_update(&s->frag_s, e->rec.frag_off); w_update(&s->ttl_s, e->rec.ttl);
-    if (s->t_pay.n > 1) w_update(&s->t_delta, abs((int)e->rec.payload_len - (int)s->last_t_pay));
-    s->last_t_pay = e->rec.payload_len; s->dns_answer_count = e->rec.dns_answer_count; s->dns_qtype = e->rec.dns_qtype; s->dns_qclass = e->rec.dns_qclass;
-    s->tunnel_id = e->rec.tunnel_id; s->tunnel_type = e->rec.tunnel_type; s->ntp_mode = e->rec.ntp_mode; s->ntp_stratum = e->rec.ntp_stratum;
-    s->snmp_pdu_type = e->rec.snmp_pdu_type; s->ssdp_method = e->rec.ssdp_method;
-    uint32_t b_idx = e->rec.payload_len / HIST_STEP; if (b_idx >= HIST_BINS) b_idx = HIST_BINS - 1;
-    s->t_hist[b_idx]++;
-    if (e->rec.is_fwd) {
-        if (s->f_last > 0) {
-            double iat = (double)(e->timestamp_ns - s->f_last) / 1e9; w_update(&s->f_iat, iat);
-            if (iat < BULK_THRESHOLD) { s->f_bulk_bytes += e->rec.payload_len; s->f_bulk_pkts++; }
-            else { if (s->f_bulk_pkts >= 3) s->f_bulk_cnt++; s->f_bulk_bytes = e->rec.payload_len; s->f_bulk_pkts = 1; }
-        }
-        s->f_last = e->timestamp_ns; w_update(&s->f_pay, e->rec.payload_len); w_update(&s->f_hdr, e->rec.header_len);
-        if (s->f_pay.n > 1) w_update(&s->f_delta, abs((int)e->rec.payload_len - (int)s->last_f_pay));
-        s->last_f_pay = e->rec.payload_len; s->f_hist[b_idx]++; s->f_bytes += e->rec.payload_len;
-        for (int i=0; i<8; i++) if (e->rec.tcp_flags & (1<<i)) { s->flags[i]++; s->f_flags[i]++; }
-    } else {
-        if (s->b_last > 0) {
-            double iat = (double)(e->timestamp_ns - s->b_last) / 1e9; w_update(&s->b_iat, iat);
-            if (iat < BULK_THRESHOLD) { s->b_bulk_bytes += e->rec.payload_len; s->b_bulk_pkts++; }
-            else { if (s->b_bulk_pkts >= 3) s->b_bulk_cnt++; s->b_bulk_bytes = e->rec.payload_len; s->b_bulk_pkts = 1; }
-        }
-        s->b_last = e->timestamp_ns; w_update(&s->b_pay, e->rec.payload_len); w_update(&s->b_hdr, e->rec.header_len);
-        if (s->b_pay.n > 1) w_update(&s->b_delta, abs((int)e->rec.payload_len - (int)s->last_b_pay));
-        s->last_b_pay = e->rec.payload_len; s->b_hist[b_idx]++; s->b_bytes += e->rec.payload_len;
-        for (int i=0; i<8; i++) if (e->rec.tcp_flags & (1<<i)) { s->flags[i]++; s->b_flags[i]++; }
-    }
-    if (s->t_pay.n >= 1000 || (e->rec.tcp_flags & 0x05)) { flush_flow_record(w, s, e->timestamp_ns); s->active = 0; }
+    (void)data_sz; (void)data; struct worker_t *w = ctx;
     w->processed_events++; return 0;
 }
 
