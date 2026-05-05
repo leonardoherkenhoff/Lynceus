@@ -32,9 +32,11 @@ def setup_veth():
     # Loopback removido - Falha em Broadcom e causa erro de Netlink
     # print("[*] Optional: Attempting loopback mode...")
     # subprocess.run(["ethtool", "-K", INJECT_IFACE, "loopback", "on"], check=False)
+    
+    # NÃO FORÇAR SPEED 1000 em placas de 100Gb+ (BCM57508)
+    # subprocess.run(["ethtool", "-s", INJECT_IFACE, "speed", "1000", "duplex", "full", "autoneg", "off"], check=False)
 
 def teardown_veth():
-    # subprocess.run(["ethtool", "-K", INJECT_IFACE, "loopback", "off"], check=False, stderr=subprocess.DEVNULL)
     pass
 
 def run_blackhole_test():
