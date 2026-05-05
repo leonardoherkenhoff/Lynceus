@@ -207,9 +207,21 @@ static inline double median_from_hist(const uint64_t *hist, uint64_t n) {
     return (double)((HIST_BINS - 1) * HIST_STEP);
 }
 
+static inline int fast_itoa(uint64_t val, char *buf) {
+    if (val == 0) { buf[0] = '0'; return 1; }
+    char temp[20]; int i = 0;
+    while (val > 0) { temp[i++] = (val % 10) + '0'; val /= 10; }
+    int len = i;
+    while (i > 0) { buf[len - i] = temp[i - 1]; i--; }
+    return len;
+}
+
 static inline void fast_ip_to_str(char *buf, int *off, uint8_t ver, const uint8_t *addr) {
     if (ver == 4) {
-        *off += sprintf(buf + *off, "%u.%u.%u.%u", addr[12], addr[13], addr[14], addr[15]);
+        *off += fast_itoa(addr[12], buf + *off); buf[(*off)++] = '.';
+        *off += fast_itoa(addr[13], buf + *off); buf[(*off)++] = '.';
+        *off += fast_itoa(addr[14], buf + *off); buf[(*off)++] = '.';
+        *off += fast_itoa(addr[15], buf + *off);
     } else {
         *off += sprintf(buf + *off, "%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
             addr[0], addr[1], addr[2], addr[3], addr[4], addr[5], addr[6], addr[7],
@@ -264,9 +276,9 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
         (duration > 0 ? (double)s->t_pay.n/duration : 0), (duration > 0 ? (double)s->f_pay.n/duration : 0), (duration > 0 ? (double)s->b_pay.n/duration : 0),
         (s->f_pay.n > 0 ? (double)s->b_pay.n/s->f_pay.n : 0), s->f_bulk_bytes, s->f_bulk_pkts, s->f_bulk_cnt, s->b_bulk_bytes, s->b_bulk_pkts, s->b_bulk_cnt,
         s->dns_answer_count, s->dns_qtype, s->dns_qclass, s->tunnel_id, s->tunnel_type, s->ntp_mode, s->ntp_stratum, s->snmp_pdu_type, s->ssdp_method);
-    for (int i=0; i<HIST_BINS; i++) off += sprintf(buf + off, "%lu,", s->t_hist[i]);
-    for (int i=0; i<HIST_BINS; i++) off += sprintf(buf + off, "%lu,", s->f_hist[i]);
-    for (int i=0; i<HIST_BINS; i++) off += sprintf(buf + off, "%lu%s", s->b_hist[i], (i == HIST_BINS-1 ? "" : ","));
+    for (int i=0; i<HIST_BINS; i++) { off += fast_itoa(s->t_hist[i], buf + off); buf[off++] = ','; }
+    for (int i=0; i<HIST_BINS; i++) { off += fast_itoa(s->f_hist[i], buf + off); buf[off++] = ','; }
+    for (int i=0; i<HIST_BINS; i++) { off += fast_itoa(s->b_hist[i], buf + off); if (i < HIST_BINS-1) buf[off++] = ','; }
     buf[off++] = '\n'; q->lens[idx] = off; atomic_store_explicit(&q->tail, t + 1, memory_order_release);
 }
 
