@@ -402,26 +402,32 @@ int main(int argc, char **argv) {
     for (int i = 0; i < num_workers; i++) pthread_create(&workers[i].thread, NULL, worker_fn, &workers[i]);
     struct bpf_program *prog = bpf_object__find_program_by_name(obj, "xdp_prog");
     int prog_fd = bpf_program__fd(prog);
-    int *ifindexes = calloc(argc - 1, sizeof(int)); int num_ifaces = 0;
-    for (int i = 1; i < argc; i++) {
-        int ifindex = if_nametoindex(argv[i]); if (ifindex == 0) continue;
-        detach_xdp_links_on_iface(ifindex);
-        bpf_xdp_detach(ifindex, XDP_FLAGS_DRV_MODE, NULL); bpf_xdp_detach(ifindex, XDP_FLAGS_SKB_MODE, NULL);
-        int flags = XDP_FLAGS_DRV_MODE;
-        if (argc > 2 && strcmp(argv[2], "skb") == 0) {
-            flags = XDP_FLAGS_SKB_MODE;
-        }
+    int force_skb = 0;
+    for (int i = 1; i < argc; i++) if (strcmp(argv[i], "skb") == 0) force_skb = 1;
 
+    int *ifindexes = calloc(argc, sizeof(int)); int num_ifaces = 0;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "skb") == 0) continue;
+        int ifindex = if_nametoindex(argv[i]);
+        if (ifindex == 0) continue;
+        
+        detach_xdp_links_on_iface(ifindex);
+        bpf_xdp_detach(ifindex, XDP_FLAGS_DRV_MODE, NULL);
+        bpf_xdp_detach(ifindex, XDP_FLAGS_SKB_MODE, NULL);
+
+        int flags = force_skb ? XDP_FLAGS_SKB_MODE : XDP_FLAGS_DRV_MODE;
         if (bpf_xdp_attach(ifindex, prog_fd, flags, NULL) < 0) {
             flags = XDP_FLAGS_SKB_MODE;
             if (bpf_xdp_attach(ifindex, prog_fd, flags, NULL) < 0) {
-                fprintf(stderr, "ERR: Failed to attach XDP on %d\n", ifindex);
-            } else {
-                fprintf(stderr, "[*] XDP: SKB_MODE enabled (fallback)\n");
+                fprintf(stderr, "ERR: Failed to attach XDP on %s\n", argv[i]);
+                continue;
             }
-        } else {
-            fprintf(stderr, "[*] XDP: DRV_MODE enabled (native)\n");
         }
+        
+        fprintf(stderr, "[*] XDP attached on %s: %s (%s)\n", argv[i],
+                (flags & XDP_FLAGS_DRV_MODE) ? "DRV_MODE" : "SKB_MODE",
+                (flags & XDP_FLAGS_DRV_MODE) ? "native" : "generic");
+        
         ifindexes[num_ifaces++] = ifindex;
     }
     for (int i = 0; i < num_workers; i++) {
