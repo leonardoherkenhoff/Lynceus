@@ -68,7 +68,10 @@ def run_test():
         extractor.terminate()
         extractor.wait()
         
-        if os.path.exists(OUT_CSV) and os.path.getsize(OUT_CSV) > 1024:
+        print(f"\n[*] Diagnostic Log (validation.log):")
+        subprocess.run(["cat", "validation.log"], check=False)
+        
+        if os.path.exists(OUT_CSV) and os.path.getsize(OUT_CSV) > 5000:
             print(f"[+] Success: {OUT_CSV} generated ({os.path.getsize(OUT_CSV)} bytes).")
             # Call the schema validator
             subprocess.run(["python3", "scripts/validate_schema.py", OUT_CSV], check=False)
