@@ -1,8 +1,8 @@
 /**
  * @file loader.c
- * @brief User-Space Control Plane - General Purpose Network Feature Extractor.
+ * @brief User-Space Control Plane - High Performance Network Feature Extractor.
  *
- * @version 1.1 (Performance & Dual-Stack Optimization)
+ * @version 1.2 (Turbo Serialization & Zero-Copy Optimization)
  */
 
 #define _GNU_SOURCE
@@ -112,12 +112,11 @@ static inline double w_skew(struct welford_stat *w) { return (w->M2 > 1e-9) ? sq
 static inline double w_kurt(struct welford_stat *w) { return (w->M2 > 1e-9) ? (double)w->n * w->M4 / (w->M2 * w->M2) - 3.0 : 0; }
 static inline double w_median(struct welford_stat *w) { return (w->n < 5) ? w->M1 : w->pq[2]; }
 
-static double calculate_entropy(const uint8_t *data, size_t len) {
+static inline double calculate_entropy(const uint8_t *data, size_t len) {
     if (len == 0) return 0;
     uint32_t counts[256] = {0};
     for (size_t i = 0; i < len; i++) counts[data[i]]++;
-    double entropy = 0;
-    double inv_len = 1.0 / (double)len;
+    double entropy = 0, inv_len = 1.0 / (double)len;
     for (int i = 0; i < 256; i++) {
         if (counts[i] > 0) {
             double p = (double)counts[i] * inv_len;
@@ -139,7 +138,7 @@ struct flow_state {
     flow_id_t key;
     uint8_t ip_ver; uint16_t eth_proto;
     uint8_t traffic_class; uint32_t flow_label;
-    uint8_t src_mac[6]; uint8_t dst_mac[6];
+    uint8_t src_mac[6], dst_mac[6];
     struct welford_stat t_pay, f_pay, b_pay, t_hdr, f_hdr, b_hdr, t_iat, f_iat, b_iat, t_delta, f_delta, b_delta, active_s, idle_s, win_s, ip_id_s, frag_s, ttl_s;
     uint64_t t_hist[HIST_BINS], f_hist[HIST_BINS], b_hist[HIST_BINS];
     uint64_t f_bytes, b_bytes, f_last, b_last, t_last;
@@ -149,8 +148,7 @@ struct flow_state {
     uint64_t active_start;
     uint32_t last_f_pay, last_b_pay, last_t_pay;
     uint8_t last_icmp_type, last_icmp_code, last_ttl;
-    uint16_t last_icmp_id;
-    uint16_t dns_answer_count, dns_qtype, dns_qclass;
+    uint16_t last_icmp_id, dns_answer_count, dns_qtype, dns_qclass;
     uint32_t tunnel_id; uint8_t tunnel_type, ntp_mode, ntp_stratum, snmp_pdu_type, ssdp_method;
     int active;
 };
@@ -187,28 +185,27 @@ static void *writer_fn(void *arg) {
         }
         if (!flushed && !exiting) { struct timespec ts = {0, 1000000}; nanosleep(&ts, NULL); }
     } while (!exiting || flushed);
-    for (int i = 0; i < num_workers; i++) {
-        struct spsc_queue *q = &g_queues[i];
-        uint32_t h = atomic_load_explicit(&q->head, memory_order_relaxed);
-        uint32_t t = atomic_load_explicit(&q->tail, memory_order_acquire);
-        while (h != t) {
-            uint32_t idx = h & (SPSC_SLOTS - 1);
-            fwrite(q->data[idx], 1, q->lens[idx], g_out_f);
-            h++; atomic_store_explicit(&q->head, h, memory_order_release);
-        }
-    }
-    fflush(g_out_f); return NULL;
+    return NULL;
 }
 
-static double median_from_hist(const uint64_t *hist, int bins, int step, uint64_t n) {
+static inline double median_from_hist(const uint64_t *hist, uint64_t n) {
     if (n == 0) return 0.0;
-    uint64_t half = (n + 1) / 2, acc = 0;
-    for (int i = 0; i < bins; i++) {
-        if (hist[i] == 0) continue;
-        uint64_t prev = acc; acc += hist[i];
-        if (acc >= half) return (double)(i * step) + (double)step * (double)(half - prev) / (double)hist[i];
+    uint64_t half = (n + 1) >> 1, acc = 0;
+    for (int i = 0; i < HIST_BINS; i++) {
+        acc += hist[i];
+        if (acc >= half) return (double)(i * HIST_STEP);
     }
-    return (double)((bins - 1) * step);
+    return (double)((HIST_BINS - 1) * HIST_STEP);
+}
+
+static inline void fast_ip_to_str(char *buf, int *off, uint8_t ver, const uint8_t *addr) {
+    if (ver == 4) {
+        *off += sprintf(buf + *off, "%u.%u.%u.%u", addr[12], addr[13], addr[14], addr[15]);
+    } else {
+        *off += sprintf(buf + *off, "%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
+            addr[0], addr[1], addr[2], addr[3], addr[4], addr[5], addr[6], addr[7],
+            addr[8], addr[9], addr[10], addr[11], addr[12], addr[13], addr[14], addr[15]);
+    }
 }
 
 static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t now_ns) {
@@ -221,67 +218,46 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
     char *buf = (char *)q->data[idx]; int off = 0;
     uint64_t norm_now = (now_ns > 1700000000000000000ULL) ? (now_ns - boot_time_ns) : now_ns;
     uint64_t norm_start = (s->active_start > 1700000000000000000ULL) ? (s->active_start - boot_time_ns) : s->active_start;
-    double ts = (double)(norm_now + boot_time_ns) / 1e9, duration = (norm_now > norm_start) ? (double)(norm_now - norm_start) / 1e9 : 0.001;
-    char sip[64], dip[64], smac[20], dmac[20];
-    if (s->ip_ver == 4) { inet_ntop(AF_INET, &s->key.src_ip[12], sip, 64); inet_ntop(AF_INET, &s->key.dst_ip[12], dip, 64); }
-    else { inet_ntop(AF_INET6, s->key.src_ip, sip, 64); inet_ntop(AF_INET6, s->key.dst_ip, dip, 64); }
-    sprintf(smac, "%02x:%02x:%02x:%02x:%02x:%02x", s->src_mac[0], s->src_mac[1], s->src_mac[2], s->src_mac[3], s->src_mac[4], s->src_mac[5]);
-    sprintf(dmac, "%02x:%02x:%02x:%02x:%02x:%02x", s->dst_mac[0], s->dst_mac[1], s->dst_mac[2], s->dst_mac[3], s->dst_mac[4], s->dst_mac[5]);
+    double ts_val = (double)(norm_now + boot_time_ns) / 1e9, duration = (norm_now > norm_start) ? (double)(norm_now - norm_start) / 1e9 : 0.001;
 
-    /* Block 1: Base Flow Info */
-    off += snprintf(buf + off, MAX_RECORD - off, "%s-%s-%u-%u-%u,%s,%s,%u,%u,%u,%u,%u,%u,%u,%s,%s,%.6f,%.6f,%lu,%lu,%lu,%lu,%lu,%lu,%.2f,%.2f,",
-        sip, dip, ntohs(s->key.src_port), ntohs(s->key.dst_port), (uint32_t)s->key.protocol,
-        sip, dip, ntohs(s->key.src_port), ntohs(s->key.dst_port), (uint32_t)s->key.protocol,
-        (uint32_t)s->ip_ver, (uint32_t)ntohs(s->eth_proto), (uint32_t)s->traffic_class, s->flow_label, smac, dmac, ts, duration,
-        s->t_pay.n, s->f_pay.n, s->b_pay.n, (uint64_t)(s->f_bytes + s->b_bytes), (uint64_t)s->f_bytes, (uint64_t)s->b_bytes,
+    /* Part 1: IP & Base Flow (Fast) */
+    fast_ip_to_str(buf, &off, s->ip_ver, s->key.src_ip); buf[off++] = '-';
+    fast_ip_to_str(buf, &off, s->ip_ver, s->key.dst_ip);
+    off += sprintf(buf + off, "-%u-%u-%u,", ntohs(s->key.src_port), ntohs(s->key.dst_port), s->key.protocol);
+    fast_ip_to_str(buf, &off, s->ip_ver, s->key.src_ip); buf[off++] = ',';
+    fast_ip_to_str(buf, &off, s->ip_ver, s->key.dst_ip);
+    off += sprintf(buf + off, ",%u,%u,%u,%u,%u,%u,%02x:%02x:%02x:%02x:%02x:%02x,%02x:%02x:%02x:%02x:%02x:%02x,%.6f,%.6f,%lu,%lu,%lu,%lu,%lu,%lu,%.2f,%.2f,",
+        ntohs(s->key.src_port), ntohs(s->key.dst_port), (uint32_t)s->key.protocol, (uint32_t)s->ip_ver, (uint32_t)ntohs(s->eth_proto), (uint32_t)s->traffic_class,
+        s->src_mac[0], s->src_mac[1], s->src_mac[2], s->src_mac[3], s->src_mac[4], s->src_mac[5],
+        s->dst_mac[0], s->dst_mac[1], s->dst_mac[2], s->dst_mac[3], s->dst_mac[4], s->dst_mac[5],
+        ts_val, duration, s->t_pay.n, s->f_pay.n, s->b_pay.n, (uint64_t)(s->f_bytes + s->b_bytes), (uint64_t)s->f_bytes, (uint64_t)s->b_bytes,
         (s->b_pay.n > 0 ? (double)s->f_pay.n/s->b_pay.n : (double)s->f_pay.n), (s->b_bytes > 0 ? (double)s->f_bytes/s->b_bytes : (double)s->f_bytes));
 
-    /* Block 2: Statistical Metrics (Optimized into 4 consolidated calls) */
+    /* Part 2: Statistical Metrics (Heavy) */
     struct welford_stat *st[] = {&s->t_pay,&s->f_pay,&s->b_pay,&s->t_hdr,&s->f_hdr,&s->b_hdr,&s->t_iat,&s->f_iat,&s->b_iat,&s->t_delta,&s->f_delta,&s->b_delta,&s->win_s,&s->ip_id_s,&s->frag_s,&s->ttl_s};
-    for (int j=0; j<4; j++) {
-        int i = j * 4;
-        double m0 = (i+0 < 3) ? median_from_hist((i+0==0?s->t_hist:(i+0==1?s->f_hist:s->b_hist)), HIST_BINS, HIST_STEP, st[i+0]->n) : w_median(st[i+0]);
-        double m1 = (i+1 < 3) ? median_from_hist((i+1==0?s->t_hist:(i+1==1?s->f_hist:s->b_hist)), HIST_BINS, HIST_STEP, st[i+1]->n) : w_median(st[i+1]);
-        double m2 = (i+2 < 3) ? median_from_hist((i+2==0?s->t_hist:(i+2==1?s->f_hist:s->b_hist)), HIST_BINS, HIST_STEP, st[i+2]->n) : w_median(st[i+2]);
-        double m3 = (i+3 < 3) ? median_from_hist((i+3==0?s->t_hist:(i+3==1?s->f_hist:s->b_hist)), HIST_BINS, HIST_STEP, st[i+3]->n) : w_median(st[i+3]);
-
-        off += snprintf(buf + off, MAX_RECORD - off, 
-            "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,0.00,"
-            "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,0.00,"
-            "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,0.00,"
-            "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,0.00,",
-            (double)st[i+0]->max, (double)st[i+0]->min, w_mean(st[i+0]), w_std(st[i+0]), w_var(st[i+0]), m0, w_skew(st[i+0]), w_kurt(st[i+0]), (w_mean(st[i+0])>0?w_std(st[i+0])/w_mean(st[i+0]):0),
-            (double)st[i+1]->max, (double)st[i+1]->min, w_mean(st[i+1]), w_std(st[i+1]), w_var(st[i+1]), m1, w_skew(st[i+1]), w_kurt(st[i+1]), (w_mean(st[i+1])>0?w_std(st[i+1])/w_mean(st[i+1]):0),
-            (double)st[i+2]->max, (double)st[i+2]->min, w_mean(st[i+2]), w_std(st[i+2]), w_var(st[i+2]), m2, w_skew(st[i+2]), w_kurt(st[i+2]), (w_mean(st[i+2])>0?w_std(st[i+2])/w_mean(st[i+2]):0),
-            (double)st[i+3]->max, (double)st[i+3]->min, w_mean(st[i+3]), w_std(st[i+3]), w_var(st[i+3]), m3, w_skew(st[i+3]), w_kurt(st[i+3]), (w_mean(st[i+3])>0?w_std(st[i+3])/w_mean(st[i+3]):0));
-    }
-
-    /* Block 3: Flags, Entropy & ICMP */
-    off += snprintf(buf + off, MAX_RECORD - off, "%u,%u,", (uint32_t)s->f_win_init, (uint32_t)s->b_win_init);
-    for (int i=0; i<8; i++) off += snprintf(buf + off, MAX_RECORD - off, "%lu,%lu,%lu,", s->flags[i], s->f_flags[i], s->b_flags[i]);
-    
-    double entropy = calculate_entropy(s->ip_ver == 4 ? &s->key.src_ip[12] : s->key.src_ip, s->ip_ver == 4 ? 4 : 16);
-    off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%u,%u,%u,%u,", entropy, (uint32_t)s->last_icmp_type, (uint32_t)s->last_icmp_code, (uint32_t)s->last_ttl, (uint32_t)s->last_icmp_id);
-
-    struct welford_stat *ext[] = {&s->active_s, &s->idle_s};
-    for (int i=0; i<2; i++) {
+    for (int i=0; i<16; i++) {
+        double med = (i < 3) ? median_from_hist((i==0?s->t_hist:(i==1?s->f_hist:s->b_hist)), st[i]->n) : w_median(st[i]);
         off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,0.00,",
-            (double)ext[i]->max, (double)ext[i]->min, w_mean(ext[i]), w_std(ext[i]), w_var(ext[i]), w_median(ext[i]), w_skew(ext[i]), w_kurt(ext[i]), (w_mean(ext[i])>0?w_std(ext[i])/w_mean(ext[i]):0));
+            (double)st[i]->max, (double)st[i]->min, w_mean(st[i]), w_std(st[i]), w_var(st[i]), med, w_skew(st[i]), w_kurt(st[i]), (w_mean(st[i])>0?w_std(st[i])/w_mean(st[i]):0));
     }
 
-    /* Block 4: Rates, Bulk & L7 Info */
+    /* Part 3: Rest of Features */
+    off += sprintf(buf + off, "%u,%u,", s->f_win_init, s->b_win_init);
+    for (int i=0; i<8; i++) off += sprintf(buf + off, "%lu,%lu,%lu,", s->flags[i], s->f_flags[i], s->b_flags[i]);
+    off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%u,%u,%u,%u,", calculate_entropy(s->ip_ver == 4 ? &s->key.src_ip[12] : s->key.src_ip, s->ip_ver == 4 ? 4 : 16),
+        (uint32_t)s->last_icmp_type, (uint32_t)s->last_icmp_code, (uint32_t)s->last_ttl, (uint32_t)s->last_icmp_id);
+    struct welford_stat *ext[] = {&s->active_s, &s->idle_s};
+    for (int i=0; i<2; i++) off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,0.00,",
+        (double)ext[i]->max, (double)ext[i]->min, w_mean(ext[i]), w_std(ext[i]), w_var(ext[i]), w_median(ext[i]), w_skew(ext[i]), w_kurt(ext[i]), (w_mean(ext[i])>0?w_std(ext[i])/w_mean(ext[i]):0));
     off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%lu,%lu,%lu,%lu,%lu,%lu,%u,%u,%u,%u,%u,%u,%u,%u,%u,",
         (duration > 0 ? (double)(s->f_bytes+s->b_bytes)/duration : 0), (duration > 0 ? (double)s->f_bytes/duration : 0), (duration > 0 ? (double)s->b_bytes/duration : 0),
         (duration > 0 ? (double)s->t_pay.n/duration : 0), (duration > 0 ? (double)s->f_pay.n/duration : 0), (duration > 0 ? (double)s->b_pay.n/duration : 0),
-        (s->f_pay.n > 0 ? (double)s->b_pay.n/s->f_pay.n : 0),
-        (uint64_t)s->f_bulk_bytes, (uint64_t)s->f_bulk_pkts, (uint64_t)s->f_bulk_cnt, (uint64_t)s->b_bulk_bytes, (uint64_t)s->b_bulk_pkts, (uint64_t)s->b_bulk_cnt,
-        (uint32_t)s->dns_answer_count, (uint32_t)s->dns_qtype, (uint32_t)s->dns_qclass, (uint32_t)s->tunnel_id, (uint32_t)s->tunnel_type, (uint32_t)s->ntp_mode, (uint32_t)s->ntp_stratum, (uint32_t)s->snmp_pdu_type, (uint32_t)s->ssdp_method);
-
-    /* Block 5: Histograms */
-    for (int i=0; i<HIST_BINS; i++) off += snprintf(buf + off, MAX_RECORD - off, "%lu,", s->t_hist[i]);
-    for (int i=0; i<HIST_BINS; i++) off += snprintf(buf + off, MAX_RECORD - off, "%lu,", s->f_hist[i]);
-    for (int i=0; i<HIST_BINS; i++) off += snprintf(buf + off, MAX_RECORD - off, "%lu%s", s->b_hist[i], (i == HIST_BINS-1 ? "" : ","));
-    off += snprintf(buf + off, MAX_RECORD - off, "\n"); q->lens[idx] = off; atomic_store_explicit(&q->tail, t + 1, memory_order_release);
+        (s->f_pay.n > 0 ? (double)s->b_pay.n/s->f_pay.n : 0), s->f_bulk_bytes, s->f_bulk_pkts, s->f_bulk_cnt, s->b_bulk_bytes, s->b_bulk_pkts, s->b_bulk_cnt,
+        s->dns_answer_count, s->dns_qtype, s->dns_qclass, s->tunnel_id, s->tunnel_type, s->ntp_mode, s->ntp_stratum, s->snmp_pdu_type, s->ssdp_method);
+    for (int i=0; i<HIST_BINS; i++) off += sprintf(buf + off, "%lu,", s->t_hist[i]);
+    for (int i=0; i<HIST_BINS; i++) off += sprintf(buf + off, "%lu,", s->f_hist[i]);
+    for (int i=0; i<HIST_BINS; i++) off += sprintf(buf + off, "%lu%s", s->b_hist[i], (i == HIST_BINS-1 ? "" : ","));
+    buf[off++] = '\n'; q->lens[idx] = off; atomic_store_explicit(&q->tail, t + 1, memory_order_release);
 }
 
 static int handle_event(void *ctx, void *data, size_t data_sz) {
