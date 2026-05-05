@@ -211,6 +211,7 @@ static inline void fast_ip_to_str(char *buf, int *off, uint8_t ver, const uint8_
 
 static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t now_ns) {
     if (!s->active || s->t_pay.n == 0) return;
+    fprintf(stderr, "[DEBUG] Flush: worker %d, pkts %lu\n", w->id, s->t_pay.n);
     struct spsc_queue *q = &g_queues[w->id];
     uint32_t t = atomic_load_explicit(&q->tail, memory_order_relaxed);
     uint32_t h = atomic_load_explicit(&q->head, memory_order_acquire);
@@ -410,7 +411,10 @@ int main(int argc, char **argv) {
         }
         ifindexes[num_ifaces++] = ifindex;
     }
-    for (int i = 0; i < num_workers; i++) pthread_join(workers[i].thread, NULL);
+    for (int i = 0; i < num_workers; i++) {
+        pthread_join(workers[i].thread, NULL);
+        fprintf(stderr, "[*] Worker %d: %lu events processed\n", i, workers[i].processed_events);
+    }
     pthread_join(g_writer_thread, NULL);
     for (int i = 0; i < num_ifaces; i++) bpf_xdp_detach(ifindexes[i], XDP_FLAGS_SKB_MODE, NULL);
     fflush(g_out_f); free(ifindexes); bpf_object__close(obj); return 0;
