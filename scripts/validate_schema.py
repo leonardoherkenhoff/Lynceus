@@ -21,6 +21,7 @@ def validate_csv(filename):
                 row_count += 1
                 if len(row) != cols:
                     print(f"[!] Error: Row {row_count} has inconsistent column count ({len(row)})")
+                    print(f"    -> Row Content: {row}")
                     return False
                 if row_count >= 10: break
             
