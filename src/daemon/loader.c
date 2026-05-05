@@ -112,15 +112,26 @@ static inline double w_skew(struct welford_stat *w) { return (w->M2 > 1e-9) ? sq
 static inline double w_kurt(struct welford_stat *w) { return (w->M2 > 1e-9) ? (double)w->n * w->M4 / (w->M2 * w->M2) - 3.0 : 0; }
 static inline double w_median(struct welford_stat *w) { return (w->n < 5) ? w->M1 : w->pq[2]; }
 
+static double log2_table[257];
+static void init_log2_table() {
+    log2_table[0] = 0;
+    for (int i = 1; i <= 256; i++) {
+        double p = (double)i / 256.0;
+        log2_table[i] = -p * log2(p);
+    }
+}
+
 static inline double calculate_entropy(const uint8_t *data, size_t len) {
     if (len == 0) return 0;
     uint32_t counts[256] = {0};
     for (size_t i = 0; i < len; i++) counts[data[i]]++;
-    double entropy = 0, inv_len = 1.0 / (double)len;
+    double entropy = 0;
     for (int i = 0; i < 256; i++) {
         if (counts[i] > 0) {
-            double p = (double)counts[i] * inv_len;
-            entropy -= p * log2(p);
+            // Approximation using 256-level LUT for performance
+            int idx = (counts[i] * 256) / len;
+            if (idx > 256) idx = 256;
+            entropy += log2_table[idx];
         }
     }
     return entropy;
@@ -357,7 +368,9 @@ static void detach_xdp_links_on_iface(int ifindex) {
 }
 
 int main(int argc, char **argv) {
-    init_boot_time(); if (argc < 2) return 1;
+    init_boot_time();
+    init_log2_table();
+    if (argc < 2) return 1;
     struct rlimit r = {RLIM_INFINITY, RLIM_INFINITY}; setrlimit(RLIMIT_MEMLOCK, &r);
     signal(SIGINT, sig_handler); signal(SIGTERM, sig_handler);
     mkdir("worker_telemetry", 0777);
