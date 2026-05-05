@@ -402,10 +402,10 @@ int main(int argc, char **argv) {
             if (bpf_xdp_attach(ifindex, prog_fd, flags, NULL) < 0) {
                 fprintf(stderr, "ERR: Failed to attach XDP on %d\n", ifindex);
             } else {
-                printf("[*] XDP attached on ifindex %d (SKB_MODE - Fallback)\n", ifindex);
+                fprintf(stderr, "[*] XDP attached on ifindex %d (SKB_MODE - Fallback)\n", ifindex);
             }
         } else {
-            printf("[*] XDP attached on ifindex %d (DRV_MODE - Native)\n", ifindex);
+            fprintf(stderr, "[*] XDP attached on ifindex %d (DRV_MODE - Native)\n", ifindex);
         }
         ifindexes[num_ifaces++] = ifindex;
     }
