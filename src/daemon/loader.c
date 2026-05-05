@@ -397,7 +397,16 @@ int main(int argc, char **argv) {
         detach_xdp_links_on_iface(ifindex);
         bpf_xdp_detach(ifindex, XDP_FLAGS_DRV_MODE, NULL); bpf_xdp_detach(ifindex, XDP_FLAGS_SKB_MODE, NULL);
         int flags = XDP_FLAGS_DRV_MODE;
-        if (bpf_xdp_attach(ifindex, prog_fd, flags, NULL) < 0) { flags = XDP_FLAGS_SKB_MODE; bpf_xdp_attach(ifindex, prog_fd, flags, NULL); }
+        if (bpf_xdp_attach(ifindex, prog_fd, flags, NULL) < 0) {
+            flags = XDP_FLAGS_SKB_MODE;
+            if (bpf_xdp_attach(ifindex, prog_fd, flags, NULL) < 0) {
+                fprintf(stderr, "ERR: Failed to attach XDP on %d\n", ifindex);
+            } else {
+                printf("[*] XDP attached on ifindex %d (SKB_MODE - Fallback)\n", ifindex);
+            }
+        } else {
+            printf("[*] XDP attached on ifindex %d (DRV_MODE - Native)\n", ifindex);
+        }
         ifindexes[num_ifaces++] = ifindex;
     }
     for (int i = 0; i < num_workers; i++) pthread_join(workers[i].thread, NULL);

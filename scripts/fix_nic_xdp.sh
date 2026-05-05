@@ -25,10 +25,9 @@ fi
 echo "[*] Definindo MTU 1500..."
 ip link set dev "$IFACE" mtu 1500 2>/dev/null
 
-# 4. Aumentar Ring Buffers para evitar drops em alta carga
-echo "[*] Maximizando Ring Buffers..."
-MAX_RX=$(ethtool -g "$IFACE" | grep -i "RX:" | head -1 | awk '{print $2}')
-MAX_TX=$(ethtool -g "$IFACE" | grep -i "TX:" | head -1 | awk '{print $2}')
-ethtool -G "$IFACE" rx "$MAX_RX" tx "$MAX_TX" 2>/dev/null
+# 4. (Opcional) Aumentar Ring Buffers - Removido por precaução (regressão SKB)
+# MAX_RX=$(ethtool -g "$IFACE" | grep -i "RX:" | head -1 | awk '{print $2}')
+# MAX_TX=$(ethtool -g "$IFACE" | grep -i "TX:" | head -1 | awk '{print $2}')
+# ethtool -G "$IFACE" rx "$MAX_RX" tx "$MAX_TX" 2>/dev/null
 
 echo "[+] NIC $IFACE pronta para XDP Native."
