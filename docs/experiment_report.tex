@@ -1,0 +1,296 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[portuguese]{babel}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{geometry}
+\usepackage[hidelinks]{hyperref}
+\usepackage{amsmath}
+\usepackage{multirow}
+
+\geometry{a4paper, margin=0.8in}
+
+\title{Relat\'{o}rio de Experimento e Prova de Conceito: Lynceus v1.0}
+\author{Leonardo Herkenhoff \\ \small Instituto Federal do Esp\'{i}rito Santo (IFES) - PPComp}
+\date{28 de Abril de 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Este relat\'{o}rio documenta a arquitetura, implementa\c{c}\~{a}o e valida\c{c}\~{a}o experimental do motor de telemetria \textbf{Lynceus v1.0}. Utilizando tecnologia eBPF/XDP, o sistema realiza a extra\c{c}\~{a}o de 495 atributos de rede em tempo real. A valida\c{c}\~{a}o empregou uma metodologia h\'{i}brida: valida\c{c}\~{a}o temporal \textit{cross-day} para vetores de ataque presentes em m\'{u}ltiplos dias do CICDDoS2019, e parti\c{c}\~{a}o estoc\'{a}stica 70/30 para vetores exclusivos. Ap\'{o}s a remo\c{c}\~{a}o de 26 \textit{features} de identidade e proxy de protocolo, o modelo Random Forest manteve $F_1 \geq 0{,}9965$ em 11 dos 13 vetores de ataque IPv4, confirmando a validade das caracter\'{i}sticas comportamentais extra\'{i}das. Uma an\'{a}lise ablativa revelou depend\^{e}ncia total do campo TTL para a detec\c{c}\~{a}o de ataques ICMPv6.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Introdu\c{c}\~{a}o}
+O monitoramento de redes em alta velocidade exige abordagens que minimizem o overhead no caminho de dados (\textit{data path}). O \textbf{Lynceus v1.0} foi desenvolvido para preencher a lacuna entre a performance bruta do eBPF e a profundidade anal\'{i}tica necess\'{a}ria para Machine Learning. O sistema extrai metadados L2-L7 e calcula m\'{e}tricas estat\'{i}sticas complexas sem interceptar o fluxo TCP/IP convencional do Kernel.
+
+\section{Arquitetura T\'{e}cnica}
+\subsection{Data Plane (Kernel-space)}
+Implementado via eBPF/XDP, o motor realiza a disseca\c{c}\~{a}o de pacotes no est\'{a}gio mais precoce poss\'{i}vel do driver de rede.
+\begin{itemize}
+    \item \textbf{Maps eBPF:} Utiliza \texttt{BPF\_MAP\_TYPE\_HASH} para manter o estado dos fluxos ativos e \texttt{BPF\_MAP\_TYPE\_RINGBUF} (via \texttt{ARRAY\_OF\_MAPS} por CPU) para exporta\c{c}\~{a}o de eventos \textit{zero-contention}.
+    \item \textbf{Disseca\c{c}\~{a}o Recursiva:} Suporte a VXLAN, GRE, IPv4/IPv6 (\textit{dual-stack}), TCP/UDP/ICMP e protocolos L7 (DNS, NTP, SNMP, SSDP).
+    \item \textbf{Otimiza\c{c}\~{a}o:} \texttt{\#pragma unroll} para travessia de labels DNS e extra\c{c}\~{a}o de payload, verificac\c{c}\~{a}o de limites $O(1)$ para compatibilidade com o verificador eBPF.
+\end{itemize}
+
+\subsection{Control Plane (User-space)}
+O daemon em C \'{e} respons\'{a}vel pela agrega\c{c}\~{a}o dos pacotes e pelo c\'{a}lculo de m\'{e}tricas de alta ordem.
+\begin{itemize}
+    \item \textbf{Estimadores de Welford:} C\'{a}lculo de m\'{e}dia e vari\^{a}ncia em \textit{single pass}, minimizando erro num\'{e}rico.
+    \item \textbf{Algoritmo $P^2$:} Estimativa de quantis (mediana) sem armazenamento integral das amostras.
+    \item \textbf{Afinidade de CPU:} Cada \textit{worker thread} \'{e} fixada ao n\'{u}cleo correspondente ao seu RingBuffer via \texttt{pthread\_setaffinity\_np()}, eliminando \textit{context switching}.
+    \item \textbf{I/O Desacoplado:} Serializa\c{c}\~{a}o CSV delegada a uma \textit{thread} dedicada (\texttt{g\_writer\_thread}), desacoplando c\'{a}lculos estat\'{i}sticos da lat\^{e}ncia de disco.
+\end{itemize}
+
+\section{Dicion\'{a}rio de Features (495 Atributos)}
+O Lynceus exporta uma matriz de 495 colunas por fluxo.
+
+\subsection{Distribui\c{c}\~{a}o dos Atributos}
+\begin{longtable}{p{4cm} p{10cm}}
+\toprule
+Categoria & Descri\c{c}\~{a}o \\
+\midrule
+Identifica\c{c}\~{a}o & flow\_id, src/dst ip, src/dst port, mac (Removidos na valida\c{c}\~{a}o). \\
+Volume & Duration, Packet/Byte counts direcionais, Ratios. \\
+Estat\'{i}sticas & Tot\_Pay, Fwd\_Pay, Bwd\_Pay, Tot\_Hdr, Fwd\_IAT, Win, IpId, Frag, TTL\_Var. \\
+Flags TCP & Contagem exaustiva direcional de FIN, SYN, RST, PSH, ACK, URG, ECE, CWR. \\
+Application L7 & Entropy, IcmpType/Code, DNSQueryType, NTP\_Stratum, SNMP\_PDU. \\
+Histogramas & 240 bins de frequ\^{e}ncia de tamanho de pacote (Hist\_Tot, Hist\_Fwd, Hist\_Bwd). \\
+\bottomrule
+\end{longtable}
+
+\section{Auditoria de Performance Experimental}
+O experimento foi conduzido no servidor de pesquisa \texttt{srv-660xs-ubuntu-2}, arquitetura x86\_64, equipado com processadores Intel(R) Xeon(R) Silver 4410Y totalizando 48 n\'{u}cleos l\'{o}gicos, e 32 GB de mem\'{o}ria RAM instalada. A inje\c{c}\~{a}o de tr\'{a}fego foi realizada via \texttt{tcpreplay -t} (\textit{topspeed}) sobre pares de interface virtual (\texttt{veth0/veth1}), for\c{c}ando a taxa m\'{a}xima suportada pelo barramento de mem\'{o}ria.
+
+\subsection{M\'{e}tricas de Ingest\~{a}o e Vaz\~{a}o}
+\begin{center}
+\footnotesize
+\begin{longtable}{l c c c c}
+\caption{Resultados Exaustivos de Performance} \\
+\toprule
+Experimento & Pacotes & PPS & Peak RAM (MB) & Peak CPU (\%) \\
+\midrule
+ICMPv6\_DDoS & 33.5M & 290.991 & 3.308,15 & 3,70\% \\
+DrDoS\_DNS (01-12) & 27.4M & 125.138 & 25.492,10 & 17,80\% \\
+DrDoS\_LDAP (01-12) & 8.3M & 135.504 & 14.245,20 & 12,20\% \\
+DrDoS\_MSSQL (01-12) & 7.2M & 129.903 & 19.716,20 & 20,60\% \\
+DrDoS\_NTP (01-12) & 71.0M & 166.253 & 12.805,45 & 5,70\% \\
+DrDoS\_NetBIOS (01-12) & 3.0M & 152.810 & 12.459,99 & 20,70\% \\
+DrDoS\_SNMP (01-12) & 16.0M & 123.153 & 22.773,51 & 20,30\% \\
+DrDoS\_SSDP (01-12) & 6.9M & 151.097 & 18.547,64 & 22,20\% \\
+DrDoS\_UDP (01-12) & 7.6M & 144.464 & 19.697,72 & 18,90\% \\
+Syn (01-12) & 0.4M & 181.644 & 4.971,09 & 26,20\% \\
+TFTP (01-12) & 56.8M & 137.240 & 28.769,21 & 21,60\% \\
+UDPLag (01-12) & 0.1M & 179.381 & Fast Ex. & Fast Ex. \\
+LDAP (03-11) & 6.5M & 133.836 & 12.614,68 & 13,30\% \\
+MSSQL (03-11) & 6.5M & 128.531 & 18.935,00 & 18,90\% \\
+NetBIOS (03-11) & 3.5M & 141.989 & 13.884,95 & 24,40\% \\
+Portmap (03-11) & 0.0M & 3.427 & Fast Ex. & Fast Ex. \\
+Syn (03-11) & 4.7M & 157.707 & 15.248,44 & 30,70\% \\
+UDP (03-11) & 9.9M & 142.728 & 22.629,05 & 20,80\% \\
+UDPLag (03-11) & 0.4M & 198.474 & 4.505,30 & 19,70\% \\
+\bottomrule
+\end{longtable}
+\footnotesize \textbf{Nota:} \textit{Fast Execution} refere-se a experimentos com dura\c{c}\~{a}o inferior a 1 segundo, que finalizaram antes do primeiro ciclo de amostragem do monitor de recursos.
+\end{center}
+
+\section{Valida\c{c}\~{a}o de Machine Learning}
+
+\subsection{Metodologia}
+
+Para eliminar fontes de \textit{Data Leakage} e avaliar exclusivamente as caracter\'{i}sticas comportamentais do extrator, adotou-se a seguinte metodologia:
+
+\textbf{Poda de Generaliza\c{c}\~{a}o.} Removeram-se 26 \textit{features} de identidade, proxy de protocolo e metadados topol\'{o}gicos antes do treinamento: \texttt{flow\_id}, \texttt{timestamp}, \texttt{src/dst\_ip}, \texttt{src/dst\_port}, \texttt{src/dst\_mac}, \texttt{protocol}, \texttt{ip\_ver}, \texttt{eth\_proto}, \texttt{traffic\_class}, \texttt{flow\_label}, \texttt{TunnelId}, \texttt{TunnelType}, \texttt{TTL} e a su\'{i}te completa \texttt{TTL\_Var\_*} (10 m\'{e}tricas). O modelo operou com 469 \textit{features} exclusivamente comportamentais.
+
+\textbf{Valida\c{c}\~{a}o H\'{i}brida.} Para os 6 vetores de ataque presentes em ambos os dias do CICDDoS2019, empregou-se \textbf{valida\c{c}\~{a}o temporal \textit{cross-day}}: treino integral no dia 01-12 e teste integral no dia 03-11. Para os 7 vetores exclusivos de um \'{u}nico dia, utilizou-se parti\c{c}\~{a}o estoc\'{a}stica 70/30.
+
+\textbf{Estimador.} Random Forest com 100 \'{a}rvores, \texttt{n\_jobs=12}, \textit{downcasting} para \texttt{float32}, limite de 2M amostras por dataset.
+
+\subsection{Resultados: Modo Conservador (sem TTL)}
+
+\begin{center}
+\footnotesize
+\begin{longtable}{l l c c c c c}
+\caption{Performance de Detec\c{c}\~{a}o --- Modo Conservador (469 features, sem TTL)} \\
+\toprule
+M\'{e}todo & Vetor de Ataque & Treino & Teste & Acc & Prec & F1 \\
+\midrule
+\multicolumn{7}{l}{\textit{Valida\c{c}\~{a}o Temporal Cross-Day (Treino: 01-12 $\rightarrow$ Teste: 03-11)}} \\
+\midrule
+Cross-Day & LDAP & 2.0M & 1.75M & 0,9930 & 0,9999 & 0,9965 \\
+Cross-Day & MSSQL & 2.0M & 2.0M & 0,9995 & 0,9997 & 0,9998 \\
+Cross-Day & NetBIOS & 1.47M & 1.7M & 0,9999 & 0,9999 & 1,0000 \\
+Cross-Day & UDP & 2.0M & 2.0M & 0,9970 & 0,9999 & 0,9985 \\
+Cross-Day & Syn & 173k & 2.0M & 0,9999 & 0,9999 & 0,9999 \\
+Cross-Day & UDPLag & 19k & 124k & 0,9987 & 0,9988 & 0,9993 \\
+\midrule
+\multicolumn{7}{l}{\textit{Parti\c{c}\~{a}o Estoc\'{a}stica 70/30}} \\
+\midrule
+Split & DrDoS\_DNS & 1.4M & 600k & 1,0000 & 1,0000 & 1,0000 \\
+Split & DrDoS\_NTP & 1.4M & 600k & 1,0000 & 1,0000 & 1,0000 \\
+Split & DrDoS\_SNMP & 1.4M & 600k & 1,0000 & 1,0000 & 1,0000 \\
+Split & DrDoS\_SSDP & 1.4M & 600k & 1,0000 & 1,0000 & 1,0000 \\
+Split & TFTP & 1.4M & 600k & 1,0000 & 1,0000 & 1,0000 \\
+Split & Portmap & 60 & 27 & 0,9630 & 0,6667 & 0,8000 \\
+Split & ICMPv6\_DDoS & 536k & 229k & 0,4756 & 0,4735 & 0,4706 \\
+\bottomrule
+\end{longtable}
+\end{center}
+
+\subsection{An\'{a}lise Ablativa: Impacto do TTL}
+
+Para verificar o impacto do campo TTL na capacidade discriminativa, reintroduziram-se as 11 \textit{features} da su\'{i}te TTL (480 \textit{features} totais). A Tabela~\ref{tab:ablative} apresenta a compara\c{c}\~{a}o:
+
+\begin{center}
+\footnotesize
+\begin{longtable}{l c c c}
+\caption{An\'{a}lise Ablativa do TTL} \label{tab:ablative} \\
+\toprule
+Vetor de Ataque & F1 sem TTL & F1 com TTL & $\Delta$ \\
+\midrule
+LDAP (Cross-Day) & 0,9965 & 0,9986 & +0,0021 \\
+MSSQL (Cross-Day) & 0,9998 & 0,9999 & +0,0001 \\
+NetBIOS (Cross-Day) & 1,0000 & 0,9999 & $-$0,0001 \\
+UDP (Cross-Day) & 0,9985 & 0,9999 & +0,0014 \\
+Syn (Cross-Day) & 0,9999 & 1,0000 & +0,0001 \\
+UDPLag (Cross-Day) & 0,9993 & 0,9995 & +0,0002 \\
+\midrule
+DrDoS\_DNS & 1,0000 & 1,0000 & 0 \\
+DrDoS\_NTP & 1,0000 & 1,0000 & 0 \\
+DrDoS\_SNMP & 1,0000 & 1,0000 & 0 \\
+DrDoS\_SSDP & 1,0000 & 1,0000 & 0 \\
+TFTP & 1,0000 & 1,0000 & 0 \\
+Portmap & 0,8000 & 0,8000 & 0 \\
+\textbf{ICMPv6\_DDoS} & \textbf{0,4706} & \textbf{0,9983} & \textbf{+0,5277} \\
+\bottomrule
+\end{longtable}
+\end{center}
+
+O ICMPv6\_DDoS apresentou depend\^{e}ncia total do campo TTL (\textit{hop limit}). Na aus\^{e}ncia desta su\'{i}te, o modelo degrada para performance aleat\'{o}ria ($F_1 = 0{,}47$). A an\'{a}lise de import\^{a}ncia de features revelou que 98,94\% da capacidade discriminativa concentra-se nas 5 vari\'{a}veis da su\'{i}te TTL. As demais caracter\'{i}sticas comportamentais (payload, janela TCP, fragmenta\c{c}\~{a}o) s\~{a}o estatisticamente id\^{e}nticas entre as classes benigna e maliciosa neste dataset.
+
+O TTL \'{e}, contudo, um indicador leg\'{i}timo de \textit{IP spoofing}: pacotes for\c{c}ados n\~{a}o atravessam a cadeia de roteamento natural, resultando em \textit{hop limits} an\^{o}malos. Sua inclus\~{a}o \'{e} metodologicamente justific\'{a}vel para detec\c{c}\~{a}o de ataques de reflex\~{a}o ICMPv6.
+
+\subsection{Import\^{a}ncia de Features --- Modo Conservador (Top 5 por Vetor)}
+
+\begin{center}
+\footnotesize
+\begin{longtable}{p{2.8cm} l c | p{2.8cm} l c}
+\caption{Import\^{a}ncia de Atributos Comportamentais (sem TTL)} \\
+\toprule
+Vetor & Atributo & Peso & Vetor & Atributo & Peso \\
+\midrule
+DrDoS\_DNS    & Win\_Median & 9,19\% & TFTP        & RST\_Cnt & 12,38\% \\
+             & ACK\_Bwd\_Cnt & 8,18\% &             & RST\_Bwd\_Cnt & 6,73\% \\
+             & ACK\_Cnt & 6,28\% &             & Bwd\_DeltaLen\_Min & 6,44\% \\
+             & Win\_Min & 5,93\% &             & ACK\_Bwd\_Cnt & 5,70\% \\
+             & Win\_Max & 5,82\% &             & BwdPacketsRate & 5,65\% \\
+\midrule
+LDAP (XDay)  & Frag\_Mean & 10,94\% & UDPLag (XDay) & Bwd\_Pay\_Max & 5,70\% \\
+             & Frag\_Max & 8,40\% &               & Tot\_Pay\_Max & 5,20\% \\
+             & Frag\_Median & 7,78\% &               & Bwd\_Pay\_Mean & 4,36\% \\
+             & Frag\_Min & 7,36\% &               & Frag\_Min & 4,26\% \\
+             & ACK\_Bwd\_Cnt & 7,11\% &               & Tot\_Pay\_Min & 3,81\% \\
+\midrule
+MSSQL (XDay) & Win\_Median & 4,52\% & Portmap     & Win\_Median & 7,49\% \\
+             & Win\_Mean & 4,33\% &             & Win\_Mean & 5,95\% \\
+             & ACK\_Cnt & 4,15\% &             & SYN\_Bwd\_Cnt & 3,86\% \\
+             & Frag\_Median & 4,12\% &             & SYN\_Cnt & 3,68\% \\
+             & ACK\_Bwd\_Cnt & 4,11\% &             & Win\_Max & 3,59\% \\
+\midrule
+DrDoS\_NTP    & Tot\_Pay\_Min & 6,72\% & NetBIOS (XDay) & Tot\_Pay\_Min & 6,67\% \\
+             & ACK\_Bwd\_Cnt & 5,06\% &                & Bwd\_Pay\_Min & 6,40\% \\
+             & Win\_Mean & 4,61\% &                & Bwd\_Pay\_Mean & 5,59\% \\
+             & Bwd\_Pay\_Median & 4,51\% &                & ACK\_Cnt & 4,71\% \\
+             & ACK\_Cnt & 4,20\% &                & Tot\_Pay\_Mean & 4,71\% \\
+\midrule
+DrDoS\_SNMP   & ACK\_Bwd\_Cnt & 9,67\% & UDP (XDay)  & Bwd\_Pay\_Median & 5,63\% \\
+             & ACK\_Cnt & 8,45\% &             & Bwd\_Pay\_Min & 5,57\% \\
+             & Win\_Median & 6,14\% &             & Bwd\_Pay\_Mean & 5,26\% \\
+             & Win\_Mean & 4,83\% &             & Tot\_Pay\_Median & 4,92\% \\
+             & Frag\_Min & 3,52\% &             & ACK\_Cnt & 4,79\% \\
+\midrule
+DrDoS\_SSDP   & Tot\_Pay\_Min & 6,53\% & Syn (XDay)  & Frag\_Max & 8,01\% \\
+             & Bwd\_Pay\_Max & 5,11\% &             & Frag\_Mean & 7,02\% \\
+             & Bwd\_Pay\_Min & 4,85\% &             & ACK\_Cnt & 6,59\% \\
+             & Tot\_Pay\_Mean & 4,55\% &             & Frag\_Median & 6,01\% \\
+             & BwdBytes & 4,33\% &             & Win\_Median & 5,02\% \\
+\midrule
+ICMPv6\_DDoS & BytesRate & 17,34\% & \textit{(N/A)} & - & - \\
+\textit{(F1=0,47)}  & BwdBytesRate & 17,33\% &                & - & - \\
+             & PacketsRate & 17,21\% &                & - & - \\
+             & BwdPacketsRate & 17,20\% &                & - & - \\
+             & duration & 7,27\% &                & - & - \\
+\bottomrule
+\end{longtable}
+\end{center}
+
+\subsection{Import\^{a}ncia de Features --- Modo Realista (Top 5 por Vetor, com TTL)}
+
+\begin{center}
+\footnotesize
+\begin{longtable}{p{2.8cm} l c | p{2.8cm} l c}
+\caption{Import\^{a}ncia de Atributos com Su\'{i}te TTL (480 features)} \\
+\toprule
+Vetor & Atributo & Peso & Vetor & Atributo & Peso \\
+\midrule
+DrDoS\_DNS    & ACK\_Bwd\_Cnt & 7,13\% & TFTP        & duration & 9,22\% \\
+             & Win\_Median & 6,44\% &             & RST\_Bwd\_Cnt & 8,00\% \\
+             & Win\_Max & 5,74\% &             & RST\_Cnt & 7,67\% \\
+             & TTL\_Var\_Min & 5,27\% &             & ACK\_Bwd\_Cnt & 7,18\% \\
+             & TTL\_Var\_Mean & 4,46\% &             & TotalBytes & 6,18\% \\
+\midrule
+LDAP (XDay)  & Frag\_Min & 10,10\% & UDPLag (XDay) & TTL\_Var\_Median & 7,19\% \\
+             & Frag\_Median & 8,27\% &               & Bwd\_Pay\_Max & 6,23\% \\
+             & ACK\_Bwd\_Cnt & 7,14\% &               & Tot\_Pay\_Median & 5,07\% \\
+             & Frag\_Max & 6,74\% &               & TTL\_Var\_Mean & 4,69\% \\
+             & Frag\_Mean & 6,22\% &               & Bwd\_Pay\_Median & 4,63\% \\
+\midrule
+MSSQL (XDay) & ACK\_Bwd\_Cnt & 4,35\% & Portmap     & TTL & 7,97\% \\
+             & Win\_Min & 4,17\% &             & TTL\_Var\_Min & 5,93\% \\
+             & TTL\_Var\_Max & 4,15\% &             & TTL\_Var\_Max & 5,90\% \\
+             & TTL\_Var\_Median & 3,96\% &             & SYN\_Cnt & 5,27\% \\
+             & TTL\_Var\_Mean & 3,95\% &             & TTL\_Var\_Median & 4,80\% \\
+\midrule
+DrDoS\_NTP    & ACK\_Bwd\_Cnt & 5,64\% & NetBIOS (XDay) & Tot\_Pay\_Max & 6,26\% \\
+             & Win\_Max & 4,07\% &                & Bwd\_Pay\_Median & 5,14\% \\
+             & Bwd\_Pay\_Max & 4,05\% &                & Bwd\_Pay\_Max & 4,80\% \\
+             & Win\_Median & 3,93\% &                & Tot\_Pay\_Median & 4,76\% \\
+             & Bwd\_Pay\_Min & 3,89\% &                & Tot\_Pay\_Min & 4,56\% \\
+\midrule
+DrDoS\_SNMP   & ACK\_Bwd\_Cnt & 9,48\% & UDP (XDay)  & Tot\_Pay\_Median & 8,02\% \\
+             & ACK\_Cnt & 5,15\% &             & Bwd\_Pay\_Median & 5,91\% \\
+             & Win\_Median & 4,91\% &             & Win\_Min & 4,71\% \\
+             & Win\_Max & 4,78\% &             & TTL\_Var\_Min & 4,18\% \\
+             & Win\_Mean & 3,89\% &             & TTL & 4,17\% \\
+\midrule
+DrDoS\_SSDP   & TTL & 5,87\% & Syn (XDay)  & TTL\_Var\_Min & 7,06\% \\
+             & TTL\_Var\_Mean & 5,41\% &             & ACK\_Cnt & 6,02\% \\
+             & TTL\_Var\_Max & 5,22\% &             & PacketsCount & 5,47\% \\
+             & Bwd\_Pay\_Min & 4,75\% &             & TTL\_Var\_Mean & 5,03\% \\
+             & Bwd\_Pay\_Max & 4,30\% &             & Win\_Max & 5,02\% \\
+\midrule
+ICMPv6\_DDoS & TTL\_Var\_Max & 24,98\% & \textit{(N/A)} & - & - \\
+             & TTL & 21,28\% &                & - & - \\
+             & TTL\_Var\_Mean & 19,08\% &                & - & - \\
+             & TTL\_Var\_Min & 18,28\% &                & - & - \\
+             & TTL\_Var\_Median & 15,32\% &                & - & - \\
+\bottomrule
+\end{longtable}
+\end{center}
+
+\section{Conclus\~{a}o e Trabalhos Futuros}
+
+A prova de conceito do \textbf{Lynceus v1.0} demonstra que a utiliza\c{c}\~{a}o de eBPF/XDP permite uma granularidade de 495 \textit{features} com performance superior a ferramentas em User-space (\textit{peak} de 290.991 PPS).
+
+A valida\c{c}\~{a}o h\'{i}brida \textit{cross-day} comprova que o vetor de caracter\'{i}sticas comportamentais generaliza entre dias distintos ($F_1 \geq 0{,}9965$), refutando a hip\'{o}tese de \textit{overfitting} ou \textit{Data Leakage}. As \textit{features} dominantes s\~{a}o exclusivamente derivadas de din\^{a}mica de rede: estat\'{i}sticas de payload, janela TCP, fragmenta\c{c}\~{a}o e contadores de flags.
+
+A an\'{a}lise ablativa do TTL revelou que este campo \'{e} o \'{u}nico discriminador dispon\'{i}vel para o dataset ICMPv6\_DDoS, constituindo um indicador leg\'{i}timo de \textit{IP spoofing} em ataques de reflex\~{a}o.
+
+Trabalhos futuros envolver\~{a}o: (i) gest\~{a}o de purga de estado (\textit{flow aging}) para redu\c{c}\~{a}o do \textit{footprint} de RAM; (ii) \textit{batching} de eventos no RingBuffer para recupera\c{c}\~{a}o do teto de 500k PPS; e (iii) valida\c{c}\~{a}o em datasets com separa\c{c}\~{a}o topol\'{o}gica (sub-redes distintas).
+
+\end{document}

@@ -1,0 +1,124 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[portuguese]{babel}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{geometry}
+\usepackage{hyperref}
+\hypersetup{hidelinks}
+\usepackage{graphicx}
+
+\geometry{margin=1in}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstset{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+
+\title{Lynceus Engine: Documentação Técnica de Extração Telemetria de Alta Fidelidade}
+\author{Leonardo Herkenhoff \\ \small Instituto Federal do Espírito Santo (IFES) - PPComp}
+\date{Abril de 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Este documento detalha o funcionamento interno do motor Lynceus, uma infraestrutura baseada em eBPF/XDP para extração de telemetria de rede com precisão científica. O sistema implementa uma arquitetura híbrida de alto desempenho, combinando processamento em kernel-space para ingestão de pacotes e análise estatística online em user-space para derivação de mais de 495 features por fluxo.
+\end{abstract}
+
+\tableofcontents
+
+\newpage
+
+\section{Introdução}
+O monitoramento de redes em alta velocidade exige soluções que minimizem o overhead de interrupções de hardware e cópias de memória. O Lynceus aborda este desafio utilizando o \textit{eXpress Data Path} (XDP), permitindo a dissecação de pacotes diretamente na camada de driver. Este documento serve como guia exaustivo para a compreensão da implementação v1.0.
+
+\section{Arquitetura do Sistema}
+O sistema é dividido em dois planos operacionais:
+\begin{itemize}
+    \item \textbf{Data Plane (Kernel):} Implementado em C/eBPF, responsável pela filtragem, decapsulamento recursivo e exportação via RingBuffers paralelos.
+    \item \textbf{Control Plane (User):} Daemon multi-threaded que agrega eventos, aplica algoritmos estatísticos online e exporta os dados em formato CSV para pipelines de Machine Learning.
+\end{itemize}
+
+\section{Definições Compartilhadas (\texttt{lynceus.h})}
+O arquivo \texttt{lynceus.h} estabelece a interface binária simétrica.
+
+\subsection{Identidade de Fluxo (\texttt{flow\_id\_t})}
+Utiliza-se uma estrutura compacta de 5-tuple (\textit{Protocol, IP Origem, IP Destino, Porta Origem, Porta Destino}). Para garantir compatibilidade dual-stack (IPv4/IPv6), os IPs são armazenados em arrays de 16 bytes.
+
+\subsection{Vetor de Features (\texttt{flow\_record\_t})}
+Estrutura que carrega metadados brutos do kernel, incluindo contadores de pacotes, bytes, flags TCP, tamanhos de janela e fragmentos de payload (\texttt{payload\_hint}) para análise de entropia.
+
+\section{Data Plane em Kernel (\texttt{main.bpf.c})}
+O programa XDP executa a lógica de decisão crítica.
+
+\subsection{Dissecação de Protocolos}
+O código realiza a descida recursiva na pilha de protocolos. 
+\begin{enumerate}
+    \item \textbf{L2/L3:} Identificação de EtherType e parsing de IPv4/IPv6.
+    \item \textbf{Túneis:} Suporte nativo a GRE e VXLAN. Caso um cabeçalho UDP 4789 seja detectado, o motor realiza o salto para o payload interno.
+    \item \textbf{L7 Discovery:} Parsers para DNS, SNMP, NTP e SSDP. Devido às restrições do \textit{BPF Verifier}, os loops de parsing L7 utilizam \texttt{\#pragma unroll} limitados a 16 iterações.
+\end{enumerate}
+
+\subsection{Gerenciamento de Mapas}
+\begin{itemize}
+    \item \textbf{\texttt{flow\_table}:} Tabela hash que mantém o estado efêmero do fluxo no kernel para evitar submissão redundante ao user-space em taxas de pacotes extremas.
+    \item \textbf{\texttt{pkt\_ringbuf\_map}:} Um \textit{ARRAY\_OF\_MAPS} contendo RingBuffers dedicados por CPU (per-core), eliminando contenção de trava (\textit{lock contention}).
+\end{itemize}
+
+\section{Control Plane em User-Space (\texttt{loader.c})}
+O daemon gerencia a complexidade estatística que o kernel não pode processar.
+
+\subsection{Concorrência e Afinidade}
+Cada CPU do sistema executa um Worker thread dedicado. A afinidade é configurada via \texttt{pthread\_setaffinity\_np} para garantir que os RingBuffers per-core sejam lidos localmente, maximizando o cache-locality.
+
+\subsection{Matemática Estatística Online}
+O Lynceus não armazena todos os pacotes. Ele utiliza algoritmos de passagem única.
+
+\subsubsection{Algoritmo de Welford}
+Para o cálculo de média ($\mu$), variância ($\sigma^2$), assimetria (\textit{skewness}) e curtose (\textit{kurtosis}) em uma única iteração, utiliza-se a atualização de momentos centrais:
+\[
+M_{k,n} = M_{k,n-1} + \dots \text{ (Fórmulas de momentos de 4ª ordem)}
+\]
+A variância é derivada como $\sigma^2 = \frac{M_2}{n-1}$.
+
+\subsubsection{Estimativa de Quantis ($P^2$)}
+Para medianas sem ordenação total, utiliza-se o algoritmo de Jain \& Chlamtac. Cinco marcadores rastreiam a densidade de probabilidade e se ajustam dinamicamente via interpolação parabólica.
+
+\subsection{SPSC Queue e Exportação}
+O sistema utiliza filas \textit{Single-Producer Single-Consumer} (SPSC) para desacoplar o processamento de rede da escrita em disco/stdout. Os Workers constroem as strings CSV em buffers de memória (\texttt{fmemopen}) e a thread de escrita (\textit{Writer}) realiza o drain assíncrono.
+
+\section{Análise Crítica e Falhas Lógicas}
+Como Parceiro de Pesquisa, aponto as seguintes limitações no código atual:
+\begin{enumerate}
+    \item \textbf{Janela de Observação L7:} O parser DNS está limitado a 16 labels. Pacotes maliciosos com profundidade maior evadirão a extração de metadados.
+    \item \textbf{Fragmentação IP:} O motor assume que o cabeçalho L4 está presente no primeiro fragmento. Fragmentos subsequentes ou fora de ordem podem gerar 5-tuples incompletas.
+    \item \textbf{Consumo de Memória:} A \texttt{flow\_table} em user-space é pré-alocada. Em cenários de ataques de exaustão de estado (SYN Flood massivo), a colisão de hash pode levar a perdas de telemetria se o scan de idle não for agressivo o suficiente.
+\end{enumerate}
+
+\section{Conclusão}
+O Lynceus v1.0 representa uma base sólida para monitoramento avançado. A integração entre dissecadores de kernel e algoritmos estatísticos online permite uma visibilidade granular sem precedentes em fluxos de rede de alta velocidade.
+
+\end{document}
