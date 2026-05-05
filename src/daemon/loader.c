@@ -221,13 +221,16 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
     double ts_val = (double)(norm_now + boot_time_ns) / 1e9, duration = (norm_now > norm_start) ? (double)(norm_now - norm_start) / 1e9 : 0.001;
 
     /* Part 1: IP & Base Flow (Fast) */
-    fast_ip_to_str(buf, &off, s->ip_ver, s->key.src_ip); buf[off++] = '-';
-    fast_ip_to_str(buf, &off, s->ip_ver, s->key.dst_ip);
-    off += sprintf(buf + off, "-%u-%u-%u,", ntohs(s->key.src_port), ntohs(s->key.dst_port), s->key.protocol);
-    fast_ip_to_str(buf, &off, s->ip_ver, s->key.src_ip); buf[off++] = ',';
-    fast_ip_to_str(buf, &off, s->ip_ver, s->key.dst_ip);
-    off += sprintf(buf + off, ",%u,%u,%u,%u,%u,%u,%u,%02x:%02x:%02x:%02x:%02x:%02x,%02x:%02x:%02x:%02x:%02x:%02x,%.6f,%.6f,%lu,%lu,%lu,%lu,%lu,%lu,%.2f,%.2f,",
-        ntohs(s->key.src_port), ntohs(s->key.dst_port), (uint32_t)s->key.protocol, (uint32_t)s->ip_ver, (uint32_t)ntohs(s->eth_proto), (uint32_t)s->traffic_class, (uint32_t)s->flow_label,
+    char sip[INET6_ADDRSTRLEN], dip[INET6_ADDRSTRLEN];
+    fast_ip_to_str(sip, NULL, s->ip_ver, s->key.src_ip);
+    fast_ip_to_str(dip, NULL, s->ip_ver, s->key.dst_ip);
+
+    off += sprintf(buf + off, "LYNCEUS_V1_VERIFIED,%s-%s-%u-%u-%u,%s,%s,%u,%u,%u,%u,%u,%u,%u,",
+        sip, dip, ntohs(s->key.src_port), ntohs(s->key.dst_port), s->key.protocol,
+        sip, dip, ntohs(s->key.src_port), ntohs(s->key.dst_port), (uint32_t)s->key.protocol, 
+        (uint32_t)s->ip_ver, (uint32_t)ntohs(s->eth_proto), (uint32_t)s->traffic_class, (uint32_t)s->flow_label);
+
+    off += sprintf(buf + off, "%02x:%02x:%02x:%02x:%02x:%02x,%02x:%02x:%02x:%02x:%02x:%02x,%.6f,%.6f,%lu,%lu,%lu,%lu,%lu,%lu,%.2f,%.2f,",
         s->src_mac[0], s->src_mac[1], s->src_mac[2], s->src_mac[3], s->src_mac[4], s->src_mac[5],
         s->dst_mac[0], s->dst_mac[1], s->dst_mac[2], s->dst_mac[3], s->dst_mac[4], s->dst_mac[5],
         ts_val, duration, s->t_pay.n, s->f_pay.n, s->b_pay.n, (uint64_t)(s->f_bytes + s->b_bytes), (uint64_t)s->f_bytes, (uint64_t)s->b_bytes,
@@ -379,7 +382,7 @@ int main(int argc, char **argv) {
         bpf_map_update_elem(outer_fd, &i, &zero_fd, BPF_ANY);
     }
     g_out_f = stdout; setvbuf(g_out_f, NULL, _IOFBF, 4 * 1024 * 1024);
-    fprintf(g_out_f, "flow_id,src_ip,dst_ip,src_port,dst_port,protocol,ip_ver,eth_proto,traffic_class,flow_label,src_mac,dst_mac,timestamp,duration,"
+    fprintf(g_out_f, "LYNCEUS_V1_VERIFIED,flow_id,src_ip,dst_ip,src_port,dst_port,protocol,ip_ver,eth_proto,traffic_class,flow_label,src_mac,dst_mac,timestamp,duration,"
                      "PacketsCount,FwdPacketsCount,BwdPacketsCount,TotalBytes,FwdBytes,BwdBytes,FwdBwdPktRatio,FwdBwdByteRatio,");
     const char *metrics[] = {"Tot_Pay","Fwd_Pay","Bwd_Pay","Tot_Hdr","Fwd_Hdr","Bwd_Hdr","Tot_IAT","Fwd_IAT","Bwd_IAT","Tot_DeltaLen","Fwd_DeltaLen","Bwd_DeltaLen","Win","IpId","Frag","TTL_Var"};
     for (int i=0; i<16; i++) fprintf(g_out_f, "%s_Max,%s_Min,%s_Mean,%s_Std,%s_Var,%s_Median,%s_Skew,%s_Kurt,%s_CoV,%s_Mode,", metrics[i],metrics[i],metrics[i],metrics[i],metrics[i],metrics[i],metrics[i],metrics[i],metrics[i],metrics[i]);

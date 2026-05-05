@@ -11,10 +11,10 @@ def validate_csv(filename):
             cols = len(header)
             print(f"    -> Columns found: {cols}")
             
-            if cols != 495:
-                print(f"[!] Warning: Expected 495 columns, found {cols}")
+            if cols != 496:
+                print(f"[!] Warning: Expected 496 columns, found {cols}")
             else:
-                print("[+] Schema parity confirmed: 495 columns.")
+                print("[+] Schema parity confirmed: 496 columns.")
             
             row_count = 0
             for row in reader:
