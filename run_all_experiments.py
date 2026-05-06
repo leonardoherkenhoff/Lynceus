@@ -23,11 +23,20 @@ RESULTS_BASE = os.path.join(BASE_DIR, "results_multi_branch")
 INTERIM_DIR = os.path.join(BASE_DIR, "data/interim/EBPF_RAW")
 PROCESSED_DIR = os.path.join(BASE_DIR, "data/processed/EBPF")
 
-def run(cmd, desc, check=True):
+def run(cmd, desc, check=True, log_path=None):
     print(f"\n[*] {desc}")
+    if log_path:
+        print(f"    [Logging to: {log_path}]")
+        f = open(log_path, "w")
+    else:
+        f = None
+    
     t0 = time.time()
-    r = subprocess.run(cmd, shell=True, cwd=BASE_DIR)
+    r = subprocess.run(cmd, shell=True, cwd=BASE_DIR, stdout=f, stderr=subprocess.STDOUT)
     dt = time.time() - t0
+    
+    if f: f.close()
+    
     status = "OK" if r.returncode == 0 else "FAIL"
     print(f"    [{status}] dt={dt:.1f}s")
     if check and r.returncode != 0:
@@ -70,27 +79,34 @@ def run_branch(branch, skip_build=False):
     print(f"  BRANCH: {branch}")
     print(f"{'='*60}")
 
+    log_dir = os.path.join(RESULTS_BASE, branch, "logs")
+    os.makedirs(log_dir, exist_ok=True)
+
     if not run(f"git checkout {branch}", f"Checkout {branch}"):
         return False
     if not run(f"git pull origin {branch}", f"Pull {branch}", check=False):
         pass  # Pull pode falhar se não houver remote, continua
 
     if not skip_build:
-        if not run("make clean && make 2>&1", "Compilacao"):
+        if not run("make clean && make 2>&1", "Compilacao", 
+                   log_path=os.path.join(log_dir, "build.log")):
             return False
     
     clean_interim()
 
     if not run("sudo python3 scripts/testbed/ebpf_wrapper.py",
-               "Extracao (VETH + tcpreplay)"):
+               "Extracao (VETH + tcpreplay)",
+               log_path=os.path.join(log_dir, "extraction.log")):
         return False
 
     if not run("sudo python3 scripts/preprocessing/ebpf_labeler.py",
-               "Labeling (Ground-Truth)"):
+               "Labeling (Ground-Truth)",
+               log_path=os.path.join(log_dir, "labeling.log")):
         return False
 
     if not run("sudo python3 scripts/analysis/ebpf_run_benchmark.py",
-               "Benchmark (Random Forest)"):
+               "Benchmark (Random Forest)",
+               log_path=os.path.join(log_dir, "ml_benchmark.log")):
         return False
 
     save_results(branch)
