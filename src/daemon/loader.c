@@ -40,7 +40,7 @@
 #define IDLE_SCAN_BATCH     10000
 
 #define SPSC_SLOTS    1024
-#define MAX_RECORD    16384
+#define MAX_RECORD    32768
 
 struct spsc_queue {
     char     data[SPSC_SLOTS][MAX_RECORD];
@@ -125,13 +125,11 @@ static inline double calculate_entropy(const uint8_t *data, size_t len) {
     if (len == 0) return 0;
     uint32_t counts[256] = {0};
     for (size_t i = 0; i < len; i++) counts[data[i]]++;
-    double entropy = 0;
+    double entropy = 0, inv_len = 1.0 / (double)len;
     for (int i = 0; i < 256; i++) {
         if (counts[i] > 0) {
-            // Approximation using 256-level LUT for performance
-            int idx = (counts[i] * 256) / len;
-            if (idx > 256) idx = 256;
-            entropy += log2_table[idx];
+            double p = (double)counts[i] * inv_len;
+            entropy -= p * log2(p);
         }
     }
     return entropy;
@@ -209,24 +207,49 @@ static inline double median_from_hist(const uint64_t *hist, uint64_t n) {
     return (double)((HIST_BINS - 1) * HIST_STEP);
 }
 
+static inline int fast_itoa(uint64_t val, char *buf) {
+    if (val == 0) { buf[0] = '0'; return 1; }
+    char temp[20]; int i = 0;
+    while (val > 0) { temp[i++] = (val % 10) + '0'; val /= 10; }
+    int len = i;
+    while (i > 0) { buf[len - i] = temp[i - 1]; i--; }
+    return len;
+}
+
+static inline int fast_mac_to_str(const uint8_t *mac, char *buf) {
+    const char *hex = "0123456789abcdef";
+    for (int i = 0; i < 6; i++) {
+        buf[i*3] = hex[mac[i] >> 4];
+        buf[i*3+1] = hex[mac[i] & 0x0F];
+        if (i < 5) buf[i*3+2] = ':';
+    }
+    return 17;
+}
+
+static inline int fast_dtoa(double val, char *buf) {
+    if (isnan(val)) { memcpy(buf, "0.0000", 6); return 6; }
+    if (val < 0) { *buf++ = '-'; return 1 + fast_dtoa(-val, buf); }
+    uint64_t integral = (uint64_t)val;
+    int len = fast_itoa(integral, buf);
+    buf[len++] = '.';
+    uint32_t fractional = (uint32_t)((val - (double)integral) * 10000 + 0.5);
+    if (fractional >= 10000) fractional = 9999;
+    
+    // Padding zeros
+    if (fractional < 1000) buf[len++] = '0';
+    if (fractional < 100) buf[len++] = '0';
+    if (fractional < 10) buf[len++] = '0';
+    
+    len += fast_itoa(fractional, buf + len);
+    return len;
+}
+
 static inline void fast_ip_to_str(char *buf, int *off, uint8_t ver, const uint8_t *addr) {
     if (ver == 4) {
-        uint8_t a = addr[12], b = addr[13], c = addr[14], d = addr[15];
-        if (a >= 100) { buf[(*off)++] = (a / 100) + '0'; a %= 100; buf[(*off)++] = (a / 10) + '0'; buf[(*off)++] = (a % 10) + '0'; }
-        else if (a >= 10) { buf[(*off)++] = (a / 10) + '0'; buf[(*off)++] = (a % 10) + '0'; }
-        else buf[(*off)++] = a + '0';
-        buf[(*off)++] = '.';
-        if (b >= 100) { buf[(*off)++] = (b / 100) + '0'; b %= 100; buf[(*off)++] = (b / 10) + '0'; buf[(*off)++] = (b % 10) + '0'; }
-        else if (b >= 10) { buf[(*off)++] = (b / 10) + '0'; buf[(*off)++] = (b % 10) + '0'; }
-        else buf[(*off)++] = b + '0';
-        buf[(*off)++] = '.';
-        if (c >= 100) { buf[(*off)++] = (c / 100) + '0'; c %= 100; buf[(*off)++] = (c / 10) + '0'; buf[(*off)++] = (c % 10) + '0'; }
-        else if (c >= 10) { buf[(*off)++] = (c / 10) + '0'; buf[(*off)++] = (c % 10) + '0'; }
-        else buf[(*off)++] = c + '0';
-        buf[(*off)++] = '.';
-        if (d >= 100) { buf[(*off)++] = (d / 100) + '0'; d %= 100; buf[(*off)++] = (d / 10) + '0'; buf[(*off)++] = (d % 10) + '0'; }
-        else if (d >= 10) { buf[(*off)++] = (d / 10) + '0'; buf[(*off)++] = (d % 10) + '0'; }
-        else buf[(*off)++] = d + '0';
+        *off += fast_itoa(addr[12], buf + *off); buf[(*off)++] = '.';
+        *off += fast_itoa(addr[13], buf + *off); buf[(*off)++] = '.';
+        *off += fast_itoa(addr[14], buf + *off); buf[(*off)++] = '.';
+        *off += fast_itoa(addr[15], buf + *off);
     } else {
         *off += snprintf(buf + *off, 40, "%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
             addr[0], addr[1], addr[2], addr[3], addr[4], addr[5], addr[6], addr[7],
@@ -249,48 +272,106 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
     /* Part 1: IP & Base Flow (Fast) */
     fast_ip_to_str(buf, &off, s->ip_ver, s->key.src_ip); buf[off++] = '-';
     fast_ip_to_str(buf, &off, s->ip_ver, s->key.dst_ip);
-    off += snprintf(buf + off, MAX_RECORD - off, "-%u-%u-%u,", ntohs(s->key.src_port), ntohs(s->key.dst_port), s->key.protocol);
+    buf[off++] = '-'; off += fast_itoa(ntohs(s->key.src_port), buf + off);
+    buf[off++] = '-'; off += fast_itoa(ntohs(s->key.dst_port), buf + off);
+    buf[off++] = '-'; off += fast_itoa(s->key.protocol, buf + off); buf[off++] = ',';
     
     fast_ip_to_str(buf, &off, s->ip_ver, s->key.src_ip); buf[off++] = ',';
-    fast_ip_to_str(buf, &off, s->ip_ver, s->key.dst_ip);
-    off += snprintf(buf + off, MAX_RECORD - off, ",%u,%u,%u,%u,%u,%u,%u,%02x:%02x:%02x:%02x:%02x:%02x,%02x:%02x:%02x:%02x:%02x:%02x,%.6f,%.6f,%lu,%lu,%lu,%lu,%lu,%lu,%.2f,%.2f,",
-        ntohs(s->key.src_port), ntohs(s->key.dst_port), (uint32_t)s->key.protocol, (uint32_t)s->ip_ver, (uint32_t)ntohs(s->eth_proto), (uint32_t)s->traffic_class, (uint32_t)s->flow_label,
-        s->src_mac[0], s->src_mac[1], s->src_mac[2], s->src_mac[3], s->src_mac[4], s->src_mac[5],
-        s->dst_mac[0], s->dst_mac[1], s->dst_mac[2], s->dst_mac[3], s->dst_mac[4], s->dst_mac[5],
-        ts_val, duration, s->t_pay.n, s->f_pay.n, s->b_pay.n, (uint64_t)(s->f_bytes + s->b_bytes), (uint64_t)s->f_bytes, (uint64_t)s->b_bytes,
-        (s->b_pay.n > 0 ? (double)s->f_pay.n/s->b_pay.n : (double)s->f_pay.n), (s->b_bytes > 0 ? (double)s->f_bytes/s->b_bytes : (double)s->f_bytes));
+    fast_ip_to_str(buf, &off, s->ip_ver, s->key.dst_ip); buf[off++] = ',';
+    off += fast_itoa(ntohs(s->key.src_port), buf + off); buf[off++] = ',';
+    off += fast_itoa(ntohs(s->key.dst_port), buf + off); buf[off++] = ',';
+    off += fast_itoa(s->key.protocol, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->ip_ver, buf + off); buf[off++] = ',';
+    off += fast_itoa(ntohs(s->eth_proto), buf + off); buf[off++] = ',';
+    off += fast_itoa(s->traffic_class, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->flow_label, buf + off); buf[off++] = ',';
+    off += fast_mac_to_str(s->src_mac, buf + off); buf[off++] = ',';
+    off += fast_mac_to_str(s->dst_mac, buf + off); buf[off++] = ',';
+    off += fast_dtoa(ts_val, buf + off); buf[off++] = ',';
+    off += fast_dtoa(duration, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->t_pay.n, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->f_pay.n, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->b_pay.n, buf + off); buf[off++] = ',';
+    off += fast_itoa((uint64_t)(s->f_bytes + s->b_bytes), buf + off); buf[off++] = ',';
+    off += fast_itoa((uint64_t)s->f_bytes, buf + off); buf[off++] = ',';
+    off += fast_itoa((uint64_t)s->b_bytes, buf + off); buf[off++] = ',';
+    off += fast_dtoa((s->b_pay.n > 0 ? (double)s->f_pay.n/s->b_pay.n : (double)s->f_pay.n), buf + off); buf[off++] = ',';
+    off += fast_dtoa((s->b_bytes > 0 ? (double)s->f_bytes/s->b_bytes : (double)s->f_bytes), buf + off); buf[off++] = ',';
 
     /* Part 2: Statistical Metrics (Heavy) */
     struct welford_stat *st[] = {&s->t_pay,&s->f_pay,&s->b_pay,&s->t_hdr,&s->f_hdr,&s->b_hdr,&s->t_iat,&s->f_iat,&s->b_iat,&s->t_delta,&s->f_delta,&s->b_delta,&s->win_s,&s->ip_id_s,&s->frag_s,&s->ttl_s};
     for (int i=0; i<16; i++) {
         double med = (i < 3) ? median_from_hist((i==0?s->t_hist:(i==1?s->f_hist:s->b_hist)), st[i]->n) : w_median(st[i]);
-        off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,0.00,",
-            (double)st[i]->max, (double)st[i]->min, w_mean(st[i]), w_std(st[i]), w_var(st[i]), med, w_skew(st[i]), w_kurt(st[i]), (w_mean(st[i])>0?w_std(st[i])/w_mean(st[i]):0));
+        off += fast_dtoa((double)st[i]->max, buf + off); buf[off++] = ',';
+        off += fast_dtoa((double)st[i]->min, buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_mean(st[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_std(st[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_var(st[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa(med, buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_skew(st[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_kurt(st[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa((w_mean(st[i])>0?w_std(st[i])/w_mean(st[i]):0), buf + off); buf[off++] = ',';
+        buf[off++] = '0'; buf[off++] = '.'; buf[off++] = '0'; buf[off++] = '0'; buf[off++] = ',';
     }
 
     /* Part 3: Rest of Features */
-    off += snprintf(buf + off, MAX_RECORD - off, "%u,%u,", s->f_win_init, s->b_win_init);
-    for (int i=0; i<8; i++) off += snprintf(buf + off, MAX_RECORD - off, "%lu,%lu,%lu,", s->flags[i], s->f_flags[i], s->b_flags[i]);
-    off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%u,%u,%u,%u,", calculate_entropy(s->ip_ver == 4 ? &s->key.src_ip[12] : s->key.src_ip, s->ip_ver == 4 ? 4 : 16),
-        (uint32_t)s->last_icmp_type, (uint32_t)s->last_icmp_code, (uint32_t)s->last_ttl, (uint32_t)s->last_icmp_id);
+    off += fast_itoa(s->f_win_init, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->b_win_init, buf + off); buf[off++] = ',';
+    for (int i=0; i<8; i++) {
+        off += fast_itoa(s->flags[i], buf + off); buf[off++] = ',';
+        off += fast_itoa(s->f_flags[i], buf + off); buf[off++] = ',';
+        off += fast_itoa(s->b_flags[i], buf + off); buf[off++] = ',';
+    }
+    off += fast_dtoa(calculate_entropy(s->ip_ver == 4 ? &s->key.src_ip[12] : s->key.src_ip, s->ip_ver == 4 ? 4 : 16), buf + off); buf[off++] = ',';
+    off += fast_itoa(s->last_icmp_type, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->last_icmp_code, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->last_ttl, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->last_icmp_id, buf + off); buf[off++] = ',';
     struct welford_stat *ext[] = {&s->active_s, &s->idle_s};
-    for (int i=0; i<2; i++) off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,0.00,",
-        (double)ext[i]->max, (double)ext[i]->min, w_mean(ext[i]), w_std(ext[i]), w_var(ext[i]), w_median(ext[i]), w_skew(ext[i]), w_kurt(ext[i]), (w_mean(ext[i])>0?w_std(ext[i])/w_mean(ext[i]):0));
-    off += snprintf(buf + off, MAX_RECORD - off, "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%lu,%lu,%lu,%lu,%lu,%lu,%u,%u,%u,%u,%u,%u,%u,%u,%u,",
-        (duration > 0 ? (double)(s->f_bytes+s->b_bytes)/duration : 0), (duration > 0 ? (double)s->f_bytes/duration : 0), (duration > 0 ? (double)s->b_bytes/duration : 0),
-        (duration > 0 ? (double)s->t_pay.n/duration : 0), (duration > 0 ? (double)s->f_pay.n/duration : 0), (duration > 0 ? (double)s->b_pay.n/duration : 0),
-        (s->f_pay.n > 0 ? (double)s->b_pay.n/s->f_pay.n : 0), s->f_bulk_bytes, s->f_bulk_pkts, s->f_bulk_cnt, s->b_bulk_bytes, s->b_bulk_pkts, s->b_bulk_cnt,
-        s->dns_answer_count, s->dns_qtype, s->dns_qclass, s->tunnel_id, s->tunnel_type, s->ntp_mode, s->ntp_stratum, s->snmp_pdu_type, s->ssdp_method);
-    for (int i=0; i<HIST_BINS; i++) off += sprintf(buf + off, "%lu,", s->t_hist[i]);
-    for (int i=0; i<HIST_BINS; i++) off += sprintf(buf + off, "%lu,", s->f_hist[i]);
-    for (int i=0; i<HIST_BINS; i++) off += sprintf(buf + off, "%lu%s", s->b_hist[i], (i == HIST_BINS-1 ? "" : ","));
+    for (int i=0; i<2; i++) {
+        off += fast_dtoa((double)ext[i]->max, buf + off); buf[off++] = ',';
+        off += fast_dtoa((double)ext[i]->min, buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_mean(ext[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_std(ext[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_var(ext[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_median(ext[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_skew(ext[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_kurt(ext[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa((w_mean(ext[i])>0?w_std(ext[i])/w_mean(ext[i]):0), buf + off); buf[off++] = ',';
+        buf[off++] = '0'; buf[off++] = '.'; buf[off++] = '0'; buf[off++] = '0'; buf[off++] = ',';
+    }
+    off += fast_dtoa((duration > 0 ? (double)(s->f_bytes+s->b_bytes)/duration : 0), buf + off); buf[off++] = ',';
+    off += fast_dtoa((duration > 0 ? (double)s->f_bytes/duration : 0), buf + off); buf[off++] = ',';
+    off += fast_dtoa((duration > 0 ? (double)s->b_bytes/duration : 0), buf + off); buf[off++] = ',';
+    off += fast_dtoa((duration > 0 ? (double)s->t_pay.n/duration : 0), buf + off); buf[off++] = ',';
+    off += fast_dtoa((duration > 0 ? (double)s->f_pay.n/duration : 0), buf + off); buf[off++] = ',';
+    off += fast_dtoa((duration > 0 ? (double)s->b_pay.n/duration : 0), buf + off); buf[off++] = ',';
+    off += fast_dtoa((s->f_pay.n > 0 ? (double)s->b_pay.n/s->f_pay.n : 0), buf + off); buf[off++] = ',';
+    off += fast_itoa(s->f_bulk_bytes, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->f_bulk_pkts, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->f_bulk_cnt, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->b_bulk_bytes, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->b_bulk_pkts, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->b_bulk_cnt, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->dns_answer_count, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->dns_qtype, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->dns_qclass, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->tunnel_id, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->tunnel_type, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->ntp_mode, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->ntp_stratum, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->snmp_pdu_type, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->ssdp_method, buf + off); buf[off++] = ',';
+    for (int i=0; i<HIST_BINS; i++) { off += fast_itoa(s->t_hist[i], buf + off); buf[off++] = ','; }
+    for (int i=0; i<HIST_BINS; i++) { off += fast_itoa(s->f_hist[i], buf + off); buf[off++] = ','; }
+    for (int i=0; i<HIST_BINS; i++) { off += fast_itoa(s->b_hist[i], buf + off); if (i < HIST_BINS-1) buf[off++] = ','; }
     buf[off++] = '\n'; q->lens[idx] = off; atomic_store_explicit(&q->tail, t + 1, memory_order_release);
 }
 
 static int handle_event(void *ctx, void *data, size_t data_sz) {
     (void)data_sz; struct worker_t *w = ctx; const packet_event_t *e = data;
-    uint32_t h = 2166136261U; const uint8_t *p = (const uint8_t *)&e->key;
-    for (size_t i = 0; i < sizeof(flow_id_t); i++) { h ^= p[i]; h *= 16777619; }
+    uint32_t h = 0; const uint8_t *p = (const uint8_t *)&e->key;
+    for (size_t i = 0; i < sizeof(flow_id_t); i++) h = h * 31 + p[i];
     uint32_t idx = h % FLOW_HASH_SIZE, probes = 0;
     while (w->flow_table[idx].active && memcmp(&w->flow_table[idx].key, &e->key, sizeof(flow_id_t)) != 0) {
         idx = (idx + 1) % FLOW_HASH_SIZE; if (++probes > 4096) return 0;
