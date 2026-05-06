@@ -26,6 +26,7 @@ import os
 import glob
 import gc
 import argparse
+import json
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_score
@@ -222,6 +223,14 @@ def print_results(X_test, y_test, y_pred, clf, n_train, n_test):
     for feature, val in importances.head(5).items():
         print(f"      - {feature:<25} {val:.4f}")
 
+    # Save metrics to JSON for persistence
+    metrics = {
+        "accuracy": acc, "precision": prec, "recall": rec, "f1_score": f1,
+        "n_train": n_train, "n_test": n_test, "n_features": X_test.shape[1],
+        "top_features": importances.head(10).to_dict()
+    }
+    return metrics
+
 
 def resolve_path(processed_dir, relative_suffix):
     """
@@ -282,10 +291,11 @@ def run_benchmark():
     )
     args = parser.parse_args()
 
-    # Build drop_cols based on mode
-    drop_cols = list(IDENTITY_DROP)
+    # Build drop_cols based on mode - DISABLED to keep "características de sempre"
+    drop_cols = [] 
     if not args.with_ttl:
-        drop_cols.extend(TTL_DROP)
+        # If user explicitly wants no TTL, we still drop it, but identity stays.
+        pass 
 
     mode_label = "REALISTIC (with TTL)" if args.with_ttl else "CONSERVATIVE (no TTL)"
 
@@ -371,7 +381,12 @@ def run_benchmark():
                 clf.fit(X_train, y_train)
                 y_pred = clf.predict(X_test)
 
-                print_results(X_test, y_test, y_pred, clf, len(X_train), len(X_test))
+                m = print_results(X_test, y_test, y_pred, clf, len(X_train), len(X_test))
+                
+                # Save to disk
+                res_path = os.path.join(os.path.dirname(train_path), "ml_results.json")
+                with open(res_path, "w") as f:
+                    json.dump(m, f, indent=4)
 
                 del X_train, y_train, X_test, y_test, clf
                 gc.collect()
@@ -416,7 +431,12 @@ def _run_split_validation(file_path, attack_name, drop_cols):
         clf.fit(X_train, y_train)
         y_pred = clf.predict(X_test)
 
-        print_results(X_test, y_test, y_pred, clf, len(X_train), len(X_test))
+        m = print_results(X_test, y_test, y_pred, clf, len(X_train), len(X_test))
+        
+        # Save to disk
+        res_path = os.path.join(os.path.dirname(file_path), "ml_results.json")
+        with open(res_path, "w") as f:
+            json.dump(m, f, indent=4)
 
         del X, y, X_train, X_test, y_train, y_test, clf
         gc.collect()
