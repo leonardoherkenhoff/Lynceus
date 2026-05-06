@@ -1,8 +1,7 @@
 /**
  * @file loader.c
- * @brief User-Space Control Plane - High Performance Network Feature Extractor.
- *
- * @version 1.2 (High-Performance Serialization & Zero-Copy Optimization)
+ * @brief User-space control plane for eBPF telemetry extraction.
+ * Auto-scales workers, flow tables, and buffers based on available hardware.
  */
 
 #define _GNU_SOURCE
@@ -40,7 +39,12 @@
 #define IDLE_SCAN_BATCH     10000
 
 #define SPSC_SLOTS    1024
-#define MAX_RECORD    32768
+#define MAX_RECORD    8192
+
+/* Computed at startup based on available RAM */
+static uint32_t g_flow_table_size = 65536;
+static uint32_t g_flow_table_mask = 65535;
+static size_t   g_rb_size = 16 * 1024 * 1024;
 
 struct spsc_queue {
     char     data[SPSC_SLOTS][MAX_RECORD];
@@ -368,13 +372,18 @@ static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t
     buf[off++] = '\n'; q->lens[idx] = off; atomic_store_explicit(&q->tail, t + 1, memory_order_release);
 }
 
+static inline uint32_t fnv1a(const uint8_t *p, size_t len) {
+    uint32_t h = 2166136261u;
+    for (size_t i = 0; i < len; i++) h = (h ^ p[i]) * 16777619u;
+    return h;
+}
+
 static int handle_event(void *ctx, void *data, size_t data_sz) {
     (void)data_sz; struct worker_t *w = ctx; const packet_event_t *e = data;
-    uint32_t h = 0; const uint8_t *p = (const uint8_t *)&e->key;
-    for (size_t i = 0; i < sizeof(flow_id_t); i++) h = h * 31 + p[i];
-    uint32_t idx = h % FLOW_HASH_SIZE, probes = 0;
+    uint32_t h = fnv1a((const uint8_t *)&e->key, sizeof(flow_id_t));
+    uint32_t idx = h & g_flow_table_mask, probes = 0;
     while (w->flow_table[idx].active && memcmp(&w->flow_table[idx].key, &e->key, sizeof(flow_id_t)) != 0) {
-        idx = (idx + 1) % FLOW_HASH_SIZE; if (++probes > 4096) return 0;
+        idx = (idx + 1) & g_flow_table_mask; if (++probes > 4096) return 0;
     }
     struct flow_state *s = &w->flow_table[idx];
     if (!s->active) {
@@ -432,7 +441,8 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
 void *worker_fn(void *arg) {
     struct worker_t *w = arg; cpu_set_t cpuset; CPU_ZERO(&cpuset); CPU_SET(w->id % 256, &cpuset);
     pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
-    w->flow_table = calloc(FLOW_HASH_SIZE, sizeof(struct flow_state));
+    w->flow_table = calloc(g_flow_table_size, sizeof(struct flow_state));
+    if (!w->flow_table) { fprintf(stderr, "FATAL: worker %d: calloc failed\n", w->id); return NULL; }
     w->rb = ring_buffer__new(w->rb_fd, handle_event, w, NULL);
     const uint64_t timeout_ns = (uint64_t)(IDLE_FLOW_TIMEOUT_S * 1e9);
     while (!exiting) {
@@ -440,14 +450,14 @@ void *worker_fn(void *arg) {
         struct timespec ts_idle; clock_gettime(CLOCK_REALTIME, &ts_idle);
         uint64_t now_idle = (uint64_t)ts_idle.tv_sec * 1000000000ULL + ts_idle.tv_nsec;
         for (int k = 0; k < IDLE_SCAN_BATCH; k++) {
-            uint32_t idx = w->scan_ptr; w->scan_ptr = (w->scan_ptr + 1) % FLOW_HASH_SIZE;
+            uint32_t idx = w->scan_ptr; w->scan_ptr = (w->scan_ptr + 1) & g_flow_table_mask;
             struct flow_state *fs = &w->flow_table[idx];
             if (fs->active && fs->t_last > 0 && (now_idle - fs->t_last) > timeout_ns) { flush_flow_record(w, fs, now_idle); fs->active = 0; }
         }
     }
     struct timespec ts_now; clock_gettime(CLOCK_REALTIME, &ts_now);
     uint64_t now_ns = (uint64_t)ts_now.tv_sec * 1000000000ULL + ts_now.tv_nsec;
-    for (int i = 0; i < FLOW_HASH_SIZE; i++) flush_flow_record(w, &w->flow_table[i], now_ns);
+    for (uint32_t i = 0; i < g_flow_table_size; i++) flush_flow_record(w, &w->flow_table[i], now_ns);
     free(w->flow_table); ring_buffer__free(w->rb); return NULL;
 }
 
@@ -463,27 +473,77 @@ static void detach_xdp_links_on_iface(int ifindex) {
     }
 }
 
+static uint32_t next_pow2(uint32_t v) {
+    v--; v |= v >> 1; v |= v >> 2; v |= v >> 4; v |= v >> 8; v |= v >> 16; v++;
+    return v;
+}
+
+static void auto_tune(int cores) {
+    long pages = sysconf(_SC_PHYS_PAGES);
+    long page_sz = sysconf(_SC_PAGE_SIZE);
+    size_t total_ram = (size_t)pages * page_sz;
+    size_t usable_ram = total_ram * 3 / 4; /* reserve 25% for OS/kernel */
+
+    size_t flow_state_sz = sizeof(struct flow_state);
+    size_t spsc_sz = sizeof(struct spsc_queue);
+
+    /* Determine max workers that fit in RAM */
+    /* Per worker: flow_table + SPSC queue + RingBuffer */
+    size_t min_ft_entries = 4096;
+    size_t per_worker_fixed = spsc_sz + 16 * 1024 * 1024; /* SPSC + min RB 16MB */
+    int max_workers = (int)(usable_ram / (min_ft_entries * flow_state_sz + per_worker_fixed));
+    if (max_workers < 1) max_workers = 1;
+    if (max_workers > cores) max_workers = cores;
+    if (max_workers > 256) max_workers = 256;
+    num_workers = max_workers;
+
+    /* Size flow table to use remaining RAM budget per worker */
+    size_t ram_per_worker = usable_ram / num_workers;
+    size_t ft_budget = ram_per_worker - per_worker_fixed;
+    uint32_t ft_entries = (uint32_t)(ft_budget / flow_state_sz);
+
+    /* Clamp to [4096, 524288] and round down to power of 2 */
+    if (ft_entries > 524288) ft_entries = 524288;
+    if (ft_entries < 4096) ft_entries = 4096;
+    ft_entries = next_pow2(ft_entries) >> 1; /* round down */
+    if (ft_entries < 4096) ft_entries = 4096;
+
+    g_flow_table_size = ft_entries;
+    g_flow_table_mask = ft_entries - 1;
+
+    /* Scale RingBuffer: 16MB base, up to 32MB if RAM allows */
+    size_t rb_budget = ram_per_worker - (size_t)ft_entries * flow_state_sz - spsc_sz;
+    g_rb_size = 16 * 1024 * 1024;
+    if (rb_budget > 32 * 1024 * 1024) g_rb_size = 32 * 1024 * 1024;
+
+    fprintf(stderr, "[auto-tune] RAM: %.1f GB, Cores: %d\n",
+            (double)total_ram / (1024*1024*1024), cores);
+    fprintf(stderr, "[auto-tune] Workers: %d, FlowTable: %u entries (%.0f MB/worker), RB: %zu MB\n",
+            num_workers, g_flow_table_size,
+            (double)g_flow_table_size * flow_state_sz / (1024*1024),
+            g_rb_size / (1024*1024));
+    fprintf(stderr, "[auto-tune] Total RAM footprint: %.1f GB\n",
+            (double)num_workers * ((double)g_flow_table_size * flow_state_sz + spsc_sz + g_rb_size) / (1024*1024*1024));
+}
+
 int main(int argc, char **argv) {
     init_boot_time();
     init_log2_table();
     if (argc < 2) return 1;
     struct rlimit r = {RLIM_INFINITY, RLIM_INFINITY}; setrlimit(RLIMIT_MEMLOCK, &r);
     signal(SIGINT, sig_handler); signal(SIGTERM, sig_handler);
-    mkdir("worker_telemetry", 0777);
-    int cores = sysconf(_SC_NPROCESSORS_ONLN); num_workers = cores;
+    int cores = sysconf(_SC_NPROCESSORS_ONLN);
+    auto_tune(cores);
     workers = calloc(num_workers, sizeof(struct worker_t));
     struct bpf_object *obj = bpf_object__open_file("build/main.bpf.o", NULL);
     if (!obj || bpf_object__load(obj)) { fprintf(stderr, "FATAL: BPF load failed\n"); return 1; }
     int outer_fd = bpf_object__find_map_fd_by_name(obj, "pkt_ringbuf_map");
     for (int i = 0; i < num_workers; i++) {
         workers[i].id = i;
-        workers[i].rb_fd = bpf_map_create(BPF_MAP_TYPE_RINGBUF, NULL, 0, 0, 32 * 1024 * 1024, NULL);
+        workers[i].rb_fd = bpf_map_create(BPF_MAP_TYPE_RINGBUF, NULL, 0, 0, g_rb_size, NULL);
         if (workers[i].rb_fd < 0) { fprintf(stderr, "ERR: RB create failed for worker %d\n", i); continue; }
-        /* Map multiple potential CPU IDs to the same worker pool if necessary, 
-         * but for now we ensure at least indices 0-255 are covered if possible. */
         bpf_map_update_elem(outer_fd, &i, &workers[i].rb_fd, BPF_ANY);
     }
-    /* Robustness: fill remaining slots with worker 0's RB if system has more CPUs than workers */
     for (int i = num_workers; i < 256; i++) {
         int zero_fd = workers[0].rb_fd;
         bpf_map_update_elem(outer_fd, &i, &zero_fd, BPF_ANY);

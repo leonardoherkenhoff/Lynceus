@@ -281,16 +281,8 @@ int xdp_prog(struct xdp_md *ctx) {
             }
         }
 
-        /* [Payload Hint Extraction]
-         * VERIFIER OPTIMIZATION: We use a single boundary check before copying
-         * the 64-byte block. This avoids state explosion (E2BIG) in the 
-         * kernel verifier by reducing branches from O(N) to O(1). */
-        if (p_ptr + 64 <= data_end) {
-            #pragma unroll
-            for (int i = 0; i < 64; i++) {
-                new_rec.payload_hint[i] = ((__u8 *)p_ptr)[i];
-            }
-        }
+        /* payload_hint: field retained in struct for future use but
+         * not copied here — entropy is computed on IPs in user-space. */
 
         bpf_map_update_elem(&flow_table, &key, &new_rec, BPF_ANY);
         
