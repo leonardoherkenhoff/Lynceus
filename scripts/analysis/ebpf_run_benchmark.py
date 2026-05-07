@@ -445,50 +445,39 @@ def _apply_parity_filter(df, mode):
         ]
         
     elif mode == 'ntl':
-        # NTLFlowLyzer + ALFlowLyzer Unified (Full Scientific Parity)
-        # Using exact names from Lynceus loader.c for precise filtering
-        metrics = [
-            'Tot_Pay', 'Fwd_Pay', 'Bwd_Pay', 'Tot_Hdr', 'Fwd_Hdr', 'Bwd_Hdr',
-            'Tot_IAT', 'Fwd_IAT', 'Bwd_IAT', 'Tot_DeltaLen', 'Fwd_DeltaLen', 'Bwd_DeltaLen',
-            'Win', 'IpId', 'Frag', 'TTL_Var', 'Active', 'Idle'
-        ]
-        stats = ['Max', 'Min', 'Mean', 'Std', 'Var', 'Median', 'Skew', 'Kurt', 'CoV', 'Mode']
+        # STRICT NTL (348) + AL (51) - Total 399 features requested
+        # We only keep features that correspond to the user's provided list.
+        
+        # 1. NTL Mappings (Statistical blocks)
+        metrics = ['Tot_Pay', 'Fwd_Pay', 'Bwd_Pay', 'Tot_Hdr', 'Fwd_Hdr', 'Bwd_Hdr', 'Tot_IAT', 'Fwd_IAT', 'Bwd_IAT', 'Tot_DeltaLen', 'Active', 'Idle']
+        stats = ['Max', 'Min', 'Mean', 'Std', 'Var', 'Median', 'Skew', 'CoV', 'Mode']
         
         keep = []
-        # Add statistical variants
         for m in metrics:
             for s in stats:
                 keep.append(f"{m}_{s}")
         
-        # Add Flags
+        # 2. Flags (Counts only - Lynceus doesn't have % in this version)
         flags = ['FIN', 'SYN', 'RST', 'PSH', 'ACK', 'URG', 'ECE', 'CWR']
         for f in flags:
             keep.extend([f"{f}_Cnt", f"{f}_Fwd_Cnt", f"{f}_Bwd_Cnt"])
             
-        # Add Basic & Rates
+        # 3. Basic, Rates, Bulk, Win
         keep.extend([
             'duration', 'PacketsCount', 'FwdPacketsCount', 'BwdPacketsCount',
-            'TotalBytes', 'FwdBytes', 'BwdBytes', 'FwdBwdPktRatio', 'FwdBwdByteRatio',
-            'FwdInitWinBytes', 'BwdInitWinBytes', 'PayloadEntropy', 'IcmpType', 'IcmpCode',
-            'TTL', 'IcmpEchoId', 'BytesRate', 'FwdBytesRate', 'BwdBytesRate',
-            'PacketsRate', 'FwdPacketsRate', 'BwdPacketsRate', 'DownUpRatio'
+            'TotalBytes', 'FwdBytes', 'BwdBytes', 'FwdInitWinBytes', 'BwdInitWinBytes',
+            'BytesRate', 'FwdBytesRate', 'BwdBytesRate', 'PacketsRate', 'FwdPacketsRate', 'BwdPacketsRate', 'DownUpRatio',
+            'FwdBulkBytes', 'FwdBulkPkts', 'FwdBulkCnt', 'BwdBulkBytes', 'BwdBulkPkts', 'BwdBulkCnt'
         ])
         
-        # Add Bulk & AL
+        # 4. AL (DNS/TTL)
         keep.extend([
-            'FwdBulkBytes', 'FwdBulkPkts', 'FwdBulkCnt', 'BwdBulkBytes', 'BwdBulkPkts', 'BwdBulkCnt',
-            'DNSAnswerCount', 'DNSQueryType', 'DNSQueryClass', 'TunnelId', 'TunnelType',
-            'NTP_Mode', 'NTP_Stratum', 'SNMP_PDU_Type', 'SSDP_Method'
+            'DNSAnswerCount', 'DNSQueryType', 'DNSQueryClass',
+            'TTL_Var_Max', 'TTL_Var_Min', 'TTL_Var_Mean', 'TTL_Var_Std', 'TTL_Var_Var', 'TTL_Var_Median', 'TTL_Var_Skew', 'TTL_Var_CoV', 'TTL_Var_Mode'
         ])
-        
-        # Add Histograms
-        for i in range(80): # HIST_BINS from loader.c
-            keep.extend([f"Hist_Tot_{i}", f"Hist_Fwd_{i}", f"Hist_Bwd_{i}"])
 
-        # Redundancies to remove (user request: "sem as redundâncias")
-        # In this specific set, we keep the statistical variance but remove the duplicated logic if any.
-        redundant = [] # All in loader.c are unique metrics
-        final_keep = [c for c in keep if c in cols and c not in redundant]
+        # NO HISTOGRAMS, NO EXTRA LYNCEUS FEATURES.
+        final_keep = [c for c in keep if c in cols]
 
     # Filter to what actually exists in Lynceus CSV
     final_keep = [c for c in keep if c in cols]
