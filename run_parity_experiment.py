@@ -129,7 +129,11 @@ def run_tool(tool_name, tool_cfg):
     target_branch = tool_cfg.get("branch")
     
     if target_branch and target_branch != current_branch:
-        if not run(f"git checkout {target_branch}", f"Checkout {target_branch}", log_path=os.path.join(log_dir, "git.log")):
+        if not run(f"git checkout {target_branch}", f"Checkout {target_branch}"):
+            return False
+        # Sync branch with origin to pull latest smoke-test/wrapper fixes
+        run(f"git pull origin {target_branch}", f"Sync {target_branch} with origin", check=False)
+        if not run("git status", "Git Status Check", log_path=os.path.join(log_dir, "git.log")):
             return False
         if not run("make clean && make", "Rebuilding Lynceus Parity Engine", log_path=os.path.join(log_dir, "build.log")):
             run(f"git checkout {current_branch}", "Returning to safety")
