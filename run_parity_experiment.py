@@ -33,7 +33,7 @@ TOOLS = {
         "wrapper":   "scripts/testbed/rustiflow_wrapper.py",
         "interim":   "data/interim/RUSTIFLOW_RAW",
         "processed": "data/processed/RUSTIFLOW",
-        "label":     "RustiFlow Scientific (83 Features)",
+        "label":     "RustiFlow Scientific (203 Features)",
         "bench_args": ""
     },
     "nfx_full": {
@@ -47,7 +47,7 @@ TOOLS = {
         "wrapper":   "scripts/testbed/ebpf_wrapper.py",
         "interim":   "data/interim/EBPF_PARITY_RUSTIFLOW",
         "processed": "data/processed/EBPF_PARITY_RUSTIFLOW",
-        "label":     "Lynceus Parity (Set: RustiFlow)",
+        "label":     "Lynceus Parity (Set: RustiFlow - 203 Features)",
         "bench_args": "--parity-mode rustiflow"
     },
     "lynceus_vs_nfx": {

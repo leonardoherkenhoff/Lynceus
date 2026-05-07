@@ -19,7 +19,7 @@ BASE_DIR       = "/opt/eBPFNetFlowLyzer"
 RUSTIFLOW_BIN  = "/opt/RustiFlow/target/release/rustiflow"
 DATA_RAW       = os.path.join(BASE_DIR, "data/raw")
 DATA_INTERIM   = os.path.join(BASE_DIR, "data/interim/RUSTIFLOW_RAW")
-FEATURE_SET    = "cic"   # 83 features CIC-compatíveis
+FEATURE_SET    = "rustiflow"   # 83 features CIC-compatíveis
 EXPERIMENT_ORDER = ["PCAPv6", "PCAP"]
 
 
