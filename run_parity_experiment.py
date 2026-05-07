@@ -20,64 +20,48 @@ RESULTS_BASE = os.path.join(BASE_DIR, "results_parity")
 LABELER      = os.path.join(BASE_DIR, "scripts/preprocessing/ebpf_labeler.py")
 BENCHMARK    = os.path.join(BASE_DIR, "scripts/analysis/ebpf_run_benchmark.py")
 
-# Mapa: tool → (wrapper, interim_dir, processed_dir, label, benchmark_args)
+# Scientific Parity Benchmarking Orchestrator (v4.0)
+# Purpose: Compare Lynceus (Full) against logical parities of NTL+AL, NFX, and RustiFlow.
+# Note: Pure eBPF pipeline. External tools are excluded.
+
+# Logical Tool/Step Definition
 TOOLS = {
     "lynceus_full": {
         "wrapper":   "scripts/testbed/ebpf_wrapper.py",
         "interim":   "data/interim/LYNCEUS_FULL",
         "processed": "data/processed/LYNCEUS_FULL",
         "label":     "Lynceus Scientific (495 Features)",
-        "bench_args": ""
-    },
-    "rustiflow_full": {
-        "wrapper":   "scripts/testbed/rustiflow_wrapper.py",
-        "interim":   "data/interim/RUSTIFLOW_RAW",
-        "processed": "data/processed/RUSTIFLOW",
-        "label":     "RustiFlow Scientific (203 Features)",
-        "bench_args": ""
-    },
-    "nfx_full": {
-        "wrapper":   "scripts/testbed/xfast_wrapper.py",
-        "interim":   "data/interim/XFAST_RAW",
-        "processed": "data/processed/XFAST",
-        "label":     "NetFeatureXtract Scientific (15 Features)",
-        "bench_args": ""
-    },
-    "lynceus_vs_rustiflow": {
-        "wrapper":   "scripts/testbed/ebpf_wrapper.py",
-        "interim":   "data/interim/EBPF_PARITY_RUSTIFLOW",
-        "processed": "data/processed/EBPF_PARITY_RUSTIFLOW",
-        "label":     "Lynceus Parity (Branch: parity-rustiflow)",
-        "bench_args": "--parity-mode rustiflow",
-        "branch":    "parity-rustiflow"
-    },
-    "lynceus_vs_nfx": {
-        "wrapper":   "scripts/testbed/ebpf_wrapper.py",
-        "interim":   "data/interim/EBPF_PARITY_NFX",
-        "processed": "data/processed/EBPF_PARITY_NFX",
-        "label":     "Lynceus Parity (Branch: parity-nfx)",
-        "bench_args": "--parity-mode nfx",
-        "branch":    "parity-nfx"
+        "bench_args": "",
+        "branch":    "develop"
     },
     "lynceus_vs_ntl": {
         "wrapper":   "scripts/testbed/ebpf_wrapper.py",
         "interim":   "data/interim/EBPF_PARITY_NTL",
         "processed": "data/processed/EBPF_PARITY_NTL",
-        "label":     "Lynceus Parity (Scientific Set: NTL+AL - 399 Features)",
+        "label":     "Lynceus vs NetFlowLyzer (399 Features)",
         "bench_args": "--parity-mode ntl",
-        "branch":    None
+        "branch":    "parity-netflowlyzer"
+    },
+    "lynceus_vs_nfx": {
+        "wrapper":   "scripts/testbed/ebpf_wrapper.py",
+        "interim":   "data/interim/EBPF_PARITY_NFX",
+        "processed": "data/processed/EBPF_PARITY_NFX",
+        "label":     "Lynceus vs NFX (15 Features)",
+        "bench_args": "--parity-mode nfx",
+        "branch":    "parity-nfx"
+    },
+    "lynceus_vs_rustiflow": {
+        "wrapper":   "scripts/testbed/ebpf_wrapper.py",
+        "interim":   "data/interim/EBPF_PARITY_RUSTIFLOW",
+        "processed": "data/processed/EBPF_PARITY_RUSTIFLOW",
+        "label":     "Lynceus vs RustiFlow (203 Features)",
+        "bench_args": "--parity-mode rustiflow",
+        "branch":    "parity-rustiflow"
     }
 }
 
-# Predefined experimental sequence
-DEFAULT_SEQUENCE = [
-    "lynceus_full", 
-    "rustiflow_full", 
-    "nfx_full", 
-    "lynceus_vs_rustiflow", 
-    "lynceus_vs_nfx", 
-    "lynceus_vs_ntl"
-]
+# Execution Order (Strict Scientific Sequence)
+EXECUTION_ORDER = ["lynceus_full", "lynceus_vs_ntl", "lynceus_vs_nfx", "lynceus_vs_rustiflow"]
 
 def run(cmd, desc, log_path=None, check=True):
     print(f"\n[*] {desc}")
@@ -186,7 +170,7 @@ def generate_comparison_report(results):
         print(f"\n  [{attack}]")
         print(f"  {'Tool/Step':<40} {'F1':>8} {'Acc':>8} {'Prec':>8} {'Features':>10}")
         print(f"  {'-'*40} {'-'*8} {'-'*8} {'-'*8} {'-'*10}")
-        for tname in DEFAULT_SEQUENCE:
+        for tname in EXECUTION_ORDER:
             if tname not in report["results"]: continue
             tdata = report["results"][tname]
             m = tdata["metrics_by_attack"].get(attack, {})
@@ -195,7 +179,7 @@ def generate_comparison_report(results):
 
 def main():
     parser = argparse.ArgumentParser(description="Lynceus Parity Orchestrator")
-    parser.add_argument("--steps", nargs="+", default=DEFAULT_SEQUENCE, choices=list(TOOLS.keys()))
+    parser.add_argument("--steps", nargs="+", default=EXECUTION_ORDER, choices=list(TOOLS.keys()))
     args = parser.parse_args()
 
     if os.geteuid() != 0:
