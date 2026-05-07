@@ -34,7 +34,7 @@ LABELER_SCRIPT = os.path.join(BASE_DIR, "scripts/preprocessing/ebpf_labeler.py")
 # Logical execution order for experimental categories.
 EXPERIMENT_ORDER = ["PCAPv6", "PCAP"]
 
-def process_pcap_dir(pcap_dir, category):
+def process_pcap_dir(pcap_dir, category, smoke_test=False):
     """
     Orchestrates the telemetric extraction of a specific experimental category.
     """
@@ -42,8 +42,11 @@ def process_pcap_dir(pcap_dir, category):
     output_dir = os.path.normpath(os.path.join(DATA_INTERIM, category, rel_path))
     os.makedirs(output_dir, exist_ok=True)
     
-    pcaps = glob.glob(os.path.join(pcap_dir, "*.pcap*"))
+    pcaps = sorted(glob.glob(os.path.join(pcap_dir, "*.pcap*")))
     if not pcaps: return
+    
+    if smoke_test:
+        pcaps = [pcaps[0]]
     
     metrics_csv = os.path.join(output_dir, "resource_metrics.csv")
     experiment_name = f"{category}/{rel_path}"
@@ -177,7 +180,7 @@ def main():
             pcap_dirs = [pcap_dirs[0]]
 
         for pcap_dir in pcap_dirs:
-            process_pcap_dir(pcap_dir, category)
+            process_pcap_dir(pcap_dir, category, smoke_test=args.smoke_test)
             if args.smoke_test: break
         if args.smoke_test: break
 
