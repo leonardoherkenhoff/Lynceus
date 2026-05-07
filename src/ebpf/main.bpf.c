@@ -1,13 +1,13 @@
 /**
  * @file main.bpf.c
- * @brief Kernel-Space Data Plane - XDP Feature Extractor.
+ * @brief Lynceus Kernel-Space Data Plane - NFX (NetFeatureXtract) Parity Extractor.
  *
  * @details
- * Performs recursive packet dissection and flow state tracking.
- * Implements RingBuffer-based event export for L4/L7 metadata.
- * Optimised for high-fidelity extraction on kernels >= 5.15 (LTS).
+ * Minimalist version of the Lynceus engine for NFX parity benchmarking.
+ * Implements the core behavioral set of 15 features (Packets, Bytes, Duration, Rates).
  *
- * @version 1.0 (The Definitive Foundation)
+ * @version 1.1 (NFX Parity - 15 Features)
+ * @author Leonardo Herkenhoff (Scientific Research Partner)
  */
 
 #include "vmlinux.h"
