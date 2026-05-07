@@ -1,15 +1,13 @@
 /**
  * @file main.bpf.c
- * @brief Lynceus Kernel-Space Data Plane - XDP Parallel Monster Extractor.
+ * @brief Lynceus Data Plane (XDP).
  *
  * @details
- * Performs recursive packet dissection and high-density flow state tracking.
- * Implements a Multi-Core RingBuffer architecture (Parallel Monster) to ensure 
- * zero-copy event export for 495-feature telemetry matrix.
- * Optimized for high-throughput environments (100Gbps+) using XDP_DRV/XDP_HW.
+ * Recursive packet dissection and flow tracking.
+ * Multi-core RingBuffer architecture for zero-copy telemetry export.
+ * Optimized for throughput targets on XDP_DRV/XDP_HW.
  *
- * @version 1.1 (SBSeg 2026 - High-Fidelity Foundation)
- * @author Leonardo Herkenhoff (Scientific Research Partner)
+ * @version 1.1
  */
 
 #include "vmlinux.h"

@@ -1,15 +1,13 @@
 /**
  * @file loader.c
- * @brief Lynceus User-Space Control Plane - Parallel Monster Orchestrator.
+ * @brief Lynceus Control Plane.
  *
  * @details
- * Performs high-performance event ingestion from per-CPU RingBuffers.
- * Implements 4th-order statistical aggregation (Skewness, Kurtosis, Mode) 
- * and behavioral histogramming (80 bins) on-the-fly.
- * Auto-scales workers and state memory based on available CPU/RAM topology.
+ * Multi-threaded event ingestion and flow aggregation.
+ * Online 4th-order statistical computation and behavioral histogramming.
+ * Dynamic hardware resource scaling (CPU/RAM).
  *
- * @version 1.1 (SBSeg 2026 - High-Fidelity Foundation)
- * @author Leonardo Herkenhoff (Scientific Research Partner)
+ * @version 1.1
  */
 
 #define _GNU_SOURCE

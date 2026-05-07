@@ -20,17 +20,15 @@ RESULTS_BASE = os.path.join(BASE_DIR, "results_parity")
 LABELER      = os.path.join(BASE_DIR, "scripts/preprocessing/ebpf_labeler.py")
 BENCHMARK    = os.path.join(BASE_DIR, "scripts/analysis/ebpf_run_benchmark.py")
 
-# Scientific Parity Benchmarking Orchestrator (v4.0)
-# Purpose: Compare Lynceus (Full) against logical parities of NTL+AL, NFX, and RustiFlow.
-# Note: Pure eBPF pipeline. External tools are excluded.
+# Parity Benchmarking Orchestrator
+# Protocol: Base vs. Parity (NTL+AL, NFX, RustiFlow)
 
-# Logical Tool/Step Definition
 TOOLS = {
     "lynceus_full": {
         "wrapper":   "scripts/testbed/ebpf_wrapper.py",
         "interim":   "data/interim/LYNCEUS_FULL",
         "processed": "data/processed/LYNCEUS_FULL",
-        "label":     "Lynceus Scientific (495 Features)",
+        "label":     "Lynceus (Base)",
         "bench_args": "",
         "branch":    "develop"
     },
@@ -38,15 +36,29 @@ TOOLS = {
         "wrapper":   "scripts/testbed/ebpf_wrapper.py",
         "interim":   "data/interim/EBPF_PARITY_NTL",
         "processed": "data/processed/EBPF_PARITY_NTL",
-        "label":     "Lynceus vs NetFlowLyzer (399 Features)",
+        "label":     "Lynceus (NTL+AL Parity)",
         "bench_args": "--parity-mode ntl",
         "branch":    "parity-netflowlyzer"
+    },
+    "nfx_full": {
+        "wrapper":   "scripts/testbed/xfast_wrapper.py",
+        "interim":   "data/interim/XFAST_RAW",
+        "processed": "data/processed/XFAST",
+        "label":     "NFX (Original)",
+        "bench_args": ""
+    },
+    "rustiflow_full": {
+        "wrapper":   "scripts/testbed/rustiflow_wrapper.py",
+        "interim":   "data/interim/RUSTIFLOW_RAW",
+        "processed": "data/processed/RUSTIFLOW",
+        "label":     "RustiFlow (Original)",
+        "bench_args": ""
     },
     "lynceus_vs_nfx": {
         "wrapper":   "scripts/testbed/ebpf_wrapper.py",
         "interim":   "data/interim/EBPF_PARITY_NFX",
         "processed": "data/processed/EBPF_PARITY_NFX",
-        "label":     "Lynceus vs NFX (15 Features)",
+        "label":     "Lynceus (NFX Parity)",
         "bench_args": "--parity-mode nfx",
         "branch":    "parity-nfx"
     },
@@ -54,14 +66,18 @@ TOOLS = {
         "wrapper":   "scripts/testbed/ebpf_wrapper.py",
         "interim":   "data/interim/EBPF_PARITY_RUSTIFLOW",
         "processed": "data/processed/EBPF_PARITY_RUSTIFLOW",
-        "label":     "Lynceus vs RustiFlow (203 Features)",
+        "label":     "Lynceus (RustiFlow Parity)",
         "bench_args": "--parity-mode rustiflow",
         "branch":    "parity-rustiflow"
     }
 }
 
 # Execution Order (Strict Scientific Sequence)
-EXECUTION_ORDER = ["lynceus_full", "lynceus_vs_ntl", "lynceus_vs_nfx", "lynceus_vs_rustiflow"]
+EXECUTION_ORDER = [
+    "lynceus_full", "lynceus_vs_ntl", 
+    "nfx_full", "rustiflow_full", 
+    "lynceus_vs_nfx", "lynceus_vs_rustiflow"
+]
 
 def run(cmd, desc, log_path=None, check=True):
     print(f"\n[*] {desc}")
@@ -103,7 +119,7 @@ def save_results(tool_name, tool_cfg):
         json.dump(meta, f, indent=2)
 
 def run_tool(tool_name, tool_cfg):
-    print(f"\n{'='*60}\n  STEP: {tool_cfg['label']}\n{'='*60}")
+    print(f"\n--- {tool_cfg['label']} ---")
     log_dir = os.path.join(RESULTS_BASE, tool_name, "logs")
     os.makedirs(log_dir, exist_ok=True)
     clean_dirs(tool_cfg)

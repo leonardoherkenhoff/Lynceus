@@ -1,28 +1,20 @@
 #!/usr/bin/env python3
 """
-Lynceus Research Pipeline - Hybrid Validation Benchmark (v3.0)
---------------------------------------------------------------
-Scientific Protocol: SBSeg 2026 Parity Benchmark
-Author: Leonardo Herkenhoff (Scientific Research Partner)
+Lynceus Telemetry Benchmark & Validation (v3.0)
+Protocol: Feature Parity Analysis (SBSeg 2026)
 
 RESEARCH OBJECTIVE:
-Executes a rigorous 6-step benchmarking protocol to validate the Lynceus eBPF 
-telemetry engine against industry benchmarks (RustiFlow, NFX/XFAST).
+Evaluate Lynceus performance under different feature set constraints:
+  1. Base (495 features)
+  2. NTL+AL Parity (399 features)
+  3. NFX Parity (15 features)
+  4. RustiFlow Parity (203 features)
 
-6-STEP PROTOCOL:
-  1. Lynceus Full Scientific Baseline (495 Features)
-  2. RustiFlow Original (203 Features)
-  3. NetFeatureXtract Original (15 Features)
-  4. Lynceus vs RustiFlow (203 Feature Logical Parity)
-  5. Lynceus vs NFX (15 Feature Logical Parity)
-  6. Lynceus vs NTL+AL (399 Feature Strict Parity)
-
-VALIDATION METHODOLOGY:
-  1. Cross-Day Temporal Validation: Eliminates temporal leakage by training 
-     and testing on independent attack captures (e.g., CICDDoS2019 Day 01 vs 03).
-  2. Stochastic Split Validation (70/30): Provides coverage for isolated vectors.
-  3. Identity Leakage Purge: Mandatory removal of IP/Port/Mac identifiers 
-     to confirm behavioral detection capability.
+METHODOLOGY:
+  1. Cross-Day Temporal Validation: Independent training (Day 01) 
+     and testing (Day 03) sets from CICDDoS2019.
+  2. Stochastic Split Validation: 70/30 split for single-day captures.
+  3. Identity Purge: Mandatory removal of IP/Port metadata.
 """
 
 import numpy as np
