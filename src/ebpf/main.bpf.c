@@ -1,13 +1,13 @@
 /**
  * @file main.bpf.c
- * @brief Kernel-Space Data Plane - XDP Feature Extractor.
+ * @brief Lynceus Kernel-Space Data Plane - NTL+AL (NetFlowLyzer) Parity Extractor.
  *
  * @details
- * Performs recursive packet dissection and flow state tracking.
- * Implements RingBuffer-based event export for L4/L7 metadata.
- * Optimised for high-fidelity extraction on kernels >= 5.15 (LTS).
+ * Dedicated version of the Lynceus engine for NTL+AL parity benchmarking.
+ * Strictly implements the 399 behavioral features set (348 NTL + 51 AL).
  *
- * @version 1.0 (The Definitive Foundation)
+ * @version 1.1 (NTL+AL Parity - 399 Features)
+ * @author Leonardo Herkenhoff (Scientific Research Partner)
  */
 
 #include "vmlinux.h"
