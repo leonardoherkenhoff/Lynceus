@@ -30,38 +30,59 @@ BENCHMARK    = os.path.join(BASE_DIR, "scripts/analysis/ebpf_run_benchmark.py")
 
 # Mapa: tool → (wrapper, interim_dir, processed_dir, label, benchmark_args)
 TOOLS = {
-    "lynceus_leakage": {
+    "lynceus_full": {
         "wrapper":   "scripts/testbed/ebpf_wrapper.py",
-        "interim":   "data/interim/LYNCEUS_LEAKAGE",
-        "processed": "data/processed/LYNCEUS_LEAKAGE",
-        "label":     "Lynceus Develop (Baseline - All Features)",
-        "bench_args": "--leakage"
+        "interim":   "data/interim/LYNCEUS_FULL",
+        "processed": "data/processed/LYNCEUS_FULL",
+        "label":     "Lynceus Scientific (Full Matrix)",
+        "bench_args": ""
     },
-    "rustiflow": {
+    "rustiflow_full": {
         "wrapper":   "scripts/testbed/rustiflow_wrapper.py",
         "interim":   "data/interim/RUSTIFLOW_RAW",
         "processed": "data/processed/RUSTIFLOW",
-        "label":     "RustiFlow (Scientific)",
+        "label":     "RustiFlow Scientific (83 Features)",
         "bench_args": ""
     },
-    "xfast": {
+    "nfx_full": {
         "wrapper":   "scripts/testbed/xfast_wrapper.py",
         "interim":   "data/interim/XFAST_RAW",
         "processed": "data/processed/XFAST",
-        "label":     "XFAST/NFX (Scientific)",
+        "label":     "XFAST/NFX Scientific (71 Features)",
         "bench_args": ""
     },
-    "lynceus_scientific": {
+    "lynceus_vs_rustiflow": {
         "wrapper":   "scripts/testbed/ebpf_wrapper.py",
-        "interim":   "data/interim/EBPF_RAW",
-        "processed": "data/processed/EBPF",
-        "label":     "Lynceus Scientific (No Leakage)",
-        "bench_args": ""
+        "interim":   "data/interim/EBPF_PARITY_RUSTIFLOW",
+        "processed": "data/processed/EBPF_PARITY_RUSTIFLOW",
+        "label":     "Lynceus Parity (Filtered to 83 Features)",
+        "bench_args": "--top-n 83"
+    },
+    "lynceus_vs_nfx": {
+        "wrapper":   "scripts/testbed/ebpf_wrapper.py",
+        "interim":   "data/interim/EBPF_PARITY_NFX",
+        "processed": "data/processed/EBPF_PARITY_NFX",
+        "label":     "Lynceus Parity (Filtered to 71 Features)",
+        "bench_args": "--top-n 71"
+    },
+    "lynceus_vs_ntl": {
+        "wrapper":   "scripts/testbed/ebpf_wrapper.py",
+        "interim":   "data/interim/EBPF_PARITY_NTL",
+        "processed": "data/processed/EBPF_PARITY_NTL",
+        "label":     "Lynceus Parity (Filtered to 70 Features)",
+        "bench_args": "--top-n 70"
     }
 }
 
 # Predefined experimental sequence
-DEFAULT_SEQUENCE = ["lynceus_leakage", "rustiflow", "xfast", "lynceus_scientific"]
+DEFAULT_SEQUENCE = [
+    "lynceus_full", 
+    "rustiflow_full", 
+    "nfx_full", 
+    "lynceus_vs_rustiflow", 
+    "lynceus_vs_nfx", 
+    "lynceus_vs_ntl"
+]
 
 def run(cmd, desc, log_path=None, check=True):
     print(f"\n[*] {desc}")

@@ -293,6 +293,10 @@ def run_benchmark():
         '--leakage', action='store_true',
         help='Disable IDENTITY_DROP (includes src/dst IP/port, protocol, etc.)'
     )
+    parser.add_argument(
+        '--top-n', type=int, default=None,
+        help='Limit to Top N most important features (for parity comparison)'
+    )
     args = parser.parse_args()
 
     # Build drop_cols based on mode
@@ -304,6 +308,8 @@ def run_benchmark():
         drop_cols.extend(TTL_DROP)
 
     mode_label = "SCIENTIFIC (no identity)" if not args.leakage else "LEAKAGE (all features)"
+    if args.top_n:
+        mode_label += f" | Top {args.top_n} Features"
     if args.with_ttl:
         mode_label += " + TTL"
     else:
@@ -389,6 +395,18 @@ def run_benchmark():
                     n_estimators=100, n_jobs=12, random_state=42
                 )
                 clf.fit(X_train, y_train)
+
+                # Apply Top N filtering if requested
+                if args.top_n and len(X_train.columns) > args.top_n:
+                    importances = pd.Series(clf.feature_importances_, index=X_train.columns)
+                    top_cols = importances.sort_values(ascending=False).head(args.top_n).index.tolist()
+                    print(f"    🔬 Parity Mode (Cross-Day): Filtering to Top {args.top_n} features...")
+                    X_train = X_train[top_cols]
+                    X_test  = X_test[top_cols]
+                    # Re-fit with reduced feature set
+                    clf = RandomForestClassifier(n_estimators=100, n_jobs=12, random_state=42)
+                    clf.fit(X_train, y_train)
+
                 y_pred = clf.predict(X_test)
 
                 m = print_results(X_test, y_test, y_pred, clf, len(X_train), len(X_test))
@@ -439,6 +457,18 @@ def _run_split_validation(file_path, attack_name, drop_cols):
             n_estimators=100, n_jobs=12, random_state=42
         )
         clf.fit(X_train, y_train)
+
+        # Apply Top N filtering if requested
+        if args.top_n and len(X_train.columns) > args.top_n:
+            importances = pd.Series(clf.feature_importances_, index=X_train.columns)
+            top_cols = importances.sort_values(ascending=False).head(args.top_n).index.tolist()
+            print(f"    🔬 Parity Mode: Filtering to Top {args.top_n} features...")
+            X_train = X_train[top_cols]
+            X_test  = X_test[top_cols]
+            # Re-fit with reduced feature set
+            clf = RandomForestClassifier(n_estimators=100, n_jobs=12, random_state=42)
+            clf.fit(X_train, y_train)
+
         y_pred = clf.predict(X_test)
 
         m = print_results(X_test, y_test, y_pred, clf, len(X_train), len(X_test))
