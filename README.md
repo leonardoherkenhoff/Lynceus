@@ -41,7 +41,7 @@ graph TD
     subgraph KERNEL_SPACE [Data Plane - XDP]
     XDP -->|Decap| TUNNEL[GRE / VXLAN Parser]
     TUNNEL -->|L7 Parse| L7[DNS / NTP / SNMP / SSDP]
-    TUNNEL -->|Aggregate| MAP[(Hash Map: Flow Cache)]
+    L7 -->|Aggregate| MAP[(Hash Map: Flow Cache)]
     L7 -->|Event Export| RB[BPF RingBuffer]
     end
     
