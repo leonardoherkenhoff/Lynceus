@@ -105,7 +105,7 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False):
         start_time = time.time()
         for p in pcaps:
             print(f"   Streaming: {os.path.basename(p)}")
-            limit_flag = "--limit 5000" if args.smoke_test else ""
+            limit_flag = "--limit 5000" if smoke_test else ""
             cmd = f"tcpreplay -i veth0 -t {limit_flag} {p} 2>&1"
             try:
                 res = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
