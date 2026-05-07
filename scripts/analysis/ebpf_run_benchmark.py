@@ -289,14 +289,25 @@ def run_benchmark():
         '--dataset', type=str, default="/opt/eBPFNetFlowLyzer/data/processed/EBPF",
         help='Path to labeled dataset directory'
     )
+    parser.add_argument(
+        '--leakage', action='store_true',
+        help='Disable IDENTITY_DROP (includes src/dst IP/port, protocol, etc.)'
+    )
     args = parser.parse_args()
 
-    # Build drop_cols based on mode (original behavior)
-    drop_cols = list(IDENTITY_DROP)
+    # Build drop_cols based on mode
+    drop_cols = []
+    if not args.leakage:
+        drop_cols.extend(IDENTITY_DROP)
+    
     if not args.with_ttl:
         drop_cols.extend(TTL_DROP)
 
-    mode_label = "REALISTIC (with TTL)" if args.with_ttl else "CONSERVATIVE (no TTL)"
+    mode_label = "SCIENTIFIC (no identity)" if not args.leakage else "LEAKAGE (all features)"
+    if args.with_ttl:
+        mode_label += " + TTL"
+    else:
+        mode_label += " (no TTL)"
 
     processed_dir = os.path.abspath(args.dataset)
     all_csvs = glob.glob(os.path.join(processed_dir, "**", "*.csv"), recursive=True)

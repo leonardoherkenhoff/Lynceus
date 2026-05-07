@@ -28,34 +28,40 @@ RESULTS_BASE = os.path.join(BASE_DIR, "results_parity")
 LABELER      = os.path.join(BASE_DIR, "scripts/preprocessing/ebpf_labeler.py")
 BENCHMARK    = os.path.join(BASE_DIR, "scripts/analysis/ebpf_run_benchmark.py")
 
-# Mapa: tool → (wrapper, interim_dir, processed_dir)
+# Mapa: tool → (wrapper, interim_dir, processed_dir, label, benchmark_args)
 TOOLS = {
-    "lynceus": {
+    "lynceus_leakage": {
         "wrapper":   "scripts/testbed/ebpf_wrapper.py",
-        "interim":   "data/interim/EBPF_RAW",
-        "processed": "data/processed/EBPF",
-        "label":     "Lynceus (eBPF/XDP)",
+        "interim":   "data/interim/LYNCEUS_LEAKAGE",
+        "processed": "data/processed/LYNCEUS_LEAKAGE",
+        "label":     "Lynceus Develop (Baseline - All Features)",
+        "bench_args": "--leakage"
     },
     "rustiflow": {
         "wrapper":   "scripts/testbed/rustiflow_wrapper.py",
         "interim":   "data/interim/RUSTIFLOW_RAW",
         "processed": "data/processed/RUSTIFLOW",
-        "label":     "RustiFlow (CIC-83)",
+        "label":     "RustiFlow (Scientific)",
+        "bench_args": ""
     },
     "xfast": {
         "wrapper":   "scripts/testbed/xfast_wrapper.py",
         "interim":   "data/interim/XFAST_RAW",
         "processed": "data/processed/XFAST",
-        "label":     "XFAST/NFX (XDP)",
+        "label":     "XFAST/NFX (Scientific)",
+        "bench_args": ""
     },
-    "ntl": {
-        "wrapper":   "scripts/testbed/ntlflowlyzer_wrapper.py",
-        "interim":   "data/interim/NTL_RAW",
-        "processed": "data/processed/NTL",
-        "label":     "NTLFlowLyzer",
-    },
+    "lynceus_scientific": {
+        "wrapper":   "scripts/testbed/ebpf_wrapper.py",
+        "interim":   "data/interim/EBPF_RAW",
+        "processed": "data/processed/EBPF",
+        "label":     "Lynceus Scientific (No Leakage)",
+        "bench_args": ""
+    }
 }
 
+# Predefined experimental sequence
+DEFAULT_SEQUENCE = ["lynceus_leakage", "rustiflow", "xfast", "lynceus_scientific"]
 
 def run(cmd, desc, log_path=None, check=True):
     print(f"\n[*] {desc}")
@@ -94,7 +100,7 @@ def save_results(tool_name, tool_cfg):
             shutil.copytree(src, dst, dirs_exist_ok=True)
 
     meta = {"tool": tool_name, "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "hostname": os.uname().nodename}
+            "hostname": os.uname().nodename, "label": tool_cfg["label"]}
     with open(os.path.join(dest, "experiment_meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
 
@@ -103,7 +109,7 @@ def save_results(tool_name, tool_cfg):
 
 def run_tool(tool_name, tool_cfg):
     print(f"\n{'='*60}")
-    print(f"  TOOL: {tool_cfg['label']}")
+    print(f"  STEP: {tool_cfg['label']}")
     print(f"{'='*60}")
 
     log_dir = os.path.join(RESULTS_BASE, tool_name, "logs")
@@ -127,7 +133,8 @@ def run_tool(tool_name, tool_cfg):
 
     # Benchmark
     bench_cmd = (f"sudo python3 {BENCHMARK} "
-                 f"--dataset {os.path.join(BASE_DIR, tool_cfg['processed'])}")
+                 f"--dataset {os.path.join(BASE_DIR, tool_cfg['processed'])} "
+                 f"{tool_cfg['bench_args']}")
     if not run(bench_cmd, f"Benchmark — {tool_cfg['label']}",
                log_path=os.path.join(log_dir, "ml_benchmark.log")):
         return False
@@ -138,20 +145,22 @@ def run_tool(tool_name, tool_cfg):
 
 def generate_comparison_report(results):
     """Lê ml_results.json de cada tool e gera tabela comparativa."""
-    report = {"tools": {}, "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")}
+    report = {"results": {}, "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")}
 
     for tool_name in results:
         tool_dest = os.path.join(RESULTS_BASE, tool_name)
         ml_files  = glob.glob(os.path.join(tool_dest, "**", "ml_results.json"), recursive=True)
         tool_metrics = {}
         for mf in sorted(ml_files):
-            attack = os.path.basename(os.path.dirname(mf))
+            # Extract attack name from path (relative to processed_dir)
+            rel_path = os.path.relpath(os.path.dirname(mf), os.path.join(tool_dest, TOOLS[tool_name]["processed"]))
+            attack = rel_path.replace(os.sep, "/")
             try:
                 with open(mf) as f:
                     tool_metrics[attack] = json.load(f)
             except Exception:
                 pass
-        report["tools"][tool_name] = {
+        report["results"][tool_name] = {
             "label": TOOLS[tool_name]["label"],
             "status": results[tool_name],
             "metrics_by_attack": tool_metrics
@@ -162,37 +171,39 @@ def generate_comparison_report(results):
         json.dump(report, f, indent=2)
 
     # Imprime tabela resumo
-    print(f"\n{'='*70}")
-    print(f"  COMPARISON REPORT — Lynceus Parity Experiment")
-    print(f"{'='*70}")
+    print(f"\n{'='*85}")
+    print(f"  COMPARISON REPORT — Lynceus Scientific Parity")
+    print(f"{'='*85}")
     all_attacks = set()
-    for t in report["tools"].values():
+    for t in report["results"].values():
         all_attacks.update(t["metrics_by_attack"].keys())
 
     for attack in sorted(all_attacks):
+        if not attack or attack == ".": continue
         print(f"\n  [{attack}]")
-        print(f"  {'Tool':<20} {'F1':>8} {'Acc':>8} {'Prec':>8} {'Rec':>8} {'Features':>10}")
-        print(f"  {'-'*20} {'-'*8} {'-'*8} {'-'*8} {'-'*8} {'-'*10}")
-        for tname, tdata in report["tools"].items():
+        print(f"  {'Tool/Step':<40} {'F1':>8} {'Acc':>8} {'Prec':>8} {'Features':>10}")
+        print(f"  {'-'*40} {'-'*8} {'-'*8} {'-'*8} {'-'*10}")
+        for tname in DEFAULT_SEQUENCE:
+            if tname not in report["results"]: continue
+            tdata = report["results"][tname]
             m = tdata["metrics_by_attack"].get(attack, {})
             if m:
-                print(f"  {tdata['label']:<20} "
+                print(f"  {tdata['label']:<40} "
                       f"{m.get('f1_score',0):>8.4f} "
                       f"{m.get('accuracy',0):>8.4f} "
                       f"{m.get('precision',0):>8.4f} "
-                      f"{m.get('recall',0):>8.4f} "
                       f"{m.get('n_features',0):>10}")
             else:
-                print(f"  {tdata['label']:<20} {'N/A':>8}")
+                print(f"  {tdata['label']:<40} {'N/A':>8}")
 
     print(f"\n[+] Relatório completo em: {report_path}")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Lynceus Parity Experiment Orchestrator")
-    parser.add_argument("--tools", nargs="+", default=["lynceus", "rustiflow", "xfast"],
+    parser.add_argument("--steps", nargs="+", default=DEFAULT_SEQUENCE,
                         choices=list(TOOLS.keys()),
-                        help="Ferramentas a executar (padrão: lynceus rustiflow xfast — ntl já concluído)")
+                        help="Etapas a executar (padrão: sequência completa)")
     args = parser.parse_args()
 
     if os.geteuid() != 0:
