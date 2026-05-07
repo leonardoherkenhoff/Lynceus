@@ -291,11 +291,10 @@ def run_benchmark():
     )
     args = parser.parse_args()
 
-    # Build drop_cols based on mode - DISABLED to keep "características de sempre"
-    drop_cols = [] 
+    # Build drop_cols based on mode (original behavior)
+    drop_cols = list(IDENTITY_DROP)
     if not args.with_ttl:
-        # If user explicitly wants no TTL, we still drop it, but identity stays.
-        pass 
+        drop_cols.extend(TTL_DROP)
 
     mode_label = "REALISTIC (with TTL)" if args.with_ttl else "CONSERVATIVE (no TTL)"
 

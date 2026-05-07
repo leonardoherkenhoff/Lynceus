@@ -40,7 +40,17 @@ INPUT_DIR = os.path.join(BASE_DIR, "data/interim/EBPF_RAW")
 OUTPUT_DIR = os.path.join(BASE_DIR, "data/processed/EBPF")
 
 # ATTACKER_IPS must be calibrated to the specific research testbed topology.
-ATTACKER_IPS = ["172.16.0.5", "2001:db8:acad:10::5", "fe80::215:5dff:fe00:5"]
+# ATTACKER_IPS must be calibrated to the specific research testbed topology.
+# Includes both compressed and expanded IPv6 formats to match loader.c serialization.
+ATTACKER_IPS = [
+    "172.16.0.5",
+    "2001:db8:acad:10::5",
+    "2001:db8a:cad:10:0000:0000:0000:0005",
+    "2001:db8a:cad:10:0:0:0:5",
+    "20010db8:acad0010:00000000:00000005",
+    "fe80::215:5dff:fe00:5",
+    "fe80:0000:0000:0000:0215:5dff:fe00:0005",
+]
 ATTACKER_IPS_SET = frozenset(ATTACKER_IPS)
 CHUNK_SIZE = 1_000_000  # Pandas fallback only
 
@@ -176,10 +186,20 @@ def main():
     """
     parser = argparse.ArgumentParser(description="Lynceus Topological Attributor")
     parser.add_argument("--path", type=str, help="Specific interim directory to attribute")
+    parser.add_argument("--input", type=str, help="Override INPUT_DIR (interim root)")
+    parser.add_argument("--output", type=str, help="Override OUTPUT_DIR (processed root)")
     parser.add_argument("--cleanup", action="store_true", help="Deterministic purge of interim files")
     parser.add_argument("--workers", type=int, default=min(4, multiprocessing.cpu_count()),
                         help="Number of parallel labeling workers (default: min(4, cpu_count))")
     args = parser.parse_args()
+
+    # Override global dirs if provided
+    global INPUT_DIR, OUTPUT_DIR
+    if args.input:
+        INPUT_DIR = os.path.abspath(args.input)
+    if args.output:
+        OUTPUT_DIR = os.path.abspath(args.output)
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     backend = "Polars (multi-threaded)" if USE_POLARS else "Pandas (single-threaded)"
     print(f"=== Lynceus Pre-processing: Topological Ground-Truth Attribution [{backend}] ===")
