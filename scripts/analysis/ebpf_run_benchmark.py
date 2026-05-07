@@ -482,7 +482,7 @@ def _apply_parity_filter(df, mode):
         ])
         
         # Add Histograms
-        for i in range(10): # HIST_BINS default
+        for i in range(80): # HIST_BINS from loader.c
             keep.extend([f"Hist_Tot_{i}", f"Hist_Fwd_{i}", f"Hist_Bwd_{i}"])
 
         # Redundancies to remove (user request: "sem as redundâncias")
