@@ -40,7 +40,7 @@ TOOLS = {
         "wrapper":   "scripts/testbed/xfast_wrapper.py",
         "interim":   "data/interim/XFAST_RAW",
         "processed": "data/processed/XFAST",
-        "label":     "NetFeatureXtract Scientific (NFX)",
+        "label":     "NetFeatureXtract Scientific (15 Features)",
         "bench_args": ""
     },
     "lynceus_vs_rustiflow": {
@@ -54,14 +54,14 @@ TOOLS = {
         "wrapper":   "scripts/testbed/ebpf_wrapper.py",
         "interim":   "data/interim/EBPF_PARITY_NFX",
         "processed": "data/processed/EBPF_PARITY_NFX",
-        "label":     "Lynceus Parity (Set: NetFeatureXtract)",
+        "label":     "Lynceus Parity (Set: NFX - 15 Features)",
         "bench_args": "--parity-mode nfx"
     },
     "lynceus_vs_ntl": {
         "wrapper":   "scripts/testbed/ebpf_wrapper.py",
         "interim":   "data/interim/EBPF_PARITY_NTL",
         "processed": "data/processed/EBPF_PARITY_NTL",
-        "label":     "Lynceus Parity (Set: NTL+AL - 112 Features)",
+        "label":     "Lynceus Parity (Set: NTL+AL - 350 Features)",
         "bench_args": "--parity-mode ntl"
     }
 }

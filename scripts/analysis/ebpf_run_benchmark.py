@@ -424,13 +424,16 @@ def run_benchmark():
 def _apply_parity_filter(df, mode):
     """Filter features to match the logical set of another tool (Scientific Parity)."""
     cols = df.columns.tolist()
-    
     if mode == 'rustiflow':
         # RustiFlow Full Behavioral Set (203 features)
-        # Includes all statistical variants (min, max, mean, std, var) of behavioral metrics.
-        patterns = ['Pkt', 'Len', 'IAT', 'Flag', 'Duration', 'Byts', 'Size', 'Seg', 'Win', 'Active', 'Idle', 'Subflow', 'Ratio']
-        keep = [c for c in cols if any(p in c for p in patterns)]
-        # Cap at 203 for strict parity
+        # Includes specialized modules: Timing, IAT, PktLen, HeaderLen, Bulk, Subflow, ActiveIdle, Icmp, TCP Quality, Window.
+        patterns = [
+            'duration', 'iat', 'packets', 'bytes', 'header', 'payload', 
+            'bulk', 'subflow', 'active', 'idle', 'icmp', 'window', 'retransmission', 
+            'rtt', 'ratio', 'flag', 'pps', 'bps'
+        ]
+        keep = [c for c in cols if any(p.lower() in c.lower() for p in patterns)]
+        # Cap at 203 to reflect strict parity by feature count as requested
         if len(keep) > 203: keep = keep[:203]
         
     elif mode == 'nfx':
@@ -438,33 +441,23 @@ def _apply_parity_filter(df, mode):
         keep = [
             'packets', 'bytes', 'duration', 'flow_pkts_s', 'flow_byts_s',
             'pkt_len_max', 'pkt_len_min', 'pkt_size_avg',
-            'fwd_pkts_s', 'bwd_pkts_s', 'fwd_byts_s', 'bwd_byts_s' # Proxies for stats
+            'fwd_pkts_s', 'bwd_pkts_s', 'fwd_byts_s', 'bwd_byts_s'
         ]
         
     elif mode == 'ntl':
-        # NTLFlowLyzer + ALFlowLyzer (Unified Set - No Redundancies)
-        # Ref: Scientific Parity v2.0 (approx 112 behavioral features)
-        keep = [
-            'duration', 'fwd_packets', 'bwd_packets', 'fwd_bytes', 'bwd_bytes',
-            'fwd_pkt_len_max', 'fwd_pkt_len_min', 'fwd_pkt_len_mean', 'fwd_pkt_len_std',
-            'bwd_pkt_len_max', 'bwd_pkt_len_min', 'bwd_pkt_len_mean', 'bwd_pkt_len_std',
-            'flow_byts_s', 'flow_pkts_s', 'flow_iat_mean', 'flow_iat_std', 'flow_iat_max', 'flow_iat_min',
-            'fwd_iat_tot', 'fwd_iat_mean', 'fwd_iat_std', 'fwd_iat_max', 'fwd_iat_min',
-            'bwd_iat_tot', 'bwd_iat_mean', 'bwd_iat_std', 'bwd_iat_max', 'bwd_iat_min',
-            'fwd_psh_flags', 'bwd_psh_flags', 'fwd_urg_flags', 'bwd_urg_flags',
-            'fwd_header_len', 'bwd_header_len', 'fwd_pkts_s', 'bwd_pkts_s',
-            'pkt_len_min', 'pkt_len_max', 'pkt_len_mean', 'pkt_len_std', 'pkt_len_var',
-            'fin_flag_cnt', 'syn_flag_cnt', 'rst_flag_cnt', 'psh_flag_cnt', 'ack_flag_cnt',
-            'urg_flag_cnt', 'cwe_flag_count', 'ece_flag_cnt', 'down_up_ratio',
-            'subflow_fwd_pkts', 'subflow_fwd_byts', 'subflow_bwd_pkts', 'subflow_bwd_byts',
-            'init_fwd_win_byts', 'init_bwd_win_byts', 'fwd_act_pkts', 'fwd_seg_size_min',
-            'active_mean', 'active_std', 'active_max', 'active_min',
-            'idle_mean', 'idle_std', 'idle_max', 'idle_min'
+        # NTLFlowLyzer + ALFlowLyzer Unified (approx 350 features)
+        # Includes all statistical orders: Mean, Std, Max, Min, Variance, Median, Skewness, CoV, Mode.
+        # Plus Delta features (Time, Len, Header, Payload) and Flag percentages.
+        patterns = [
+            'duration', 'packets', 'bytes', 'payload', 'header', 'segment', 
+            'win', 'active', 'idle', 'rate', 'bulk', 'flag', 'iat', 'subflow', 
+            'delta', 'handshake', 'skewness', 'variance', 'median', 'mode', 'cov'
         ]
-        # Redundancies to remove (already omitted above, but explicit check here)
+        # Redundancies to remove (user request: "sem as redundâncias")
         redundant = ['fwd_seg_size_avg', 'bwd_seg_size_avg', 'pkt_size_avg']
-        keep = [c for c in keep if c not in redundant]
-        if len(keep) > 112: keep = keep[:112]
+        keep = [c for c in cols if any(p.lower() in c.lower() for p in patterns) and c.lower() not in redundant]
+        # Cap at 350 as requested
+        if len(keep) > 350: keep = keep[:350]
 
     # Filter to what actually exists in Lynceus CSV
     final_keep = [c for c in keep if c in cols]
