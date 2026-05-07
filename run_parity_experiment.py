@@ -26,7 +26,7 @@ TOOLS = {
         "wrapper":   "scripts/testbed/ebpf_wrapper.py",
         "interim":   "data/interim/LYNCEUS_FULL",
         "processed": "data/processed/LYNCEUS_FULL",
-        "label":     "Lynceus Scientific (Full Matrix)",
+        "label":     "Lynceus Scientific (495 Features)",
         "bench_args": ""
     },
     "rustiflow_full": {
@@ -47,22 +47,25 @@ TOOLS = {
         "wrapper":   "scripts/testbed/ebpf_wrapper.py",
         "interim":   "data/interim/EBPF_PARITY_RUSTIFLOW",
         "processed": "data/processed/EBPF_PARITY_RUSTIFLOW",
-        "label":     "Lynceus Parity (Set: RustiFlow - 203 Features)",
-        "bench_args": "--parity-mode rustiflow"
+        "label":     "Lynceus Parity (Branch: parity-rustiflow)",
+        "bench_args": "--parity-mode rustiflow",
+        "branch":    "parity-rustiflow"
     },
     "lynceus_vs_nfx": {
         "wrapper":   "scripts/testbed/ebpf_wrapper.py",
         "interim":   "data/interim/EBPF_PARITY_NFX",
         "processed": "data/processed/EBPF_PARITY_NFX",
-        "label":     "Lynceus Parity (Set: NFX - 15 Features)",
-        "bench_args": "--parity-mode nfx"
+        "label":     "Lynceus Parity (Branch: parity-nfx)",
+        "bench_args": "--parity-mode nfx",
+        "branch":    "parity-nfx"
     },
     "lynceus_vs_ntl": {
         "wrapper":   "scripts/testbed/ebpf_wrapper.py",
         "interim":   "data/interim/EBPF_PARITY_NTL",
         "processed": "data/processed/EBPF_PARITY_NTL",
-        "label":     "Lynceus Parity (Set: NTL+AL - 399 Features)",
-        "bench_args": "--parity-mode ntl"
+        "label":     "Lynceus Parity (Scientific Set: NTL+AL - 399 Features)",
+        "bench_args": "--parity-mode ntl",
+        "branch":    None
     }
 }
 
@@ -121,8 +124,25 @@ def run_tool(tool_name, tool_cfg):
     os.makedirs(log_dir, exist_ok=True)
     clean_dirs(tool_cfg)
 
-    # Extração
-    if not run(f"sudo python3 {tool_cfg['wrapper']}", f"Extração — {tool_cfg['label']}", log_path=os.path.join(log_dir, "extraction.log")):
+    # 1. Git Checkout & Build (if branch specified)
+    current_branch = subprocess.check_output("git rev-parse --abbrev-ref HEAD", shell=True, text=True).strip()
+    target_branch = tool_cfg.get("branch")
+    
+    if target_branch and target_branch != current_branch:
+        if not run(f"git checkout {target_branch}", f"Checkout {target_branch}", log_path=os.path.join(log_dir, "git.log")):
+            return False
+        if not run("make clean && make", "Rebuilding Lynceus Parity Engine", log_path=os.path.join(log_dir, "build.log")):
+            run(f"git checkout {current_branch}", "Returning to safety")
+            return False
+
+    # 2. Extração
+    extraction_ok = run(f"sudo python3 {tool_cfg['wrapper']}", f"Extração — {tool_cfg['label']}", log_path=os.path.join(log_dir, "extraction.log"))
+    
+    # Return to original branch immediately after extraction
+    if target_branch and target_branch != current_branch:
+        run(f"git checkout {current_branch}", f"Returning to {current_branch}")
+
+    if not extraction_ok:
         return False
 
     # Labeling
