@@ -55,22 +55,22 @@ TOOLS = {
         "wrapper":   "scripts/testbed/ebpf_wrapper.py",
         "interim":   "data/interim/EBPF_PARITY_RUSTIFLOW",
         "processed": "data/processed/EBPF_PARITY_RUSTIFLOW",
-        "label":     "Lynceus Parity (Filtered to 83 Features)",
-        "bench_args": "--top-n 83"
+        "label":     "Lynceus Parity (Logical Set: RustiFlow)",
+        "bench_args": "--parity-mode rustiflow"
     },
     "lynceus_vs_nfx": {
         "wrapper":   "scripts/testbed/ebpf_wrapper.py",
         "interim":   "data/interim/EBPF_PARITY_NFX",
         "processed": "data/processed/EBPF_PARITY_NFX",
-        "label":     "Lynceus Parity (Filtered to 71 Features)",
-        "bench_args": "--top-n 71"
+        "label":     "Lynceus Parity (Logical Set: NFX)",
+        "bench_args": "--parity-mode nfx"
     },
     "lynceus_vs_ntl": {
         "wrapper":   "scripts/testbed/ebpf_wrapper.py",
         "interim":   "data/interim/EBPF_PARITY_NTL",
         "processed": "data/processed/EBPF_PARITY_NTL",
-        "label":     "Lynceus Parity (Filtered to 70 Features)",
-        "bench_args": "--top-n 70"
+        "label":     "Lynceus Parity (Logical Set: NTL - No Redundancy)",
+        "bench_args": "--parity-mode ntl"
     }
 }
 

@@ -294,8 +294,8 @@ def run_benchmark():
         help='Disable IDENTITY_DROP (includes src/dst IP/port, protocol, etc.)'
     )
     parser.add_argument(
-        '--top-n', type=int, default=None,
-        help='Limit to Top N most important features (for parity comparison)'
+        '--parity-mode', type=str, choices=['rustiflow', 'nfx', 'ntl'], default=None,
+        help='Filter Lynceus features to match another tool (Scientific Parity)'
     )
     args = parser.parse_args()
 
@@ -307,9 +307,9 @@ def run_benchmark():
     if not args.with_ttl:
         drop_cols.extend(TTL_DROP)
 
-    mode_label = "SCIENTIFIC (no identity)" if not args.leakage else "LEAKAGE (all features)"
-    if args.top_n:
-        mode_label += f" | Top {args.top_n} Features"
+    mode_label = "SCIENTIFIC" if not args.leakage else "LEAKAGE"
+    if args.parity_mode:
+        mode_label += f" | Parity: {args.parity_mode.upper()}"
     if args.with_ttl:
         mode_label += " + TTL"
     else:
@@ -394,19 +394,13 @@ def run_benchmark():
                 clf = RandomForestClassifier(
                     n_estimators=100, n_jobs=12, random_state=42
                 )
+
+                # Apply Logical Parity Filtering if requested
+                if args.parity_mode:
+                    X_train = _apply_parity_filter(X_train, args.parity_mode)
+                    X_test  = _apply_parity_filter(X_test, args.parity_mode)
+
                 clf.fit(X_train, y_train)
-
-                # Apply Top N filtering if requested
-                if args.top_n and len(X_train.columns) > args.top_n:
-                    importances = pd.Series(clf.feature_importances_, index=X_train.columns)
-                    top_cols = importances.sort_values(ascending=False).head(args.top_n).index.tolist()
-                    print(f"    🔬 Parity Mode (Cross-Day): Filtering to Top {args.top_n} features...")
-                    X_train = X_train[top_cols]
-                    X_test  = X_test[top_cols]
-                    # Re-fit with reduced feature set
-                    clf = RandomForestClassifier(n_estimators=100, n_jobs=12, random_state=42)
-                    clf.fit(X_train, y_train)
-
                 y_pred = clf.predict(X_test)
 
                 m = print_results(X_test, y_test, y_pred, clf, len(X_train), len(X_test))
@@ -425,6 +419,38 @@ def run_benchmark():
         else:
             # --- No pair: run stochastic split validation ---
             _run_split_validation(file_path, rel_key, drop_cols)
+
+
+def _apply_parity_filter(df, mode):
+    """Filter features to match the logical set of another tool."""
+    cols = df.columns.tolist()
+    keep = []
+    
+    if mode == 'rustiflow':
+        # Logic: CIC-83 common features
+        # We keep everything that matches CIC standard patterns
+        patterns = ['Pkt', 'Len', 'IAT', 'Flag', 'Duration', 'Byts', 'Size', 'Seg', 'Win', 'Active', 'Idle', 'Subflow']
+        keep = [c for c in cols if any(p in c for p in patterns)]
+        # Cap at ~83 for strict parity by count if too many match
+        if len(keep) > 83: keep = keep[:83]
+        
+    elif mode == 'nfx':
+        # Logic: NFX / XFAST feature set (~71 features)
+        # Usually heavier on header flags and simple counts
+        patterns = ['Pkt', 'Byts', 'Flag', 'duration', 'Header', 'Protocol']
+        keep = [c for c in cols if any(p in c for p in patterns)]
+        if len(keep) > 71: keep = keep[:71]
+        
+    elif mode == 'ntl':
+        # Logic: NTLFlowLyzer (~70 features)
+        # REMOVE redundant features as requested
+        redundant = ['fwd_pkts_s', 'bwd_pkts_s', 'fwd_seg_size_avg', 'bwd_seg_size_avg', 'pkt_size_avg']
+        patterns = ['Pkt', 'Len', 'IAT', 'Flag', 'Duration', 'Byts']
+        keep = [c for c in cols if any(p in c for p in patterns) and c not in redundant]
+        if len(keep) > 70: keep = keep[:70]
+
+    print(f"    🔬 Parity Filter [{mode}]: Kept {len(keep)}/{len(cols)} features.")
+    return df[keep]
 
 
 def _run_split_validation(file_path, attack_name, drop_cols):
@@ -449,25 +475,18 @@ def _run_split_validation(file_path, attack_name, drop_cols):
             print(f"    ⚠️  Inadequate Class Variance: Stochastic modeling aborted.")
             return
 
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.3, random_state=42
-        )
-
         clf = RandomForestClassifier(
             n_estimators=100, n_jobs=12, random_state=42
         )
+        
+        # Apply Logical Parity Filtering if requested
+        if args.parity_mode:
+            X = _apply_parity_filter(X, args.parity_mode)
+        
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.3, random_state=42
+        )
         clf.fit(X_train, y_train)
-
-        # Apply Top N filtering if requested
-        if args.top_n and len(X_train.columns) > args.top_n:
-            importances = pd.Series(clf.feature_importances_, index=X_train.columns)
-            top_cols = importances.sort_values(ascending=False).head(args.top_n).index.tolist()
-            print(f"    🔬 Parity Mode: Filtering to Top {args.top_n} features...")
-            X_train = X_train[top_cols]
-            X_test  = X_test[top_cols]
-            # Re-fit with reduced feature set
-            clf = RandomForestClassifier(n_estimators=100, n_jobs=12, random_state=42)
-            clf.fit(X_train, y_train)
 
         y_pred = clf.predict(X_test)
 
