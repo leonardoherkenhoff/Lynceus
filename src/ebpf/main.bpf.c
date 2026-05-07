@@ -7,7 +7,6 @@
  * Strictly implements the 203 behavioral features set (Timing, IAT, PktLen, HdrLen).
  *
  * @version 1.1 (RustiFlow Parity - 203 Features)
- * @author Leonardo Herkenhoff (Scientific Research Partner)
  */
 
 #include "vmlinux.h"
