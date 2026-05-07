@@ -190,9 +190,9 @@ def generate_comparison_report(results):
 
 def main():
     parser = argparse.ArgumentParser(description="Lynceus Parity Experiment Orchestrator")
-    parser.add_argument("--tools", nargs="+", default=list(TOOLS.keys()),
+    parser.add_argument("--tools", nargs="+", default=["lynceus", "rustiflow", "xfast"],
                         choices=list(TOOLS.keys()),
-                        help="Ferramentas a executar (padrão: todas)")
+                        help="Ferramentas a executar (padrão: lynceus rustiflow xfast — ntl já concluído)")
     args = parser.parse_args()
 
     if os.geteuid() != 0:
