@@ -61,7 +61,7 @@ TOOLS = {
         "wrapper":   "scripts/testbed/ebpf_wrapper.py",
         "interim":   "data/interim/EBPF_PARITY_NTL",
         "processed": "data/processed/EBPF_PARITY_NTL",
-        "label":     "Lynceus Parity (Set: NTL Clean)",
+        "label":     "Lynceus Parity (Set: NTL+AL - 112 Features)",
         "bench_args": "--parity-mode ntl"
     }
 }
