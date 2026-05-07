@@ -445,19 +445,20 @@ def _apply_parity_filter(df, mode):
         ]
         
     elif mode == 'ntl':
-        # NTLFlowLyzer + ALFlowLyzer Unified (approx 350 features)
+        # NTLFlowLyzer (350) + ALFlowLyzer (50) Unified (400 features total)
         # Includes all statistical orders: Mean, Std, Max, Min, Variance, Median, Skewness, CoV, Mode.
-        # Plus Delta features (Time, Len, Header, Payload) and Flag percentages.
+        # Plus Delta features (Time, Len, Header, Payload), Flag percentages, and AL (DNS/HTTP/TTL).
         patterns = [
             'duration', 'packets', 'bytes', 'payload', 'header', 'segment', 
             'win', 'active', 'idle', 'rate', 'bulk', 'flag', 'iat', 'subflow', 
-            'delta', 'handshake', 'skewness', 'variance', 'median', 'mode', 'cov'
+            'delta', 'handshake', 'skewness', 'variance', 'median', 'mode', 'cov',
+            'dns', 'http', 'ttl', 'entropy', 'numeric'
         ]
         # Redundancies to remove (user request: "sem as redundâncias")
         redundant = ['fwd_seg_size_avg', 'bwd_seg_size_avg', 'pkt_size_avg']
         keep = [c for c in cols if any(p.lower() in c.lower() for p in patterns) and c.lower() not in redundant]
-        # Cap at 350 as requested
-        if len(keep) > 350: keep = keep[:350]
+        # Cap at 400 (350 NTL + 50 AL)
+        if len(keep) > 400: keep = keep[:400]
 
     # Filter to what actually exists in Lynceus CSV
     final_keep = [c for c in keep if c in cols]
