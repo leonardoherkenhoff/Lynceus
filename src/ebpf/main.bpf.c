@@ -7,7 +7,6 @@
  * Implements the core behavioral set of 15 features (Packets, Bytes, Duration, Rates).
  *
  * @version 1.1 (NFX Parity - 15 Features)
- * @author Leonardo Herkenhoff (Scientific Research Partner)
  */
 
 #include "vmlinux.h"
