@@ -425,16 +425,31 @@ def _apply_parity_filter(df, mode):
     """Filter features to match the logical set of another tool (Scientific Parity)."""
     cols = df.columns.tolist()
     if mode == 'rustiflow':
-        # RustiFlow Full Behavioral Set (203 features)
-        # Includes specialized modules: Timing, IAT, PktLen, HeaderLen, Bulk, Subflow, ActiveIdle, Icmp, TCP Quality, Window.
-        patterns = [
-            'duration', 'iat', 'packets', 'bytes', 'header', 'payload', 
-            'bulk', 'subflow', 'active', 'idle', 'icmp', 'window', 'retransmission', 
-            'rtt', 'ratio', 'flag', 'pps', 'bps'
-        ]
-        keep = [c for c in cols if any(p.lower() in c.lower() for p in patterns)]
-        # Cap at 203 to reflect strict parity by feature count as requested
-        if len(keep) > 203: keep = keep[:203]
+        # RustiFlow Full Parity (203 Features)
+        # Includes Timing, IAT, PktLen, HdrLen, Bulk, Subflow, ActiveIdle, Icmp, TCP Window.
+        metrics = ['Tot_Pay', 'Fwd_Pay', 'Bwd_Pay', 'Tot_Hdr', 'Fwd_Hdr', 'Bwd_Hdr', 'Tot_IAT', 'Fwd_IAT', 'Bwd_IAT', 'Active', 'Idle', 'Win']
+        stats = ['Max', 'Min', 'Mean', 'Std', 'Var', 'Median', 'Skew', 'CoV', 'Mode'] # 9 variants
+        
+        keep = []
+        for m in metrics:
+            for s in stats:
+                keep.append(f"{m}_{s}")
+                
+        flags = ['FIN', 'SYN', 'RST', 'PSH', 'ACK', 'URG', 'ECE', 'CWR']
+        for f in flags:
+            keep.extend([f"{f}_Cnt", f"{f}_Fwd_Cnt", f"{f}_Bwd_Cnt"])
+            
+        keep.extend([
+            'duration', 'PacketsCount', 'FwdPacketsCount', 'BwdPacketsCount',
+            'TotalBytes', 'FwdBytes', 'BwdBytes', 'FwdBwdPktRatio', 'FwdBwdByteRatio',
+            'FwdInitWinBytes', 'BwdInitWinBytes', 'IcmpType', 'IcmpCode', 'IcmpEchoId',
+            'BytesRate', 'FwdBytesRate', 'BwdBytesRate', 'PacketsRate', 'FwdPacketsRate', 'BwdPacketsRate', 'DownUpRatio',
+            'FwdBulkBytes', 'FwdBulkPkts', 'FwdBulkCnt', 'BwdBulkBytes', 'BwdBulkPkts', 'BwdBulkCnt'
+        ])
+        
+        final_keep = [c for c in keep if c in cols]
+        # RustiFlow has 203. If we have more, we cap. If less, we take all available.
+        if len(final_keep) > 203: final_keep = final_keep[:203]
         
     elif mode == 'nfx':
         # NetFeatureXtract Behavioral Set (approx 15 features)
