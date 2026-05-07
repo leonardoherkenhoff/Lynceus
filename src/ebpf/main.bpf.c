@@ -1,13 +1,15 @@
 /**
  * @file main.bpf.c
- * @brief Kernel-Space Data Plane - XDP Feature Extractor.
+ * @brief Lynceus Kernel-Space Data Plane - XDP Parallel Monster Extractor.
  *
  * @details
- * Performs recursive packet dissection and flow state tracking.
- * Implements RingBuffer-based event export for L4/L7 metadata.
- * Optimised for high-fidelity extraction on kernels >= 5.15 (LTS).
+ * Performs recursive packet dissection and high-density flow state tracking.
+ * Implements a Multi-Core RingBuffer architecture (Parallel Monster) to ensure 
+ * zero-copy event export for 495-feature telemetry matrix.
+ * Optimized for high-throughput environments (100Gbps+) using XDP_DRV/XDP_HW.
  *
- * @version 1.0 (The Definitive Foundation)
+ * @version 1.1 (SBSeg 2026 - High-Fidelity Foundation)
+ * @author Leonardo Herkenhoff (Scientific Research Partner)
  */
 
 #include "vmlinux.h"

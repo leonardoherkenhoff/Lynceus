@@ -1,7 +1,15 @@
 /**
  * @file loader.c
- * @brief User-space control plane for eBPF telemetry extraction.
- * Auto-scales workers, flow tables, and buffers based on available hardware.
+ * @brief Lynceus User-Space Control Plane - Parallel Monster Orchestrator.
+ *
+ * @details
+ * Performs high-performance event ingestion from per-CPU RingBuffers.
+ * Implements 4th-order statistical aggregation (Skewness, Kurtosis, Mode) 
+ * and behavioral histogramming (80 bins) on-the-fly.
+ * Auto-scales workers and state memory based on available CPU/RAM topology.
+ *
+ * @version 1.1 (SBSeg 2026 - High-Fidelity Foundation)
+ * @author Leonardo Herkenhoff (Scientific Research Partner)
  */
 
 #define _GNU_SOURCE

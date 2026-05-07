@@ -1,24 +1,28 @@
 #!/usr/bin/env python3
 """
-Lynceus Research Pipeline - Hybrid Validation Benchmark (v2.0)
+Lynceus Research Pipeline - Hybrid Validation Benchmark (v3.0)
 --------------------------------------------------------------
-Scientific Milestone: v2.0 (Methodological Rigor)
+Scientific Protocol: SBSeg 2026 Parity Benchmark
+Author: Leonardo Herkenhoff (Scientific Research Partner)
 
-Research Objective:
-Validates the Lynceus feature vector under two complementary paradigms:
-  1. Cross-Day Temporal Validation: Train on Day 01-12, Test on Day 03-11
-     for attack vectors present in both subsets (eliminates temporal leakage).
-  2. Stochastic Split Validation: 70/30 random split for attack vectors
-     that appear in only one day (maintains coverage).
+RESEARCH OBJECTIVE:
+Executes a rigorous 6-step benchmarking protocol to validate the Lynceus eBPF 
+telemetry engine against industry benchmarks (RustiFlow, NFX/XFAST).
 
-Feature Purge:
-  Removes all identity, protocol-proxy, and topology metadata features
-  that cause trivial Gini=0 splits in tree-based estimators. TTL suite
-  is excluded by default but can be reintroduced via --with-ttl flag.
+6-STEP PROTOCOL:
+  1. Lynceus Full Scientific Baseline (495 Features)
+  2. RustiFlow Original (203 Features)
+  3. NetFeatureXtract Original (15 Features)
+  4. Lynceus vs RustiFlow (203 Feature Logical Parity)
+  5. Lynceus vs NFX (15 Feature Logical Parity)
+  6. Lynceus vs NTL+AL (399 Feature Strict Parity)
 
-Usage:
-  python3 ebpf_run_benchmark.py              # Conservative (no TTL)
-  python3 ebpf_run_benchmark.py --with-ttl   # Realistic (with TTL)
+VALIDATION METHODOLOGY:
+  1. Cross-Day Temporal Validation: Eliminates temporal leakage by training 
+     and testing on independent attack captures (e.g., CICDDoS2019 Day 01 vs 03).
+  2. Stochastic Split Validation (70/30): Provides coverage for isolated vectors.
+  3. Identity Leakage Purge: Mandatory removal of IP/Port/Mac identifiers 
+     to confirm behavioral detection capability.
 """
 
 import numpy as np
