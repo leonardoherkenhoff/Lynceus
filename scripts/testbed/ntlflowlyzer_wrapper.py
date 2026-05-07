@@ -24,14 +24,17 @@ DATA_INTERIM   = os.path.join(BASE_DIR, "data/interim/NTL_RAW")
 EXPERIMENT_ORDER = ["PCAPv6", "PCAP"]
 
 
-def process_pcap_dir(pcap_dir, category):
+def process_pcap_dir(pcap_dir, category, smoke_test=False):
     rel_path   = os.path.relpath(pcap_dir, os.path.join(DATA_RAW, category))
     output_dir = os.path.normpath(os.path.join(DATA_INTERIM, category, rel_path))
     os.makedirs(output_dir, exist_ok=True)
-
+    
     pcaps = sorted(glob.glob(os.path.join(pcap_dir, "*.pcap*")))
     if not pcaps:
         return
+
+    if smoke_test:
+        pcaps = [pcaps[0]]
 
     experiment_name = f"{category}/{rel_path}"
     csv_output_path = os.path.join(output_dir, "flows.csv")
@@ -114,7 +117,17 @@ def process_pcap_dir(pcap_dir, category):
 
 
 def main():
-    print("=== NTLFlowLyzer Parity Extraction Wrapper ===")
+    import argparse
+    parser = argparse.ArgumentParser(description="NTLFlowLyzer Extraction Wrapper")
+    parser.add_argument("--output", type=str, help="Override interim output directory")
+    parser.add_argument("--smoke-test", action="store_true", help="Process only the first PCAP")
+    args = parser.parse_args()
+
+    if args.output:
+        global DATA_INTERIM
+        DATA_INTERIM = os.path.abspath(args.output)
+
+    print(f"=== NTLFlowLyzer Parity Extraction Wrapper [Output: {DATA_INTERIM}] ===")
     for category in EXPERIMENT_ORDER:
         category_path = os.path.join(DATA_RAW, category)
         if not os.path.exists(category_path):
@@ -123,8 +136,14 @@ def main():
         pcap_dirs  = sorted(set(os.path.dirname(p) for p in pcap_files))
         if not pcap_dirs and glob.glob(os.path.join(category_path, "*.pcap*")):
             pcap_dirs = [category_path]
+        
+        if args.smoke_test and pcap_dirs:
+            pcap_dirs = [pcap_dirs[0]]
+
         for pcap_dir in pcap_dirs:
-            process_pcap_dir(pcap_dir, category)
+            process_pcap_dir(pcap_dir, category, smoke_test=args.smoke_test)
+            if args.smoke_test: break
+        if args.smoke_test: break
 
 
 if __name__ == "__main__":

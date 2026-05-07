@@ -65,7 +65,7 @@ def run_nfx_extraction(smoke_test=False):
         return
 
     os.makedirs(INTERIM_DIR, exist_ok=True)
-    pcaps = glob.glob(os.path.join(PCAP_DIR, "**", "*.pcap*"), recursive=True)
+    pcaps = sorted(glob.glob(os.path.join(PCAP_DIR, "**", "*.pcap*"), recursive=True))
     if smoke_test and pcaps:
         pcaps = [pcaps[0]]
     
@@ -92,7 +92,8 @@ def run_nfx_extraction(smoke_test=False):
             
             # 2. Injetar tráfego
             print(f"   Replaying {os.path.basename(pcap)}...")
-            subprocess.run(["tcpreplay", "-i", "veth0", pcap], check=True, capture_output=True)
+            limit_flag = ["--limit", "5000"] if smoke_test else []
+            subprocess.run(["tcpreplay", "-i", "veth0"] + limit_flag + [pcap], check=True, capture_output=True)
             
             time.sleep(5) # Espera o NFX imprimir o último loop
             

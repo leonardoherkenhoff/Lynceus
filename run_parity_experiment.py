@@ -41,9 +41,9 @@ TOOLS = {
         "branch":    "parity-netflowlyzer"
     },
     "nfx_full": {
-        "wrapper":   "scripts/testbed/xfast_wrapper.py",
-        "interim":   "data/interim/XFAST_RAW",
-        "processed": "data/processed/XFAST",
+        "wrapper":   "scripts/testbed/nfx_wrapper.py",
+        "interim":   "data/interim/NFX_RAW",
+        "processed": "data/processed/NFX",
         "label":     "NFX (Original)",
         "bench_args": ""
     },
