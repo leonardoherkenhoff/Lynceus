@@ -1,142 +1,109 @@
 #!/usr/bin/env python3
 """
-Lynceus Parity Experiment — XFAST (NFX) Wrapper
-------------------------------------------------
-Extrai features de cada PCAP usando XFAST (parity-nfx).
-XFAST é XDP-based como o Lynceus — requer VETH + tcpreplay.
+Lynceus Parity Experiment — NetFeatureXtract (NFX) Wrapper
+-----------------------------------------------------------
+Baseado no repositório: https://github.com/geinsfeldt/NetFeatureXtract
 
 Invocação: sudo python3 scripts/testbed/xfast_wrapper.py
 """
 
-import subprocess
 import os
+import subprocess
 import time
+import signal
 import glob
-import json
-import threading
 import re
 
-BASE_DIR   = "/opt/eBPFNetFlowLyzer"
-XFAST_BIN  = "/opt/XFAST/ebpf/xdp_user"
-DATA_RAW   = os.path.join(BASE_DIR, "data/raw")
-DATA_INTERIM = os.path.join(BASE_DIR, "data/interim/XFAST_RAW")
-EXPERIMENT_ORDER = ["PCAPv6", "PCAP"]
+# Paths
+NFX_DIR = "/opt/XFAST/ebpf" # Pasta no servidor conforme ls anterior
+if not os.path.exists(NFX_DIR):
+    NFX_DIR = "/opt/NetFeatureXtract/ebpf"
 
+NFX_BIN = os.path.join(NFX_DIR, "xdp_user")
+INTERIM_DIR = "/opt/eBPFNetFlowLyzer/data/interim/XFAST_RAW"
+PCAP_DIR = "/opt/eBPFNetFlowLyzer/data/raw"
 
-def process_pcap_dir(pcap_dir, category):
-    rel_path   = os.path.relpath(pcap_dir, os.path.join(DATA_RAW, category))
-    output_dir = os.path.normpath(os.path.join(DATA_INTERIM, category, rel_path))
-    os.makedirs(output_dir, exist_ok=True)
+def _sanitize_nfx_csv(raw_path, clean_path):
+    """
+    NetFeatureXtract imprime a tabela de fluxos a cada segundo.
+    Removemos cabeçalhos repetidos e pegamos a versão mais recente de cada fluxo.
+    """
+    unique_flows = {}
+    header = None
+    
+    if not os.path.exists(raw_path):
+        return
+        
+    with open(raw_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line or "DEBUG" in line or "Map" in line:
+                continue
+            if "," in line:
+                parts = line.split(",")
+                if "src_ip" in line or "packets" in line:
+                    if header is None: header = line
+                    continue
+                # Chave de fluxo: src_ip, dst_ip, src_p, dst_p, proto
+                if len(parts) >= 5:
+                    key = tuple(parts[:5])
+                    unique_flows[key] = line
+                    
+    with open(clean_path, "w") as f:
+        if header:
+            f.write(header + "\n")
+        else:
+            # Fallback header se não encontrado
+            f.write("src_ip,dst_ip,src_port,dst_port,protocol,packets,bytes,duration,pps,bps,max_pkt_len,min_pkt_len,max_pps,min_pps,max_bps,min_bps,avg_pps,avg_bps,avg_bpp\n")
+            
+        for key in sorted(unique_flows.keys()):
+            f.write(unique_flows[key] + "\n")
 
-    pcaps = sorted(glob.glob(os.path.join(pcap_dir, "*.pcap*")))
-    if not pcaps:
+def run_nfx_extraction():
+    if not os.path.exists(NFX_BIN):
+        print(f"❌ NFX Binary not found at {NFX_BIN}")
         return
 
-    experiment_name = f"{category}/{rel_path}"
-    csv_output_path = os.path.join(output_dir, "flows.csv")
-    loader_log_path = os.path.join(output_dir, "xfast_stderr.log")
-    print(f"\n🚀 XFAST EXTRACTION: {experiment_name}")
-
-    # Setup VETH
-    subprocess.run(["ip", "link", "delete", "veth0"], check=False, stderr=subprocess.DEVNULL)
-    subprocess.run(["ip", "link", "add", "veth0", "type", "veth", "peer", "name", "veth1"], check=True)
-    subprocess.run(["ip", "link", "set", "veth0", "up"], check=True)
-    subprocess.run(["ip", "link", "set", "veth1", "up"], check=True)
-    subprocess.run(["sysctl", "-w", "net.ipv6.conf.all.forwarding=1"], check=False, capture_output=True)
-
-    try:
-        f_csv = open(csv_output_path, "w")
-        # XFAST provavelmente aceita interface como argumento (como o loader do Lynceus)
-        proc_xfast = subprocess.Popen(
-            [XFAST_BIN, "veth1"],
-            stdout=f_csv,
-            stderr=subprocess.PIPE,
-            text=True,
-            cwd=BASE_DIR
-        )
-
-        def stream_logs(proc, log_path):
-            try:
-                with open(log_path, "w") as f:
-                    for line in iter(proc.stderr.readline, ""):
-                        if not line:
-                            break
-                        f.write(line)
-                        f.flush()
-                        print(f"   [XFAST] {line.strip()}")
-            except Exception:
-                pass
-
-        log_thread = threading.Thread(target=stream_logs, args=(proc_xfast, loader_log_path), daemon=True)
-        log_thread.start()
-        time.sleep(5)
-
-        total_packets = 0
-        start_time    = time.time()
-
-        for pcap in pcaps:
-            print(f"   Streaming: {os.path.basename(pcap)}")
-            cmd = f"tcpreplay -i veth0 -t {pcap} 2>&1"
-            try:
-                res = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
-                matches = re.findall(r"(\d+)\s+packets", res.stdout)
-                if matches:
-                    total_packets += int(matches[0])
-            except subprocess.CalledProcessError as e:
-                print(f"   ❌ Injection Error: {e.stderr}")
-
-        elapsed = time.time() - start_time
-        pps = total_packets / elapsed if elapsed > 0 else 0
-
-        print("   🛑 Synchronizing XFAST buffers...")
-        subprocess.run(["kill", "-INT", str(proc_xfast.pid)], check=False)
-        try:
-            proc_xfast.wait(timeout=120)
-        except subprocess.TimeoutExpired:
-            subprocess.run(["kill", "-9", str(proc_xfast.pid)], check=False)
-
-        log_thread.join(timeout=10)
-        f_csv.flush()
-        os.fsync(f_csv.fileno())
-        f_csv.close()
-
-        summary = {
-            "tool": "xfast",
-            "experiment": experiment_name,
-            "packets_sent": total_packets,
-            "time_seconds": elapsed,
-            "pps": pps,
-            "timestamp": time.ctime()
-        }
-        with open(os.path.join(output_dir, "summary.json"), "w") as f:
-            json.dump(summary, f, indent=4)
-
-        print(f"✅ DONE: {total_packets} pkts | {elapsed:.1f}s | {pps:.0f} pps")
-
-    finally:
-        subprocess.run(["ip", "link", "delete", "veth0"], check=False, stderr=subprocess.DEVNULL)
-
-
-def main():
-    print("=== XFAST (NFX) Parity Extraction Wrapper ===")
-    if not os.path.exists(XFAST_BIN):
-        print(f"❌ XFAST binary not found: {XFAST_BIN}")
-        return
-
-    for category in EXPERIMENT_ORDER:
-        category_path = os.path.join(DATA_RAW, category)
-        if not os.path.exists(category_path):
-            continue
-        pcap_files = glob.glob(os.path.join(category_path, "**", "*.pcap*"), recursive=True)
-        pcap_dirs  = sorted(set(os.path.dirname(p) for p in pcap_files))
-        if not pcap_dirs and glob.glob(os.path.join(category_path, "*.pcap*")):
-            pcap_dirs = [category_path]
-        for pcap_dir in pcap_dirs:
-            process_pcap_dir(pcap_dir, category)
-
+    os.makedirs(INTERIM_DIR, exist_ok=True)
+    pcaps = glob.glob(os.path.join(PCAP_DIR, "**", "*.pcap*"), recursive=True)
+    
+    for pcap in pcaps:
+        category = os.path.basename(os.path.dirname(pcap))
+        out_dir = os.path.join(INTERIM_DIR, category)
+        os.makedirs(out_dir, exist_ok=True)
+        out_file = os.path.join(out_dir, "flows.csv")
+        raw_file = out_file + ".raw"
+        
+        print(f"[*] NFX Extracting: {pcap} (Category: {category})")
+        
+        # Setup VETH (NFX precisa de interface real/veth)
+        subprocess.run("ip link add veth0 type veth peer name veth1 || true", shell=True)
+        subprocess.run("ip link set veth0 up && ip link set veth1 up", shell=True)
+        
+        # 1. Start NFX on veth1
+        with open(raw_file, "w") as f_raw:
+            proc = subprocess.Popen([NFX_BIN, "veth1"], 
+                                    stdout=f_raw, stderr=subprocess.PIPE,
+                                    preexec_fn=os.setsid)
+            
+            time.sleep(3) # Tempo para o BPF carregar e mapas resetarem
+            
+            # 2. Injetar tráfego
+            print(f"   Replaying {os.path.basename(pcap)}...")
+            subprocess.run(["tcpreplay", "-i", "veth0", pcap], check=True, capture_output=True)
+            
+            time.sleep(5) # Espera o NFX imprimir o último loop
+            
+            # 3. Parar NFX
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            proc.wait()
+            
+        # 4. Sanitizar CSV
+        _sanitize_nfx_csv(raw_file, out_file)
+        print(f"   ✅ Done. Saved to {out_file}")
+        
+        # Limpar veth
+        subprocess.run("ip link delete veth0", shell=True, stderr=subprocess.DEVNULL)
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n⚠️  Interrupted.")
+    run_nfx_extraction()
