@@ -151,7 +151,15 @@ def process_pcap_dir(pcap_dir, category):
 
 def main():
     """Main orchestrator for the Feature Extraction phase."""
-    print("=== Lynceus Telemetry Engine: High-Resolution Extraction Wrapper ===")
+    parser = argparse.ArgumentParser(description="Lynceus Extraction Wrapper")
+    parser.add_argument("--output", type=str, help="Override interim output directory")
+    args = parser.parse_args()
+
+    if args.output:
+        global DATA_INTERIM
+        DATA_INTERIM = os.path.abspath(args.output)
+
+    print(f"=== Lynceus Telemetry Engine: Extraction Wrapper [Output: {DATA_INTERIM}] ===")
     if not os.path.exists(LOADER_BIN):
         print(f"❌ Error: {LOADER_BIN} not found. Invoke toolchain build.")
         return
@@ -167,5 +175,6 @@ def main():
             process_pcap_dir(pcap_dir, category)
 
 if __name__ == "__main__":
+    import argparse
     try: main()
     except KeyboardInterrupt: print("\n⚠️  Interrupted.")
