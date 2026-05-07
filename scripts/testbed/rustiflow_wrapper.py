@@ -96,6 +96,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description="RustiFlow Extraction Wrapper")
     parser.add_argument("--output", type=str, help="Override interim output directory")
+    parser.add_argument("--smoke-test", action="store_true", help="Process only the first PCAP")
     args = parser.parse_args()
 
     if args.output:
@@ -115,8 +116,14 @@ def main():
         pcap_dirs  = sorted(set(os.path.dirname(p) for p in pcap_files))
         if not pcap_dirs and glob.glob(os.path.join(category_path, "*.pcap*")):
             pcap_dirs = [category_path]
+        
+        if args.smoke_test and pcap_dirs:
+            pcap_dirs = [pcap_dirs[0]]
+
         for pcap_dir in pcap_dirs:
             process_pcap_dir(pcap_dir, category)
+            if args.smoke_test: break
+        if args.smoke_test: break
 
 
 if __name__ == "__main__":

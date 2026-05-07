@@ -59,13 +59,15 @@ def _sanitize_nfx_csv(raw_path, clean_path):
         for key in sorted(unique_flows.keys()):
             f.write(unique_flows[key] + "\n")
 
-def run_nfx_extraction():
+def run_nfx_extraction(smoke_test=False):
     if not os.path.exists(NFX_BIN):
         print(f"❌ NFX Binary not found at {NFX_BIN}")
         return
 
     os.makedirs(INTERIM_DIR, exist_ok=True)
     pcaps = glob.glob(os.path.join(PCAP_DIR, "**", "*.pcap*"), recursive=True)
+    if smoke_test and pcaps:
+        pcaps = [pcaps[0]]
     
     for pcap in pcaps:
         category = os.path.basename(os.path.dirname(pcap))
@@ -109,9 +111,10 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="NFX Extraction Wrapper")
     parser.add_argument("--output", type=str, help="Override interim output directory")
+    parser.add_argument("--smoke-test", action="store_true", help="Process only the first PCAP")
     args = parser.parse_args()
     
     if args.output:
         INTERIM_DIR = os.path.abspath(args.output)
         
-    run_nfx_extraction()
+    run_nfx_extraction(smoke_test=args.smoke_test)

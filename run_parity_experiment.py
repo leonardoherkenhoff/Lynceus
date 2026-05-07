@@ -197,6 +197,7 @@ def generate_comparison_report(results):
 def main():
     parser = argparse.ArgumentParser(description="Lynceus Parity Orchestrator")
     parser.add_argument("--steps", nargs="+", default=EXECUTION_ORDER, choices=list(TOOLS.keys()))
+    parser.add_argument("--smoke-test", action="store_true", help="Quick validation of the full pipeline")
     args = parser.parse_args()
 
     if os.geteuid() != 0:
@@ -204,11 +205,19 @@ def main():
 
     os.makedirs(RESULTS_BASE, exist_ok=True)
     results = {}; t_global = time.time()
+    
     for tool_name in args.steps:
         t0 = time.time()
-        ok = run_tool(tool_name, TOOLS[tool_name])
+        cfg = TOOLS[tool_name].copy()
+        if args.smoke_test:
+            cfg["wrapper"] += " --smoke-test"
+            
+        ok = run_tool(tool_name, cfg)
         results[tool_name] = "OK" if ok else "FAIL"
         print(f"  [{tool_name}] {results[tool_name]} ({time.time()-t0:.0f}s)")
+        if args.smoke_test and not ok:
+            print(f"❌ Smoke test failed at step {tool_name}. Aborting.")
+            break
 
     generate_comparison_report(results)
     print(f"\n[+] Total Time: {time.time()-t_global:.0f}s")
