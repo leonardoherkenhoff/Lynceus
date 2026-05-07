@@ -7,7 +7,6 @@
  * Strictly implements the 399 behavioral features set (348 NTL + 51 AL).
  *
  * @version 1.1 (NTL+AL Parity - 399 Features)
- * @author Leonardo Herkenhoff (Scientific Research Partner)
  */
 
 #include "vmlinux.h"
