@@ -106,4 +106,12 @@ def run_nfx_extraction():
         subprocess.run("ip link delete veth0", shell=True, stderr=subprocess.DEVNULL)
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="NFX Extraction Wrapper")
+    parser.add_argument("--output", type=str, help="Override interim output directory")
+    args = parser.parse_args()
+    
+    if args.output:
+        INTERIM_DIR = os.path.abspath(args.output)
+        
     run_nfx_extraction()

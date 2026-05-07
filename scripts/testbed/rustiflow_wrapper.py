@@ -93,7 +93,16 @@ def process_pcap_dir(pcap_dir, category):
 
 
 def main():
-    print("=== RustiFlow Parity Extraction Wrapper ===")
+    import argparse
+    parser = argparse.ArgumentParser(description="RustiFlow Extraction Wrapper")
+    parser.add_argument("--output", type=str, help="Override interim output directory")
+    args = parser.parse_args()
+
+    if args.output:
+        global DATA_INTERIM
+        DATA_INTERIM = os.path.abspath(args.output)
+
+    print(f"=== RustiFlow Parity Extraction Wrapper [Output: {DATA_INTERIM}] ===")
     if not os.path.exists(RUSTIFLOW_BIN):
         print(f"❌ RustiFlow binary not found: {RUSTIFLOW_BIN}")
         return
