@@ -1,13 +1,13 @@
 /**
  * @file main.bpf.c
- * @brief Kernel-Space Data Plane - XDP Feature Extractor.
+ * @brief Lynceus Kernel-Space Data Plane - RustiFlow Parity Extractor.
  *
  * @details
- * Performs recursive packet dissection and flow state tracking.
- * Implements RingBuffer-based event export for L4/L7 metadata.
- * Optimised for high-fidelity extraction on kernels >= 5.15 (LTS).
+ * Stripped-down version of the Lynceus engine for RustiFlow parity benchmarking.
+ * Strictly implements the 203 behavioral features set (Timing, IAT, PktLen, HdrLen).
  *
- * @version 1.0 (The Definitive Foundation)
+ * @version 1.1 (RustiFlow Parity - 203 Features)
+ * @author Leonardo Herkenhoff (Scientific Research Partner)
  */
 
 #include "vmlinux.h"
