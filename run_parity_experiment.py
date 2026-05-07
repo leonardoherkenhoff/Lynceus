@@ -132,7 +132,9 @@ def run_tool(tool_name, tool_cfg):
         if not run(f"git checkout -f {target_branch}", f"Checkout {target_branch}"):
             return False
         # Sync branch with origin to pull latest smoke-test/wrapper fixes
-        run(f"git pull origin {target_branch}", f"Sync {target_branch} with origin", check=False)
+        run(f"git fetch origin {target_branch}", f"Fetch {target_branch} from origin")
+        if not run(f"git reset --hard origin/{target_branch}", f"Hard Reset to origin/{target_branch}"):
+            return False
         if not run("git status", "Git Status Check", log_path=os.path.join(log_dir, "git.log")):
             return False
         if not run("make clean && make", "Rebuilding Lynceus Parity Engine", log_path=os.path.join(log_dir, "build.log")):
