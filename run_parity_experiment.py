@@ -155,16 +155,22 @@ def run_tool(tool_name, tool_cfg):
     # Labeling
     labeler_cmd = (f"sudo python3 {LABELER} --input {os.path.join(BASE_DIR, tool_cfg['interim'])} "
                    f"--output {os.path.join(BASE_DIR, tool_cfg['processed'])}")
-    if not run(labeler_cmd, f"Labeling — {tool_cfg['label']}", log_path=os.path.join(log_dir, "labeling.log")):
+    labeling_ok = run(labeler_cmd, f"Labeling — {tool_cfg['label']}", log_path=os.path.join(log_dir, "labeling.log"))
+    
+    # ⚠️  CRITICAL: Free disk space by removing massive interim data after labeling is done
+    if labeling_ok:
+        print(f"[*] Cleaning interim data to free space...")
+        shutil.rmtree(os.path.join(BASE_DIR, tool_cfg["interim"]), ignore_errors=True)
+    else:
         return False
 
     # Benchmark
     bench_cmd = (f"sudo python3 {BENCHMARK} --dataset {os.path.join(BASE_DIR, tool_cfg['processed'])} {tool_cfg['bench_args']}")
-    if not run(bench_cmd, f"Benchmark — {tool_cfg['label']}", log_path=os.path.join(log_dir, "ml_benchmark.log")):
-        return False
+    bench_ok = run(bench_cmd, f"Benchmark — {tool_cfg['label']}", log_path=os.path.join(log_dir, "ml_benchmark.log"))
 
+    # Always save results (even if benchmark fails, we keep the processed CSVs)
     save_results(tool_name, tool_cfg)
-    return True
+    return bench_ok
 
 def generate_comparison_report(results):
     report = {"results": {}, "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")}
