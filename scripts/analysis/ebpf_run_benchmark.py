@@ -75,42 +75,33 @@ TTL_DROP = [
     'TTL_Var_CoV', 'TTL_Var_Mode',
 ]
 
-MAX_SAMPLES = 1_000_000
+# Adaptive sample limit to prevent OOM on 32GB RAM servers
+# For 400+ features, we target ~10GB matrix size
+DEFAULT_MAX_SAMPLES = 5_000_000
+HIGH_DENSITY_MAX_SAMPLES = 2_500_000 
 CHUNK_SIZE = 250_000
-
 
 def load_dataset(file_path, drop_cols):
     """
     Load a dataset with column filtering, type coercion, and sample cap.
-
-    Uses Polars (multi-threaded Rust backend) when available for 5-10x
-    faster CSV parsing, falling back to Pandas chunked reading.
-
-    Args:
-        file_path (str): Path to the labeled CSV dataset.
-        drop_cols (list): List of column names to aggressively drop during load.
-
-    Returns:
-        tuple: (X, y) where X is the feature matrix (pd.DataFrame) and y is the
-               label vector (pd.Series). Returns (None, None) if loading fails.
     """
+    # Quick probe to determine feature count
+    sample_df = pd.read_csv(file_path, nrows=1)
+    n_features = len([c for c in sample_df.columns if c not in drop_cols and c != 'Label'])
+    
+    # Adaptive limit: if we have >300 features, cap at 2.5M to fit in 16GB free RAM
+    max_s = HIGH_DENSITY_MAX_SAMPLES if n_features > 300 else DEFAULT_MAX_SAMPLES
+    
     if USE_POLARS:
-        return _load_polars(file_path, drop_cols)
-    return _load_pandas(file_path, drop_cols)
+        return _load_polars(file_path, drop_cols, max_s)
+    return _load_pandas(file_path, drop_cols, max_s)
 
 
-def _load_polars(file_path, drop_cols):
+def _load_polars(file_path, drop_cols, max_samples):
     """
     Load dataset using Polars multi-threaded CSV reader.
-
-    Args:
-        file_path (str): Path to the labeled CSV dataset.
-        drop_cols (list): Columns to drop.
-
-    Returns:
-        tuple: (X, y) as pandas objects for sklearn compatibility.
     """
-    df = pl.read_csv(file_path, n_rows=MAX_SAMPLES, infer_schema_length=10000,
+    df = pl.read_csv(file_path, n_rows=max_samples, infer_schema_length=10000,
                      ignore_errors=True)
 
     # Drop unwanted columns (only those that exist).
@@ -138,16 +129,9 @@ def _load_polars(file_path, drop_cols):
     return X, y_pd
 
 
-def _load_pandas(file_path, drop_cols):
+def _load_pandas(file_path, drop_cols, max_samples):
     """
     Load dataset using Pandas chunked CSV reader (fallback).
-
-    Args:
-        file_path (str): Path to the labeled CSV dataset.
-        drop_cols (list): Columns to drop.
-
-    Returns:
-        tuple: (X, y) as pandas objects.
     """
     sample_df = pd.read_csv(file_path, nrows=1, low_memory=False)
     use_cols = [c for c in sample_df.columns if c not in drop_cols]
@@ -171,7 +155,7 @@ def _load_pandas(file_path, drop_cols):
         y_list.append(y_chunk)
         total_loaded += len(X_chunk)
 
-        if total_loaded >= MAX_SAMPLES:
+        if total_loaded >= max_samples:
             break
 
     if not X_list:
