@@ -29,6 +29,7 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False):
     os.makedirs(output_dir, exist_ok=True)
 
     pcaps = sorted(glob.glob(os.path.join(pcap_dir, "*.pcap*")))
+    print(f"   [DEBUG] PCAP Dir: {pcap_dir} | Files: {len(pcaps)}")
     if not pcaps:
         return
 
@@ -37,7 +38,7 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False):
 
     experiment_name = f"{category}/{rel_path}"
     csv_output_path = os.path.join(output_dir, "flows.csv")
-    print(f"\n🚀 RUSTIFLOW EXTRACTION: {experiment_name}")
+    print(f"\n🚀 RUSTIFLOW EXTRACTION [{len(pcaps)} files]: {experiment_name}")
 
     total_packets = 0
     start_time    = time.time()

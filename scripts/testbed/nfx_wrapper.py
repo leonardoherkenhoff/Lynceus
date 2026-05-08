@@ -67,17 +67,23 @@ def run_nfx_extraction(smoke_test=False):
 
     os.makedirs(INTERIM_DIR, exist_ok=True)
     pcaps = sorted(glob.glob(os.path.join(PCAP_DIR, "**", "*.pcap*"), recursive=True))
-    if smoke_test and pcaps:
+    print(f"   [DEBUG] Found {len(pcaps)} PCAPs in {PCAP_DIR}")
+    if not pcaps:
+        print(f"   ❌ No PCAPs found in {PCAP_DIR}!")
+        return
+
+    if smoke_test:
+        print(f"   [DEBUG] Smoke test: processing only {pcaps[0]}")
         pcaps = [pcaps[0]]
     
-    for pcap in pcaps:
+    for i, pcap in enumerate(pcaps):
         category = os.path.basename(os.path.dirname(pcap))
         out_dir = os.path.join(INTERIM_DIR, category)
         os.makedirs(out_dir, exist_ok=True)
         out_file = os.path.join(out_dir, "flows.csv")
         raw_file = out_file + ".raw"
         
-        print(f"[*] NFX Extracting: {pcap} (Category: {category})")
+        print(f"[*] [{i+1}/{len(pcaps)}] NFX Extracting: {pcap} (Category: {category})")
         
         # Setup VETH (NFX precisa de interface real/veth)
         subprocess.run("ip link add veth0 type veth peer name veth1 || true", shell=True)
