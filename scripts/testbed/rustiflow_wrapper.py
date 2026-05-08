@@ -57,15 +57,15 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False):
             else:
                 if os.path.exists(tmp_out) and os.path.getsize(tmp_out) > 0:
                     with open(tmp_out) as src, open(csv_output_path, "a") as dst:
-                    lines = src.readlines()
-                    if first_file:
-                        dst.writelines(lines)
-                        first_file = False
-                    else:
-                        dst.writelines(lines[1:])  # skip header on subsequent files
-                # Estimate packets from line count
-                total_packets += max(0, len(lines) - 1)
-                os.remove(tmp_out)
+                        lines = src.readlines()
+                        if first_file:
+                            dst.writelines(lines)
+                            first_file = False
+                        else:
+                            dst.writelines(lines[1:])  # skip header on subsequent files
+                    # Estimate packets from line count
+                    total_packets += max(0, len(lines) - 1)
+                    os.remove(tmp_out)
 
         except subprocess.TimeoutExpired:
             print(f"   ⚠️  Timeout on {os.path.basename(pcap)}")
