@@ -50,7 +50,10 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False):
 
         cmd = [RUSTIFLOW_BIN, "pcap", pcap]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            # Ativamos backtrace para ver onde o RustiFlow panica
+            env = os.environ.copy()
+            env["RUST_BACKTRACE"] = "1"
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, env=env)
             if result.returncode != 0:
                 print(f"   ⚠️  RustiFlow failed on {pcap}. Error: {result.stderr}")
             elif result.stdout:
