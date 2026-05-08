@@ -110,8 +110,15 @@ def save_results(tool_name, tool_cfg):
         src = os.path.join(BASE_DIR, src_rel)
         dst = os.path.join(dest, src_rel)
         if os.path.exists(src):
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            shutil.copytree(src, dst, dirs_exist_ok=True)
+            os.makedirs(dst, exist_ok=True)
+            # Selective copy: logs, jsons, txts, etc. EXCLUDE MASSIVE CSVs
+            for root, dirs, files in os.walk(src):
+                rel_path = os.path.relpath(root, src)
+                target_dir = os.path.join(dst, rel_path)
+                os.makedirs(target_dir, exist_ok=True)
+                for file in files:
+                    if not file.endswith('.csv'):
+                        shutil.copy2(os.path.join(root, file), target_dir)
 
     meta = {"tool": tool_name, "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "hostname": os.uname().nodename, "label": tool_cfg["label"]}
