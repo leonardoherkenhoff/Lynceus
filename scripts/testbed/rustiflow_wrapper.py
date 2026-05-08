@@ -48,7 +48,7 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False):
         print(f"   Processing: {os.path.basename(pcap)}")
         tmp_out = os.path.join(output_dir, f"_tmp_{os.path.basename(pcap)}.csv")
 
-        cmd = [RUSTIFLOW_BIN, "pcap", "-f", FEATURE_SET, "--output", tmp_out, pcap]
+        cmd = [RUSTIFLOW_BIN, "pcap", pcap, tmp_out]
         try:
             # Mostramos a saída para ver o que o RustiFlow está reclamando
             result = subprocess.run(cmd, capture_output=False, text=True, timeout=600)

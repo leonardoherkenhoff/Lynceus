@@ -50,7 +50,15 @@ def run_nfx_extraction(smoke_test=False):
         sys.exit(1)
 
     os.makedirs(INTERIM_DIR, exist_ok=True)
-    pcaps = sorted(glob.glob(os.path.join(PCAP_DIR, "**", "*.pcap*"), recursive=True))
+    pcaps = []
+    for cat in ["PCAP", "PCAPv6"]:
+        cat_dir = os.path.join(PCAP_DIR, cat)
+        if os.path.exists(cat_dir):
+            for root, _, files in os.walk(cat_dir):
+                for f in files:
+                    if f.endswith('.pcap') or f.endswith('.pcapng'):
+                        pcaps.append(os.path.join(root, f))
+    pcaps = sorted(pcaps)
     print(f"   [DEBUG] Found {len(pcaps)} PCAPs in {PCAP_DIR}")
     if not pcaps:
         print(f"   ❌ No PCAPs found in {PCAP_DIR}!")
