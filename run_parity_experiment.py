@@ -79,19 +79,32 @@ EXECUTION_ORDER = [
     "lynceus_vs_nfx", "lynceus_vs_rustiflow"
 ]
 
-def run(cmd, desc, log_path=None, check=True):
-    print(f"\n[*] {desc}")
-    f = open(log_path, "w") if log_path else None
-    t0 = time.time()
-    r = subprocess.run(cmd, shell=True, cwd=BASE_DIR,
-                       stdout=f, stderr=subprocess.STDOUT if f else None)
-    dt = time.time() - t0
-    if f:
-        f.close()
-    status = "OK" if r.returncode == 0 else "FAIL"
-    print(f"    [{status}] dt={dt:.1f}s")
-    if check and r.returncode != 0:
-        print(f"[!] Falha em: {desc}")
+def run(cmd, label, log_path=None):
+    print(f"[*] {label}")
+    start = time.time()
+    
+    if log_path:
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        # We use subprocess.Popen with a pipe to capture and print simultaneously
+        with open(log_path, "w") as f:
+            proc = subprocess.Popen(cmd, shell=True, cwd=BASE_DIR,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, bufsize=1)
+            for line in proc.stdout:
+                print(f"    {line.strip()}")
+                f.write(line)
+            proc.wait()
+            return_code = proc.returncode
+    else:
+        r = subprocess.run(cmd, shell=True, cwd=BASE_DIR)
+        return_code = r.returncode
+
+    dt = time.time() - start
+    if return_code == 0:
+        print(f"    [OK] dt={dt:.1f}s")
+        return True
+    else:
+        print(f"    [FAIL] dt={dt:.1f}s")
         return False
     return True
 
