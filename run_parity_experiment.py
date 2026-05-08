@@ -191,20 +191,33 @@ def run_tool(tool_name, tool_cfg, resume=False):
     save_results(tool_name, tool_cfg)
     return bench_ok
 
-def generate_comparison_report(results):
+def generate_comparison_report(results=None):
     report = {"results": {}, "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")}
-    for tool_name in results:
+    
+    # Discovery: Look for any results in the results_parity directory
+    found_tools = [d for d in os.listdir(RESULTS_BASE) if os.path.isdir(os.path.join(RESULTS_BASE, d))]
+    
+    for tool_name in found_tools:
+        if tool_name not in TOOLS: continue
         tool_dest = os.path.join(RESULTS_BASE, tool_name)
         ml_files  = glob.glob(os.path.join(tool_dest, "**", "ml_results.json"), recursive=True)
         tool_metrics = {}
         for mf in sorted(ml_files):
-            rel_path = os.path.relpath(os.path.dirname(mf), os.path.join(tool_dest, TOOLS[tool_name]["processed"]))
-            attack = rel_path.replace(os.sep, "/")
+            # Resolve attack name from path
+            # Structure: results_parity/<tool>/data/processed/<processed_folder>/<attack>/ml_results.json
+            proc_subdir = TOOLS[tool_name]["processed"]
             try:
+                rel_path = os.path.relpath(os.path.dirname(mf), os.path.join(tool_dest, proc_subdir))
+                attack = rel_path.replace(os.sep, "/")
                 with open(mf) as f:
                     tool_metrics[attack] = json.load(f)
-            except: pass
-        report["results"][tool_name] = {"label": TOOLS[tool_name]["label"], "status": results[tool_name], "metrics_by_attack": tool_metrics}
+            except Exception: continue
+            
+        report["results"][tool_name] = {
+            "label": TOOLS[tool_name]["label"], 
+            "status": "LOADED",
+            "metrics_by_attack": tool_metrics
+        }
 
     with open(os.path.join(RESULTS_BASE, "comparison_report.json"), "w") as f:
         json.dump(report, f, indent=2)
