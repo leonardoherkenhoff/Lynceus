@@ -53,7 +53,9 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False):
             # Ativamos backtrace para ver onde o RustiFlow panica
             env = os.environ.copy()
             env["RUST_BACKTRACE"] = "1"
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, env=env)
+            # Alguns binários Rust panicam se não encontrarem config local; mudamos o cwd para segurança
+            rust_cwd = os.path.dirname(RUSTIFLOW_BIN)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, env=env, cwd=rust_cwd)
             if result.returncode != 0:
                 print(f"   ⚠️  RustiFlow failed on {pcap}. Error: {result.stderr}")
             elif result.stdout:
