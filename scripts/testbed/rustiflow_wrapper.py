@@ -48,14 +48,14 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False):
         print(f"   Processing: {os.path.basename(pcap)}")
         tmp_out = os.path.join(output_dir, f"_tmp_{os.path.basename(pcap)}.csv")
 
-        cmd = [RUSTIFLOW_BIN, "pcap", pcap, tmp_out]
+        cmd = [RUSTIFLOW_BIN, "pcap", pcap]
         try:
-            # Mostramos a saída para ver o que o RustiFlow está reclamando
-            result = subprocess.run(cmd, capture_output=False, text=True, timeout=600)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             if result.returncode != 0:
-                print(f"   ⚠️  RustiFlow failed on {pcap}")
-
-            if os.path.exists(tmp_out) and os.path.getsize(tmp_out) > 0:
+                print(f"   ⚠️  RustiFlow failed on {pcap}. Error: {result.stderr}")
+            elif result.stdout:
+                with open(tmp_out, "w") as f:
+                    f.write(result.stdout)
                 with open(tmp_out) as src, open(csv_output_path, "a") as dst:
                     lines = src.readlines()
                     if first_file:
