@@ -75,8 +75,8 @@ TTL_DROP = [
     'TTL_Var_CoV', 'TTL_Var_Mode',
 ]
 
-MAX_SAMPLES = 5_000_000
-CHUNK_SIZE = 500_000
+MAX_SAMPLES = 1_000_000
+CHUNK_SIZE = 250_000
 
 
 def load_dataset(file_path, drop_cols):
