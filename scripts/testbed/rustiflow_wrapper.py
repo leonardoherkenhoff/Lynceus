@@ -54,7 +54,6 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False):
             result = subprocess.run(cmd, capture_output=False, text=True, timeout=600)
             if result.returncode != 0:
                 print(f"   ⚠️  RustiFlow failed on {pcap}")
-                        f.write(result.stdout)
 
             if os.path.exists(tmp_out) and os.path.getsize(tmp_out) > 0:
                 with open(tmp_out) as src, open(csv_output_path, "a") as dst:
