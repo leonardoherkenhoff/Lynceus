@@ -50,15 +50,10 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False):
 
         cmd = [RUSTIFLOW_BIN, "pcap", "-f", FEATURE_SET, "--output", tmp_out, pcap]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            # Mostramos a saída para ver o que o RustiFlow está reclamando
+            result = subprocess.run(cmd, capture_output=False, text=True, timeout=600)
             if result.returncode != 0:
-                # Fallback: tenta sem --output (stdout)
-                result = subprocess.run(
-                    [RUSTIFLOW_BIN, "pcap", "-f", FEATURE_SET, pcap],
-                    capture_output=True, text=True, timeout=600
-                )
-                if result.stdout:
-                    with open(tmp_out, "w") as f:
+                print(f"   ⚠️  RustiFlow failed on {pcap}")
                         f.write(result.stdout)
 
             if os.path.exists(tmp_out) and os.path.getsize(tmp_out) > 0:
