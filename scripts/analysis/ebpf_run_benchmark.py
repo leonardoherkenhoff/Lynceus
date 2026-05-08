@@ -433,10 +433,11 @@ def _apply_parity_filter(df, mode):
         
     elif mode == 'nfx':
         # NetFeatureXtract Behavioral Set (approx 15 features)
+        # Mapped to Lynceus equivalents for Parity evaluation
         keep = [
-            'packets', 'bytes', 'duration', 'flow_pkts_s', 'flow_byts_s',
-            'pkt_len_max', 'pkt_len_min', 'pkt_size_avg',
-            'fwd_pkts_s', 'bwd_pkts_s', 'fwd_byts_s', 'bwd_byts_s'
+            'PacketsCount', 'TotalBytes', 'duration', 'PacketsRate', 'BytesRate',
+            'Tot_Pay_Max', 'Tot_Pay_Min', 'Tot_Pay_Mean',
+            'FwdPacketsRate', 'BwdPacketsRate', 'FwdBytesRate', 'BwdBytesRate'
         ]
         
     elif mode == 'ntl':
