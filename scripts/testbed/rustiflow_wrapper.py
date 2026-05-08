@@ -49,7 +49,7 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False):
         tmp_out = os.path.join(output_dir, f"_tmp_{os.path.basename(pcap)}.csv")
 
         # Ordem correta: global options ANTES do subcommand 'pcap'
-        cmd = [RUSTIFLOW_BIN, "-f", "cic", "-o", "csv", "--export-path", tmp_out, "pcap", pcap]
+        cmd = [RUSTIFLOW_BIN, "-f", "cic", "-o", "csv", "--header", "--export-path", tmp_out, "pcap", pcap]
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             if result.returncode != 0:
