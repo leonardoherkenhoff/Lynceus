@@ -109,7 +109,8 @@ def main():
     print(f"=== RustiFlow Parity Extraction Wrapper [Output: {DATA_INTERIM}] ===")
     if not os.path.exists(RUSTIFLOW_BIN):
         print(f"❌ RustiFlow binary not found: {RUSTIFLOW_BIN}")
-        return
+        import sys
+        sys.exit(1)
 
     for category in EXPERIMENT_ORDER:
         category_path = os.path.join(DATA_RAW, category)

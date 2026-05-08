@@ -13,6 +13,7 @@ import time
 import signal
 import glob
 import re
+import sys
 
 # Paths
 NFX_DIR = "/opt/XFAST/ebpf" # Pasta no servidor conforme ls anterior
@@ -62,7 +63,7 @@ def _sanitize_nfx_csv(raw_path, clean_path):
 def run_nfx_extraction(smoke_test=False):
     if not os.path.exists(NFX_BIN):
         print(f"❌ NFX Binary not found at {NFX_BIN}")
-        return
+        sys.exit(1)
 
     os.makedirs(INTERIM_DIR, exist_ok=True)
     pcaps = sorted(glob.glob(os.path.join(PCAP_DIR, "**", "*.pcap*"), recursive=True))
