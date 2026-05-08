@@ -75,7 +75,7 @@ def run_nfx_extraction(smoke_test=False):
         out_file = os.path.join(out_dir, "flows.csv")
         raw_file = out_file + ".raw"
         
-        print(f"[*] [{i+1}/{len(pcaps)}] NFX Extracting: {pcap} (Category: {category})")
+        print(f"[*] [{i+1}/{len(pcaps)}] NFX Extracting: {pcap} (Category: {category})", flush=True)
         
         # Setup VETH
         subprocess.run("ip link delete veth0 2>/dev/null || true", shell=True)
@@ -89,7 +89,7 @@ def run_nfx_extraction(smoke_test=False):
                                         stdout=f_raw, stderr=subprocess.STDOUT,
                                         preexec_fn=os.setsid)
                 time.sleep(2)
-                print(f"   Replaying {os.path.basename(pcap)}...")
+                print(f"   Replaying {os.path.basename(pcap)}...", flush=True)
                 limit_flag = ["--limit", "5000"] if smoke_test else []
                 subprocess.run(["tcpreplay", "-i", "veth0"] + limit_flag + [pcap], 
                                check=True, timeout=300)
