@@ -118,17 +118,25 @@ def save_results(tool_name, tool_cfg):
     with open(os.path.join(dest, "experiment_meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
 
-def run_tool(tool_name, tool_cfg):
+def run_tool(tool_name, tool_cfg, resume=False):
     print(f"\n--- {tool_cfg['label']} ---")
     log_dir = os.path.join(RESULTS_BASE, tool_name, "logs")
     os.makedirs(log_dir, exist_ok=True)
-    clean_dirs(tool_cfg)
+    
+    # Check if we can resume (data already in processed/ and not empty)
+    processed_path = os.path.join(BASE_DIR, tool_cfg["processed"])
+    has_data = os.path.exists(processed_path) and any(f.endswith('.csv') for _, _, files in os.walk(processed_path) for f in files)
+    
+    if resume and has_data:
+        print(f"[*] Resuming: Found existing processed data. Skipping extraction and labeling.")
+    else:
+        clean_dirs(tool_cfg)
 
-    # 1. Git Checkout & Build (if branch specified)
+    # 1. Git Checkout & Build (if branch specified and NOT resuming)
     current_branch = subprocess.check_output("git rev-parse --abbrev-ref HEAD", shell=True, text=True).strip()
     target_branch = tool_cfg.get("branch")
     
-    if target_branch and target_branch != current_branch:
+    if not (resume and has_data) and target_branch and target_branch != current_branch:
         if not run(f"git checkout -f {target_branch}", f"Checkout {target_branch}"):
             return False
         # Sync branch with origin to pull latest smoke-test/wrapper fixes
@@ -142,8 +150,10 @@ def run_tool(tool_name, tool_cfg):
             return False
 
     # 2. Extração
-    extraction_cmd = f"sudo python3 {tool_cfg['wrapper']} --output {os.path.join(BASE_DIR, tool_cfg['interim'])}"
-    extraction_ok = run(extraction_cmd, f"Extração — {tool_cfg['label']}", log_path=os.path.join(log_dir, "extraction.log"))
+    extraction_ok = True
+    if not (resume and has_data):
+        extraction_cmd = f"sudo python3 {tool_cfg['wrapper']} --output {os.path.join(BASE_DIR, tool_cfg['interim'])}"
+        extraction_ok = run(extraction_cmd, f"Extração — {tool_cfg['label']}", log_path=os.path.join(log_dir, "extraction.log"))
     
     # Return to original branch immediately after extraction
     if target_branch and target_branch != current_branch:
@@ -152,17 +162,19 @@ def run_tool(tool_name, tool_cfg):
     if not extraction_ok:
         return False
 
-    # Labeling
-    labeler_cmd = (f"sudo python3 {LABELER} --input {os.path.join(BASE_DIR, tool_cfg['interim'])} "
-                   f"--output {os.path.join(BASE_DIR, tool_cfg['processed'])}")
-    labeling_ok = run(labeler_cmd, f"Labeling — {tool_cfg['label']}", log_path=os.path.join(log_dir, "labeling.log"))
-    
-    # ⚠️  CRITICAL: Free disk space by removing massive interim data after labeling is done
-    if labeling_ok:
-        print(f"[*] Cleaning interim data to free space...")
-        shutil.rmtree(os.path.join(BASE_DIR, tool_cfg["interim"]), ignore_errors=True)
-    else:
-        return False
+    # 3. Labeling
+    labeling_ok = True
+    if not (resume and has_data):
+        labeler_cmd = (f"sudo python3 {LABELER} --input {os.path.join(BASE_DIR, tool_cfg['interim'])} "
+                       f"--output {os.path.join(BASE_DIR, tool_cfg['processed'])}")
+        labeling_ok = run(labeler_cmd, f"Labeling — {tool_cfg['label']}", log_path=os.path.join(log_dir, "labeling.log"))
+        
+        # ⚠️  CRITICAL: Free disk space by removing massive interim data after labeling is done
+        if labeling_ok:
+            print(f"[*] Cleaning interim data to free space...")
+            shutil.rmtree(os.path.join(BASE_DIR, tool_cfg["interim"]), ignore_errors=True)
+        else:
+            return False
 
     # Benchmark
     bench_cmd = (f"sudo python3 {BENCHMARK} --dataset {os.path.join(BASE_DIR, tool_cfg['processed'])} {tool_cfg['bench_args']}")
@@ -209,6 +221,7 @@ def generate_comparison_report(results):
 def main():
     parser = argparse.ArgumentParser(description="Lynceus Parity Orchestrator")
     parser.add_argument("--steps", nargs="+", default=EXECUTION_ORDER, choices=list(TOOLS.keys()))
+    parser.add_argument("--resume", action="store_true", help="Skip extraction/labeling if processed data exists")
     parser.add_argument("--smoke-test", action="store_true", help="Quick validation of the full pipeline")
     args = parser.parse_args()
 
@@ -224,7 +237,7 @@ def main():
         if args.smoke_test:
             cfg["wrapper"] += " --smoke-test"
             
-        ok = run_tool(tool_name, cfg)
+        ok = run_tool(tool_name, cfg, resume=args.resume)
         results[tool_name] = "OK" if ok else "FAIL"
         print(f"  [{tool_name}] {results[tool_name]} ({time.time()-t0:.0f}s)")
         if args.smoke_test and not ok:
