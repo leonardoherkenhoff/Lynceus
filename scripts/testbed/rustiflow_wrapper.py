@@ -48,20 +48,15 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False):
         print(f"   Processing: {os.path.basename(pcap)}")
         tmp_out = os.path.join(output_dir, f"_tmp_{os.path.basename(pcap)}.csv")
 
-        cmd = [RUSTIFLOW_BIN, "pcap", pcap]
+        # Ordem correta: global options ANTES do subcommand 'pcap'
+        cmd = [RUSTIFLOW_BIN, "-f", "cic", "-o", "csv", "--export-path", tmp_out, "pcap", pcap]
         try:
-            # Ativamos backtrace para ver onde o RustiFlow panica
-            env = os.environ.copy()
-            env["RUST_BACKTRACE"] = "1"
-            # Alguns binários Rust panicam se não encontrarem config local; mudamos o cwd para segurança
-            rust_cwd = os.path.dirname(RUSTIFLOW_BIN)
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, env=env, cwd=rust_cwd)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             if result.returncode != 0:
                 print(f"   ⚠️  RustiFlow failed on {pcap}. Error: {result.stderr}")
-            elif result.stdout:
-                with open(tmp_out, "w") as f:
-                    f.write(result.stdout)
-                with open(tmp_out) as src, open(csv_output_path, "a") as dst:
+            else:
+                if os.path.exists(tmp_out) and os.path.getsize(tmp_out) > 0:
+                    with open(tmp_out) as src, open(csv_output_path, "a") as dst:
                     lines = src.readlines()
                     if first_file:
                         dst.writelines(lines)
