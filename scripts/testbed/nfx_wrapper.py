@@ -16,9 +16,9 @@ import re
 import sys
 
 # Paths
-NFX_DIR = "/opt/XFAST/ebpf" # Pasta no servidor conforme ls anterior
+NFX_DIR = "/opt/NetFeatureXtract"
 if not os.path.exists(NFX_DIR):
-    NFX_DIR = "/opt/NetFeatureXtract/ebpf"
+    NFX_DIR = "/opt/XFAST/ebpf"
 
 NFX_BIN = os.path.join(NFX_DIR, "xdp_user")
 INTERIM_DIR = "/opt/eBPFNetFlowLyzer/data/interim/XFAST_RAW"
