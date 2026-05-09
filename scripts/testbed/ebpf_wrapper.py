@@ -127,7 +127,7 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False, skip_labeling=False):
             proc_mon.wait()
         
         subprocess.run(["kill", "-INT", str(proc_loader.pid)], check=False)
-        try: proc_loader.wait(timeout=300)
+        try: proc_loader.wait(timeout=1800)
         except subprocess.TimeoutExpired:
             subprocess.run(["kill", "-9", str(proc_loader.pid)], check=False)
             
