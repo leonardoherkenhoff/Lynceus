@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Lynceus Turbo Parity Experiment — Parallel NFX Wrapper
--------------------------------------------------------
-Aceleração massiva para recuperação de dados pós-incidente.
+Lynceus Parity Experiment — NetFeatureXtract (NFX) Wrapper
+-----------------------------------------------------------
+Versão Sequencial Estável com Timeout de 1800s.
 """
 
 import os
@@ -13,8 +13,6 @@ import glob
 import re
 import sys
 import json
-import multiprocessing
-from concurrent.futures import ProcessPoolExecutor
 
 # Paths
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -37,48 +35,7 @@ def _sanitize_nfx_csv(raw_path, clean_path):
         for m in matches:
             f.write(f"{m[0]},{m[1]},{m[2]},{m[3]},{m[4]},{m[5]},{m[6]}\n")
 
-def process_single_pcap(args):
-    pcap, idx, total, smoke_test = args
-    category = os.path.basename(os.path.dirname(pcap))
-    out_dir = os.path.join(INTERIM_DIR, category)
-    os.makedirs(out_dir, exist_ok=True)
-    
-    # Unique names for parallel safety
-    pcap_name = os.path.basename(pcap)
-    out_file = os.path.join(out_dir, f"flows_{pcap_name}.csv")
-    raw_file = out_file + ".raw"
-    veth0 = f"veth{idx}_0"
-    veth1 = f"veth{idx}_1"
-    
-    print(f"[*] [{idx+1}/{total}] Starting Parallel Extraction: {pcap_name}")
-    
-    # Setup Unique VETH
-    subprocess.run(f"ip link delete {veth0} 2>/dev/null || true", shell=True)
-    subprocess.run(f"ip link add {veth0} type veth peer name {veth1} || true", shell=True)
-    subprocess.run(f"ip link set {veth0} up", shell=True)
-    subprocess.run(f"ip link set {veth1} up", shell=True)
-
-    start_time = time.time()
-    try:
-        with open(raw_file, "w") as f_raw:
-            proc = subprocess.Popen([NFX_BIN, veth1], stdout=f_raw, stderr=subprocess.DEVNULL, cwd=NFX_DIR, preexec_fn=os.setsid)
-            time.sleep(1)
-            
-            limit_flag = ["--limit", "5000"] if smoke_test else []
-            cmd = f"tcpreplay -i {veth0} {' '.join(limit_flag)} {pcap}"
-            subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True, timeout=1800)
-            
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-            proc.wait(timeout=5)
-    except Exception as e:
-        print(f"   ⚠️ Error {pcap_name}: {e}")
-    finally:
-        elapsed = time.time() - start_time
-        subprocess.run(f"ip link delete {veth0} 2>/dev/null || true", shell=True)
-        _sanitize_nfx_csv(raw_file, out_file)
-        print(f"   ✅ Finished {pcap_name} in {elapsed:.1f}s")
-
-def run_nfx_extraction_parallel(smoke_test=False):
+def run_nfx_extraction(smoke_test=False):
     if not os.path.exists(NFX_BIN):
         print(f"❌ NFX Binary not found at {NFX_BIN}"); sys.exit(1)
 
@@ -94,35 +51,46 @@ def run_nfx_extraction_parallel(smoke_test=False):
     pcaps = sorted(pcaps)
     if smoke_test: pcaps = pcaps[:1]
 
-    print(f"🚀 TURBO MODE: Parallelizing {len(pcaps)} PCAPs using {multiprocessing.cpu_count()} cores.")
-    
-    # Map tasks
-    tasks = [(p, i, len(pcaps), smoke_test) for i, p in enumerate(pcaps)]
-    
-    with ProcessPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
-        list(executor.map(process_single_pcap, tasks))
-
-    # Consolidation Step: Combine all flows_<pcap>.csv into category/flows.csv
-    print("[*] Consolidating results...")
-    for cat in os.listdir(INTERIM_DIR):
-        cat_path = os.path.join(INTERIM_DIR, cat)
-        if not os.path.isdir(cat_path): continue
-        final_csv = os.path.join(cat_path, "flows.csv")
-        pcap_csvs = glob.glob(os.path.join(cat_path, "flows_*.csv"))
-        if not pcap_csvs: continue
+    for i, pcap in enumerate(pcaps):
+        category = os.path.basename(os.path.dirname(pcap))
+        out_dir = os.path.join(INTERIM_DIR, category)
+        os.makedirs(out_dir, exist_ok=True)
+        out_file = os.path.join(out_dir, "flows.csv")
+        raw_file = out_file + ".raw"
         
-        with open(final_csv, "w") as f_out:
-            f_out.write("src_ip,src_port,dst_ip,dst_port,protocol,packets,bytes\n")
-            for pc in pcap_csvs:
-                with open(pc) as f_in:
-                    lines = f_in.readlines()[1:] # skip header
-                    f_out.writelines(lines)
-                os.remove(pc)
-                if os.path.exists(pc + ".raw"): os.remove(pc + ".raw")
+        print(f"[*] [{i+1}/{len(pcaps)}] NFX Extracting: {pcap}")
+        metrics_csv = os.path.join(out_dir, "resource_metrics.csv")
+        monitor_script = os.path.join(BASE_DIR, "scripts/testbed/monitor.py")
+        
+        subprocess.run("ip link delete veth0 2>/dev/null || true", shell=True)
+        subprocess.run("ip link add veth0 type veth peer name veth1 || true", shell=True)
+        subprocess.run("ip link set veth0 up", shell=True)
+        subprocess.run("ip link set veth1 up", shell=True)
+
+        start_time = time.time()
+        try:
+            with open(raw_file, "a") as f_raw:
+                proc = subprocess.Popen([NFX_BIN, "veth1"], stdout=f_raw, stderr=subprocess.STDOUT, cwd=NFX_DIR, preexec_fn=os.setsid)
+                time.sleep(2)
+                proc_mon = subprocess.Popen(["python3", monitor_script, str(proc.pid), metrics_csv]) if os.path.exists(monitor_script) else None
+
+                cmd = f"tcpreplay -i veth0 {pcap}"
+                subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True, timeout=1800)
+                
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                proc.wait(timeout=5)
+                if proc_mon: proc_mon.terminate()
+        except Exception as e:
+            print(f"   ⚠️ Error: {e}")
+        finally:
+            elapsed = time.time() - start_time
+            subprocess.run("ip link delete veth0 2>/dev/null || true", shell=True)
+            _sanitize_nfx_csv(raw_file, out_file)
+            print(f"   ✅ Done in {elapsed:.1f}s")
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--smoke-test", action="store_true")
     args = parser.parse_args()
-    run_nfx_extraction_parallel(smoke_test=args.smoke_test)
+    run_nfx_extraction(smoke_test=args.smoke_test)
