@@ -15,7 +15,9 @@ import sys
 import json
 
 # Paths
+BASE_DIR = "/opt/eBPFNetFlowLyzer"
 NFX_DIR = "/opt/NetFeatureXtract"
+
 if not os.path.exists(NFX_DIR):
     NFX_DIR = "/opt/XFAST/ebpf"
 
@@ -98,6 +100,7 @@ def run_nfx_extraction(smoke_test=False, skip_labeling=False):
                 time.sleep(2)
                 
                 monitor_script = os.path.join(BASE_DIR, "scripts/testbed/monitor.py")
+
                 proc_mon = subprocess.Popen(["python3", monitor_script, str(proc.pid), metrics_csv]) if os.path.exists(monitor_script) else None
 
 
