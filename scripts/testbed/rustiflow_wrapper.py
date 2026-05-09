@@ -50,7 +50,7 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False, skip_labeling=False):
             p_rust = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             proc_mon = subprocess.Popen(["python3", monitor_script, str(p_rust.pid), metrics_csv]) if os.path.exists(monitor_script) else None
             
-            p_rust.wait(timeout=600)
+            p_rust.wait(timeout=1800)
             if proc_mon: proc_mon.terminate()
             
             if p_rust.returncode != 0:
