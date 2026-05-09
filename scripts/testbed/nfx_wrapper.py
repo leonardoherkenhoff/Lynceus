@@ -118,8 +118,9 @@ def run_nfx_extraction(smoke_test=False, skip_labeling=False):
         finally:
             elapsed = time.time() - start_time
             subprocess.run("ip link delete veth0 2>/dev/null || true", shell=True)
-            if not skip_labeling:
-                _sanitize_nfx_csv(raw_file, out_file)
+            # NFX requires sanitization to convert raw text to CSV telemetric artifact
+            _sanitize_nfx_csv(raw_file, out_file)
+
             
             # Count packets from tcpreplay or flows from regex
             # For parity, we'll estimate packets from the input file size or use a fixed number for smoke test
