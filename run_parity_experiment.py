@@ -17,8 +17,8 @@ import glob
 
 BASE_DIR     = "/opt/eBPFNetFlowLyzer"
 RESULTS_BASE = os.path.join(BASE_DIR, "results_parity")
-LABELER      = os.path.join(BASE_DIR, "scripts/preprocessing/ebpf_labeler.py")
-BENCHMARK    = os.path.join(BASE_DIR, "scripts/analysis/ebpf_run_benchmark.py")
+LABELER      = "/tmp/lynceus_labeler.py"
+BENCHMARK    = "/tmp/lynceus_benchmark.py"
 
 # Parity Benchmarking Orchestrator
 # Protocol: Base vs. Parity (NTL+AL, NFX, RustiFlow)
@@ -319,6 +319,12 @@ def main():
         print("[!] Root required."); sys.exit(1)
 
     os.makedirs(RESULTS_BASE, exist_ok=True)
+    
+    # FAULT TOLERANCE: Anchor critical scripts to /tmp to survive branch checkouts
+    shutil.copy2(os.path.join(BASE_DIR, "scripts/preprocessing/ebpf_labeler.py"), LABELER)
+    shutil.copy2(os.path.join(BASE_DIR, "scripts/analysis/ebpf_run_benchmark.py"), BENCHMARK)
+    shutil.copy2(os.path.join(BASE_DIR, "scripts/testbed/monitor.py"), "/tmp/lynceus_monitor.py")
+
     results = {}; t_global = time.time()
     
     for tool_name in args.steps:

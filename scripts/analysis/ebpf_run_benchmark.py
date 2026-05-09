@@ -35,8 +35,12 @@ except ImportError:
     import pandas as pd
     USE_POLARS = False
 
+# Global configuration object for benchmark parameters
+args = None
+
 # =============================================================================
 # [Cross-Day Attack Pairing Matrix]
+
 # Maps canonical attack names to their training (01-12) and testing (03-11)
 # dataset directory suffixes within the CICDDoS2019 corpus.
 # =============================================================================
@@ -250,15 +254,9 @@ def get_relative_key(file_path, processed_dir):
 
 
 def run_benchmark():
-    """
-    Main orchestration routine for the Lynceus Hybrid Validation Benchmark.
-
-    Parses CLI arguments to establish the feature drop matrix (Conservative vs
-    Realistic). Discovers all available datasets, cross-references them against
-    the CROSS_DAY_PAIRS dictionary, and executes either Cross-Day or Split
-    validation accordingly.
-    """
+    global args
     parser = argparse.ArgumentParser(
+
         description="Lynceus Hybrid Validation Benchmark v2.0"
     )
     parser.add_argument(
@@ -277,6 +275,7 @@ def run_benchmark():
         '--parity-mode', type=str, choices=['rustiflow', 'nfx', 'ntl'], default=None,
         help='Filter Lynceus features to match another tool (Scientific Parity)'
     )
+    global args
     args = parser.parse_args()
 
     # Build drop_cols based on mode

@@ -12,6 +12,7 @@ import signal
 import glob
 import re
 import sys
+import json
 
 # Paths
 NFX_DIR = "/opt/NetFeatureXtract"
