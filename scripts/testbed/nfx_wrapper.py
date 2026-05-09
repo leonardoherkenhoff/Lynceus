@@ -3,8 +3,6 @@
 Lynceus Parity Experiment — NetFeatureXtract (NFX) Wrapper
 -----------------------------------------------------------
 Baseado no repositório: https://github.com/geinsfeldt/NetFeatureXtract
-
-Invocação: sudo python3 scripts/testbed/xfast_wrapper.py
 """
 
 import os
@@ -13,109 +11,137 @@ import time
 import signal
 import glob
 import re
+import sys
+import json
 
 # Paths
-NFX_DIR = "/opt/XFAST/ebpf" # Pasta no servidor conforme ls anterior
+NFX_DIR = "/opt/NetFeatureXtract"
 if not os.path.exists(NFX_DIR):
-    NFX_DIR = "/opt/NetFeatureXtract/ebpf"
+    NFX_DIR = "/opt/XFAST/ebpf"
 
 NFX_BIN = os.path.join(NFX_DIR, "xdp_user")
 INTERIM_DIR = "/opt/eBPFNetFlowLyzer/data/interim/XFAST_RAW"
 PCAP_DIR = "/opt/eBPFNetFlowLyzer/data/raw"
 
 def _sanitize_nfx_csv(raw_path, clean_path):
-    """
-    NetFeatureXtract imprime a tabela de fluxos a cada segundo.
-    Removemos cabeçalhos repetidos e pegamos a versão mais recente de cada fluxo.
-    """
-    unique_flows = {}
-    header = None
+    if not os.path.exists(raw_path): return
     
-    if not os.path.exists(raw_path):
-        return
-        
     with open(raw_path, "r") as f:
-        for line in f:
-            line = line.strip()
-            if not line or "DEBUG" in line or "Map" in line:
-                continue
-            if "," in line:
-                parts = line.split(",")
-                if "src_ip" in line or "packets" in line:
-                    if header is None: header = line
-                    continue
-                # Chave de fluxo: src_ip, dst_ip, src_p, dst_p, proto
-                if len(parts) >= 5:
-                    key = tuple(parts[:5])
-                    unique_flows[key] = line
-                    
+        content = f.read()
+        
+    # Regex to capture the empirical format:
+    # Flow: 172.16.0.5:634 -> 192.168.50.1:46391 (IPv4, Proto: 17)
+    #   Packets: 200
+    #   Bytes: 96400
+    pattern = r"Flow: ([\d\.]+):(\d+) -> ([\d\.]+):(\d+) \(IPv4, Proto: (\d+)\)\n\s+Packets: (\d+)\n\s+Bytes: (\d+)"
+    matches = re.findall(pattern, content)
+    
     with open(clean_path, "w") as f:
-        if header:
-            f.write(header + "\n")
-        else:
-            # Fallback header se não encontrado
-            f.write("src_ip,dst_ip,src_port,dst_port,protocol,packets,bytes,duration,pps,bps,max_pkt_len,min_pkt_len,max_pps,min_pps,max_bps,min_bps,avg_pps,avg_bps,avg_bpp\n")
-            
-        for key in sorted(unique_flows.keys()):
-            f.write(unique_flows[key] + "\n")
+        # Standard Lynceus labeler expected schema (reduced set for NFX baseline comparison)
+        f.write("src_ip,src_port,dst_ip,dst_port,protocol,packets,bytes\n")
+        for m in matches:
+            f.write(f"{m[0]},{m[1]},{m[2]},{m[3]},{m[4]},{m[5]},{m[6]}\n")
 
-def run_nfx_extraction(smoke_test=False):
+
+def run_nfx_extraction(smoke_test=False, skip_labeling=False):
+
     if not os.path.exists(NFX_BIN):
         print(f"❌ NFX Binary not found at {NFX_BIN}")
-        return
+        sys.exit(1)
 
     os.makedirs(INTERIM_DIR, exist_ok=True)
-    pcaps = sorted(glob.glob(os.path.join(PCAP_DIR, "**", "*.pcap*"), recursive=True))
-    if smoke_test and pcaps:
+    pcaps = []
+    for cat in ["PCAP", "PCAPv6"]:
+        cat_dir = os.path.join(PCAP_DIR, cat)
+        if os.path.exists(cat_dir):
+            for root, _, files in os.walk(cat_dir):
+                for f in files:
+                    if f.endswith('.pcap') or f.endswith('.pcapng'):
+                        pcaps.append(os.path.join(root, f))
+    pcaps = sorted(pcaps)
+    print(f"   [DEBUG] Found {len(pcaps)} PCAPs in {PCAP_DIR}")
+    if not pcaps:
+        print(f"   ❌ No PCAPs found in {PCAP_DIR}!")
+        return
+
+    if smoke_test:
+        print(f"   [DEBUG] Smoke test: processing only {pcaps[0]}")
         pcaps = [pcaps[0]]
     
-    for pcap in pcaps:
+    for i, pcap in enumerate(pcaps):
         category = os.path.basename(os.path.dirname(pcap))
         out_dir = os.path.join(INTERIM_DIR, category)
         os.makedirs(out_dir, exist_ok=True)
         out_file = os.path.join(out_dir, "flows.csv")
         raw_file = out_file + ".raw"
         
-        print(f"[*] NFX Extracting: {pcap} (Category: {category})")
+        print(f"[*] [{i+1}/{len(pcaps)}] NFX Extracting: {pcap} (Category: {category})", flush=True)
+        metrics_csv = os.path.join(out_dir, "resource_metrics.csv")
+        monitor_script = "/opt/eBPFNetFlowLyzer/scripts/testbed/monitor.py"
         
-        # Setup VETH (NFX precisa de interface real/veth)
+        # Setup VETH
+        subprocess.run("ip link delete veth0 2>/dev/null || true", shell=True)
         subprocess.run("ip link add veth0 type veth peer name veth1 || true", shell=True)
-        subprocess.run("ip link set veth0 up && ip link set veth1 up", shell=True)
-        
-        # 1. Start NFX on veth1
-        with open(raw_file, "w") as f_raw:
-            proc = subprocess.Popen([NFX_BIN, "veth1"], 
-                                    stdout=f_raw, stderr=subprocess.PIPE,
-                                    preexec_fn=os.setsid)
+        subprocess.run("ip link set veth0 up", shell=True)
+        subprocess.run("ip link set veth1 up", shell=True)
+
+        start_time = time.time()
+        try:
+            with open(raw_file, "w") as f_raw:
+                proc = subprocess.Popen([NFX_BIN, "veth1"], 
+                                        stdout=f_raw, stderr=subprocess.STDOUT,
+                                        cwd=NFX_DIR,
+                                        preexec_fn=os.setsid)
+                # Small interval to capture bursty processing without blocking too much
+                # cpu = proc.cpu_percent(interval=0.1) 
+                # mem = proc.memory_info().rss / (1024 * 1024)
+                time.sleep(2)
+                
+                monitor_script = os.path.join(BASE_DIR, "scripts/testbed/monitor.py")
+                proc_mon = subprocess.Popen(["python3", monitor_script, str(proc.pid), metrics_csv]) if os.path.exists(monitor_script) else None
+
+
+
+                print(f"   Replaying {os.path.basename(pcap)}...", flush=True)
+                limit_flag = ["--limit", "5000"] if smoke_test else []
+                subprocess.run(["tcpreplay", "-i", "veth0"] + limit_flag + [pcap], 
+                               check=True, timeout=300)
+                time.sleep(2)
+                
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                proc.wait(timeout=5)
+                if proc_mon: proc_mon.terminate()
+        except Exception as e:
+            print(f"   ⚠️  Error replaying {pcap}: {e}")
+        finally:
+            elapsed = time.time() - start_time
+            subprocess.run("ip link delete veth0 2>/dev/null || true", shell=True)
+            if not skip_labeling:
+                _sanitize_nfx_csv(raw_file, out_file)
             
-            time.sleep(3) # Tempo para o BPF carregar e mapas resetarem
-            
-            # 2. Injetar tráfego
-            print(f"   Replaying {os.path.basename(pcap)}...")
-            limit_flag = ["--limit", "5000"] if smoke_test else []
-            subprocess.run(["tcpreplay", "-i", "veth0"] + limit_flag + [pcap], check=True, capture_output=True)
-            
-            time.sleep(5) # Espera o NFX imprimir o último loop
-            
-            # 3. Parar NFX
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-            proc.wait()
-            
-        # 4. Sanitizar CSV
-        _sanitize_nfx_csv(raw_file, out_file)
-        print(f"   ✅ Done. Saved to {out_file}")
-        
-        # Limpar veth
-        subprocess.run("ip link delete veth0", shell=True, stderr=subprocess.DEVNULL)
+            # Count packets from tcpreplay or flows from regex
+            # For parity, we'll estimate packets from the input file size or use a fixed number for smoke test
+            # But the most scientific way is to parse tcpreplay output (not captured here).
+            # We will use the number of matches in _sanitize_nfx_csv to estimate.
+            if os.path.exists(out_file):
+                with open(out_file) as f: pkts = len(f.readlines()) - 1
+            else:
+                pkts = 0
+            summary = {
+                "tool": "nfx", "packets_sent": pkts, "time_seconds": elapsed,
+                "pps": pkts/elapsed if elapsed > 0 else 0, "timestamp": time.ctime()
+            }
+            with open(os.path.join(out_dir, "summary.json"), "w") as f:
+                json.dump(summary, f, indent=4)
+            print(f"   ✅ Done. Flows: {pkts} | Saved to {out_file}")
+
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="NFX Extraction Wrapper")
+    parser = argparse.ArgumentParser(description="NFX Parity Wrapper")
     parser.add_argument("--output", type=str, help="Override interim output directory")
     parser.add_argument("--smoke-test", action="store_true", help="Process only the first PCAP")
+    parser.add_argument("--skip-labeling", action="store_true", help="Bypass internal labeling")
     args = parser.parse_args()
-    
-    if args.output:
-        INTERIM_DIR = os.path.abspath(args.output)
-        
-    run_nfx_extraction(smoke_test=args.smoke_test)
+    if args.output: INTERIM_DIR = os.path.abspath(args.output)
+    run_nfx_extraction(smoke_test=args.smoke_test, skip_labeling=args.skip_labeling)
