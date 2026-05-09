@@ -29,8 +29,9 @@ BASE_DIR = "/opt/eBPFNetFlowLyzer"
 DATA_RAW = os.path.join(BASE_DIR, "data/raw")
 DATA_INTERIM = os.path.join(BASE_DIR, "data/interim/EBPF_RAW")
 LOADER_BIN = os.path.join(BASE_DIR, "build/loader")
-LABELER_SCRIPT = "/tmp/lynceus_labeler.py"
-MONITOR_SCRIPT = "/tmp/lynceus_monitor.py"
+LABELER_SCRIPT = os.path.join(BASE_DIR, "scripts/preprocessing/ebpf_labeler.py")
+MONITOR_SCRIPT = os.path.join(BASE_DIR, "scripts/testbed/monitor.py")
+
 
 # Logical execution order for experimental categories.
 EXPERIMENT_ORDER = ["PCAPv6", "PCAP"]

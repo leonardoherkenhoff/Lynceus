@@ -42,7 +42,8 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False, skip_labeling=False):
         print(f"   Processing: {os.path.basename(pcap)}")
         tmp_out = os.path.join(output_dir, f"_tmp_{os.path.basename(pcap)}.csv")
         metrics_csv = os.path.join(output_dir, "resource_metrics.csv")
-        monitor_script = "/tmp/lynceus_monitor.py"
+        monitor_script = os.path.join(BASE_DIR, "scripts/testbed/monitor.py")
+
 
         cmd = [RUSTIFLOW_BIN, "-f", "cic", "-o", "csv", "--header", "--export-path", tmp_out, "pcap", pcap]
         try:

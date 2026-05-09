@@ -96,8 +96,9 @@ def run_nfx_extraction(smoke_test=False):
                 # mem = proc.memory_info().rss / (1024 * 1024)
                 time.sleep(2)
                 
-                monitor_script = "/tmp/lynceus_monitor.py"
+                monitor_script = os.path.join(BASE_DIR, "scripts/testbed/monitor.py")
                 proc_mon = subprocess.Popen(["python3", monitor_script, str(proc.pid), metrics_csv]) if os.path.exists(monitor_script) else None
+
 
 
                 print(f"   Replaying {os.path.basename(pcap)}...", flush=True)
