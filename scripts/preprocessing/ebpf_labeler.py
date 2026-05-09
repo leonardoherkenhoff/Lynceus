@@ -85,11 +85,18 @@ def _process_polars(file_path, category, output_file):
         return 0
         
     try:
-        # Scan lazy with high inference length to avoid type mismatches (e.g. float vs int in IAT columns)
-        q = pl.scan_csv(file_path, infer_schema_length=100000, ignore_errors=True)
+        # Define schema overrides for critical numerical columns to avoid Int/Float confusion
+        # We read the first row to get columns, then apply overrides
+        sample = pl.read_csv(file_path, n_rows=1)
+        overrides = {}
+        for col in sample.columns:
+            if any(x in col for x in ["IAT", "Duration", "Rate", "Pay", "Hdr", "Idle", "Active", "Bulk"]):
+                overrides[col] = pl.Float64
+        
+        q = pl.scan_csv(file_path, schema_overrides=overrides, ignore_errors=True)
         
         # Detect IP column
-        columns = pl.read_csv(file_path, n_rows=0).columns
+        columns = sample.columns
         ip_col = _detect_ip_column(columns)
 
         if ip_col:
@@ -101,6 +108,7 @@ def _process_polars(file_path, category, output_file):
                   .otherwise(pl.lit("BENIGN"))
                   .alias("Label")
             )
+
         
         # Sink to CSV (streaming write)
         q.sink_csv(output_file)

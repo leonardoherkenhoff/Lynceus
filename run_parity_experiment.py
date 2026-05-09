@@ -130,8 +130,9 @@ def save_results(tool_name, tool_cfg):
                 target_dir = os.path.join(dst, rel_path)
                 os.makedirs(target_dir, exist_ok=True)
                 for file in files:
-                    if not file.endswith('.csv'):
+                    if not file.endswith('.csv') or file == "resource_metrics.csv":
                         shutil.copy2(os.path.join(root, file), target_dir)
+
 
     meta = {"tool": tool_name, "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "hostname": os.uname().nodename, "label": tool_cfg["label"]}
@@ -194,19 +195,21 @@ def run_tool(tool_name, tool_cfg, resume=False):
                        f"--output {os.path.join(BASE_DIR, tool_cfg['processed'])}")
         labeling_ok = run(labeler_cmd, f"Labeling — {tool_cfg['label']}", log_path=os.path.join(log_dir, "labeling.log"))
         
-        # ⚠️  CRITICAL: Free disk space by removing massive interim data after labeling is done
-        if labeling_ok:
-            print(f"[*] Cleaning interim data to free space...")
-            shutil.rmtree(os.path.join(BASE_DIR, tool_cfg["interim"]), ignore_errors=True)
-        else:
+        # ⚠️  CRITICAL: Cleanup will happen AFTER save_results to preserve metrics
+        if not labeling_ok:
             return False
 
     # Benchmark
     bench_cmd = (f"sudo python3 {BENCHMARK} --dataset {os.path.join(BASE_DIR, tool_cfg['processed'])} {tool_cfg['bench_args']}")
     bench_ok = run(bench_cmd, f"Benchmark — {tool_cfg['label']}", log_path=os.path.join(log_dir, "ml_benchmark.log"))
 
-    # Always save results (even if benchmark fails, we keep the processed CSVs)
+    # Always save results (including resource_metrics.csv and summary.json)
     save_results(tool_name, tool_cfg)
+    
+    # Now safe to cleanup massive CSVs
+    print(f"[*] Cleaning interim data to free space...")
+    shutil.rmtree(os.path.join(BASE_DIR, tool_cfg["interim"]), ignore_errors=True)
+    
     return bench_ok
 
 def _get_resource_peaks(tool_dest):
