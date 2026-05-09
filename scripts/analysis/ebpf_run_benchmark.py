@@ -141,6 +141,12 @@ def _load_polars(file_path, drop_cols, max_samples):
     X = df.to_pandas()
     y_pd = y.to_pandas()
 
+    # SCIENTIFIC HARDENING: Drop non-numeric features that might have leaked (e.g. IDs, IPs)
+    # This is critical for parity across tools with different header names.
+    import numpy as np
+    X = X.select_dtypes(include=[np.number])
+
+
     del df
     gc.collect()
     return X, y_pd
