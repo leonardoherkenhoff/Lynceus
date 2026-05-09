@@ -120,9 +120,16 @@ def _load_polars(file_path, drop_cols, max_samples):
     y = (df['Label'].cast(pl.Utf8).str.to_uppercase() != 'BENIGN').cast(pl.UInt8)
     df = df.drop('Label')
 
-    # Cast all columns to Float32 (coerce errors to null, fill with 0).
+    # Cast all columns to Float32 and handle Infs/NaNs
     for col in df.columns:
-        df = df.with_columns(pl.col(col).cast(pl.Float32, strict=False).fill_null(0))
+        df = df.with_columns(
+            pl.when(pl.col(col).is_infinite() | pl.col(col).is_nan())
+            .then(0)
+            .otherwise(pl.col(col))
+            .cast(pl.Float32, strict=False)
+            .fill_null(0)
+        )
+
 
     # Convert to pandas for sklearn.
     X = df.to_pandas()
