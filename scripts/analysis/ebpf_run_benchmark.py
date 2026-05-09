@@ -120,15 +120,21 @@ def _load_polars(file_path, drop_cols, max_samples):
     y = (df['Label'].cast(pl.Utf8).str.to_uppercase() != 'BENIGN').cast(pl.UInt8)
     df = df.drop('Label')
 
-    # Cast all columns to Float32 and handle Infs/NaNs
+    # Cast and handle Infs/NaNs only for numeric columns
     for col in df.columns:
-        df = df.with_columns(
-            pl.when(pl.col(col).is_infinite() | pl.col(col).is_nan())
-            .then(0)
-            .otherwise(pl.col(col))
-            .cast(pl.Float32, strict=False)
-            .fill_null(0)
-        )
+        if df[col].dtype.is_numeric():
+            df = df.with_columns(
+                pl.when(pl.col(col).is_infinite() | pl.col(col).is_nan())
+                .then(0)
+                .otherwise(pl.col(col))
+                .cast(pl.Float32, strict=False)
+                .fill_null(0)
+            )
+        else:
+            # For non-numeric, just ensure it's not breaking the subsequent steps if it needs to be numeric
+            # but usually these are already dropped or are labels.
+            pass
+
 
 
     # Convert to pandas for sklearn.
