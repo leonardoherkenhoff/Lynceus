@@ -15,7 +15,7 @@ import argparse
 import json
 import glob
 
-BASE_DIR     = "/opt/eBPFNetFlowLyzer"
+BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
 RESULTS_BASE = os.path.join(BASE_DIR, "results_parity")
 LABELER      = os.path.join(BASE_DIR, "scripts/preprocessing/ebpf_labeler.py")
 BENCHMARK    = os.path.join(BASE_DIR, "scripts/analysis/ebpf_run_benchmark.py")
