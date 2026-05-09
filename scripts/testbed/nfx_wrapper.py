@@ -91,6 +91,9 @@ def run_nfx_extraction(smoke_test=False):
                                         stdout=f_raw, stderr=subprocess.STDOUT,
                                         cwd=NFX_DIR,
                                         preexec_fn=os.setsid)
+                # Small interval to capture bursty processing without blocking too much
+                # cpu = proc.cpu_percent(interval=0.1) 
+                # mem = proc.memory_info().rss / (1024 * 1024)
                 time.sleep(2)
                 
                 monitor_script = "/tmp/lynceus_monitor.py"
@@ -111,13 +114,17 @@ def run_nfx_extraction(smoke_test=False):
         finally:
             elapsed = time.time() - start_time
             subprocess.run("ip link delete veth0 2>/dev/null || true", shell=True)
-            _sanitize_nfx_csv(raw_file, out_file)
+            if not skip_labeling:
+                _sanitize_nfx_csv(raw_file, out_file)
             
             # Count packets from tcpreplay or flows from regex
             # For parity, we'll estimate packets from the input file size or use a fixed number for smoke test
             # But the most scientific way is to parse tcpreplay output (not captured here).
             # We will use the number of matches in _sanitize_nfx_csv to estimate.
-            with open(out_file) as f: pkts = len(f.readlines()) - 1
+            if os.path.exists(out_file):
+                with open(out_file) as f: pkts = len(f.readlines()) - 1
+            else:
+                pkts = 0
             summary = {
                 "tool": "nfx", "packets_sent": pkts, "time_seconds": elapsed,
                 "pps": pkts/elapsed if elapsed > 0 else 0, "timestamp": time.ctime()
@@ -129,9 +136,10 @@ def run_nfx_extraction(smoke_test=False):
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="NFX Extraction Wrapper")
+    parser = argparse.ArgumentParser(description="NFX Parity Wrapper")
     parser.add_argument("--output", type=str, help="Override interim output directory")
     parser.add_argument("--smoke-test", action="store_true", help="Process only the first PCAP")
+    parser.add_argument("--skip-labeling", action="store_true", help="Bypass internal labeling")
     args = parser.parse_args()
     if args.output: INTERIM_DIR = os.path.abspath(args.output)
-    run_nfx_extraction(smoke_test=args.smoke_test)
+    run_nfx_extraction(smoke_test=args.smoke_test, skip_labeling=args.skip_labeling)

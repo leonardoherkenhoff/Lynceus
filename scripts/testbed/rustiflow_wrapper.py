@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 """
-Lynceus Parity Experiment — RustiFlow Wrapper
+Lynceus Parity Experiment — RustiFlow Wrapper (V5)
 ---------------------------------------------
-Extrai features de cada PCAP usando RustiFlow (modo pcap, feature set CIC-83)
-e salva o CSV resultante no diretório interim para posterior labeling e benchmark.
-
-Invocação: sudo python3 scripts/testbed/rustiflow_wrapper.py
 """
 
 import subprocess
@@ -22,14 +18,12 @@ DATA_INTERIM   = os.path.join(BASE_DIR, "data/interim/RUSTIFLOW_RAW")
 FEATURE_SET    = "rustiflow"   # 83 features CIC-compatíveis
 EXPERIMENT_ORDER = ["PCAP", "PCAPv6"]
 
-
-def process_pcap_dir(pcap_dir, category, smoke_test=False):
+def process_pcap_dir(pcap_dir, category, smoke_test=False, skip_labeling=False):
     rel_path   = os.path.relpath(pcap_dir, os.path.join(DATA_RAW, category))
     output_dir = os.path.normpath(os.path.join(DATA_INTERIM, category, rel_path))
     os.makedirs(output_dir, exist_ok=True)
 
     pcaps = sorted(glob.glob(os.path.join(pcap_dir, "*.pcap*")))
-    print(f"   [DEBUG] PCAP Dir: {pcap_dir} | Files: {len(pcaps)}")
     if not pcaps:
         return
 
@@ -50,18 +44,16 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False):
         metrics_csv = os.path.join(output_dir, "resource_metrics.csv")
         monitor_script = "/tmp/lynceus_monitor.py"
 
-        # Ordem correta: global options ANTES do subcommand 'pcap'
         cmd = [RUSTIFLOW_BIN, "-f", "cic", "-o", "csv", "--header", "--export-path", tmp_out, "pcap", pcap]
         try:
-            # Start Resource Monitor on the Popen process
             p_rust = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             proc_mon = subprocess.Popen(["python3", monitor_script, str(p_rust.pid), metrics_csv]) if os.path.exists(monitor_script) else None
             
-            stdout, stderr = p_rust.communicate(timeout=600)
+            p_rust.wait(timeout=600)
             if proc_mon: proc_mon.terminate()
             
             if p_rust.returncode != 0:
-                print(f"   ⚠️  RustiFlow failed on {pcap}. Error: {stderr}")
+                print(f"   ⚠️  RustiFlow failed on {pcap}")
             else:
                 if os.path.exists(tmp_out) and os.path.getsize(tmp_out) > 0:
                     with open(tmp_out) as src, open(csv_output_path, "a") as dst:
@@ -70,71 +62,37 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False):
                             dst.writelines(lines)
                             first_file = False
                         else:
-                            dst.writelines(lines[1:])  # skip header on subsequent files
+                            dst.writelines(lines[1:])
                     total_packets += max(0, len(lines) - 1)
                     os.remove(tmp_out)
-
-        except subprocess.TimeoutExpired:
-            print(f"   ⚠️  Timeout on {os.path.basename(pcap)}")
         except Exception as e:
             print(f"   ❌ Error: {e}")
 
-
     elapsed = time.time() - start_time
     pps     = total_packets / elapsed if elapsed > 0 else 0
-
-    summary = {
-        "tool": "rustiflow",
-        "feature_set": FEATURE_SET,
-        "experiment": experiment_name,
-        "packets_sent": total_packets,
-        "time_seconds": elapsed,
-        "pps": pps,
-        "timestamp": time.ctime()
-    }
+    summary = {"tool": "rustiflow", "packets_sent": total_packets, "time_seconds": elapsed, "pps": pps, "timestamp": time.ctime()}
     with open(os.path.join(output_dir, "summary.json"), "w") as f:
         json.dump(summary, f, indent=4)
-
     print(f"✅ DONE: {total_packets} flows | {elapsed:.1f}s | {pps:.0f} fps")
 
-
-def main():
-    import argparse
-    parser = argparse.ArgumentParser(description="RustiFlow Extraction Wrapper")
-    parser.add_argument("--output", type=str, help="Override interim output directory")
-    parser.add_argument("--smoke-test", action="store_true", help="Process only the first PCAP")
-    args = parser.parse_args()
-
-    if args.output:
-        global DATA_INTERIM
-        DATA_INTERIM = os.path.abspath(args.output)
-
-    print(f"=== RustiFlow Parity Extraction Wrapper [Output: {DATA_INTERIM}] ===")
-    if not os.path.exists(RUSTIFLOW_BIN):
-        print(f"❌ RustiFlow binary not found: {RUSTIFLOW_BIN}")
-        import sys
-        sys.exit(1)
-
+def run_rustiflow_extraction(smoke_test=False, skip_labeling=False):
     for category in EXPERIMENT_ORDER:
-        category_path = os.path.join(DATA_RAW, category)
-        if not os.path.exists(category_path):
-            continue
-        pcap_files = glob.glob(os.path.join(category_path, "**", "*.pcap*"), recursive=True)
-        pcap_dirs  = sorted(set(os.path.dirname(p) for p in pcap_files))
-        if not pcap_dirs and glob.glob(os.path.join(category_path, "*.pcap*")):
-            pcap_dirs = [category_path]
-        
-        if args.smoke_test and pcap_dirs:
+        base_cat = os.path.join(DATA_RAW, category)
+        if not os.path.exists(base_cat): continue
+        pcap_dirs = [d[0] for d in os.walk(base_cat) if glob.glob(os.path.join(d[0], "*.pcap*"))]
+        if smoke_test and pcap_dirs:
             pcap_dirs = [pcap_dirs[0]]
-
         for pcap_dir in pcap_dirs:
-            process_pcap_dir(pcap_dir, category, smoke_test=args.smoke_test)
-            if args.smoke_test: break
-        if args.smoke_test: break
-
+            process_pcap_dir(pcap_dir, category, smoke_test=smoke_test, skip_labeling=skip_labeling)
+            if smoke_test: break
+        if smoke_test: break
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n⚠️  Interrupted.")
+    import argparse
+    parser = argparse.ArgumentParser(description="RustiFlow Parity Wrapper")
+    parser.add_argument("--output", type=str, help="Override interim output directory")
+    parser.add_argument("--smoke-test", action="store_true", help="Process only the first PCAP")
+    parser.add_argument("--skip-labeling", action="store_true", help="Bypass internal labeling")
+    args = parser.parse_args()
+    if args.output: DATA_INTERIM = os.path.abspath(args.output)
+    run_rustiflow_extraction(smoke_test=args.smoke_test, skip_labeling=args.skip_labeling)
