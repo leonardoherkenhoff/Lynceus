@@ -32,3 +32,4 @@ logo.png
 # Scripts (Release Policy: ignored in master via branching strategy)
 # Note: scripts/ directory is maintained in develop but excluded from master merges.
 docs/
+data/
