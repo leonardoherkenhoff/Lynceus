@@ -31,12 +31,11 @@ def _sanitize_nfx_csv(raw_path, clean_path):
     with open(raw_path, "r") as f:
         content = f.read()
         
-    # Regex to capture the empirical format:
-    # Flow: 172.16.0.5:634 -> 192.168.50.1:46391 (IPv4, Proto: 17)
-    #   Packets: 200
-    #   Bytes: 96400
-    pattern = r"Flow: ([\d\.]+):(\d+) -> ([\d\.]+):(\d+) \(IPv4, Proto: (\d+)\)\n\s+Packets: (\d+)\n\s+Bytes: (\d+)"
+    # Resilient Regex for both LF and CRLF and variable spacing
+    pattern = r"Flow:\s+([\d\.]+):(\d+)\s+->\s+([\d\.]+):(\d+)\s+\(IPv4, Proto:\s+(\d+)\)\s+Packets:\s+(\d+)\s+Bytes:\s+(\d+)"
     matches = re.findall(pattern, content)
+    print(f"   [DEBUG] Regex found {len(matches)} matches in raw output.")
+
     
     with open(clean_path, "w") as f:
         # Standard Lynceus labeler expected schema (reduced set for NFX baseline comparison)
