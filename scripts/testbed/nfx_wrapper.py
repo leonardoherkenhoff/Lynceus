@@ -43,7 +43,8 @@ def _sanitize_nfx_csv(raw_path, clean_path):
             f.write(f"{m[0]},{m[1]},{m[2]},{m[3]},{m[4]},{m[5]},{m[6]}\n")
 
 
-def run_nfx_extraction(smoke_test=False):
+def run_nfx_extraction(smoke_test=False, skip_labeling=False):
+
     if not os.path.exists(NFX_BIN):
         print(f"❌ NFX Binary not found at {NFX_BIN}")
         sys.exit(1)
