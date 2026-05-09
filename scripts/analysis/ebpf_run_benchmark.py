@@ -141,10 +141,16 @@ def _load_polars(file_path, drop_cols, max_samples):
     X = df.to_pandas()
     y_pd = y.to_pandas()
 
-    # SCIENTIFIC HARDENING: Drop non-numeric features that might have leaked (e.g. IDs, IPs)
-    # This is critical for parity across tools with different header names.
+    # SCIENTIFIC HARDENING: Drop non-numeric features and ensure numerical stability
+    # This is critical for parity across tools with different header names and precision issues (RustiFlow)
     import numpy as np
     X = X.select_dtypes(include=[np.number])
+    
+    # Final safety pass: replace residuals Infs/NaNs and clip to float32 range
+    X = X.replace([np.inf, -np.inf], np.nan).fillna(0)
+    f32_info = np.finfo(np.float32)
+    X = X.clip(lower=f32_info.min, upper=f32_info.max)
+
 
 
     del df
