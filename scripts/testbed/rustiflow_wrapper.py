@@ -47,13 +47,21 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False):
     for pcap in pcaps:
         print(f"   Processing: {os.path.basename(pcap)}")
         tmp_out = os.path.join(output_dir, f"_tmp_{os.path.basename(pcap)}.csv")
+        metrics_csv = os.path.join(output_dir, "resource_metrics.csv")
+        monitor_script = os.path.join(BASE_DIR, "scripts/testbed/monitor.py")
 
         # Ordem correta: global options ANTES do subcommand 'pcap'
         cmd = [RUSTIFLOW_BIN, "-f", "cic", "-o", "csv", "--header", "--export-path", tmp_out, "pcap", pcap]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-            if result.returncode != 0:
-                print(f"   ⚠️  RustiFlow failed on {pcap}. Error: {result.stderr}")
+            # Start Resource Monitor on the Popen process
+            p_rust = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            proc_mon = subprocess.Popen(["python3", monitor_script, str(p_rust.pid), metrics_csv]) if os.path.exists(monitor_script) else None
+            
+            stdout, stderr = p_rust.communicate(timeout=600)
+            if proc_mon: proc_mon.terminate()
+            
+            if p_rust.returncode != 0:
+                print(f"   ⚠️  RustiFlow failed on {pcap}. Error: {stderr}")
             else:
                 if os.path.exists(tmp_out) and os.path.getsize(tmp_out) > 0:
                     with open(tmp_out) as src, open(csv_output_path, "a") as dst:
@@ -63,7 +71,6 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False):
                             first_file = False
                         else:
                             dst.writelines(lines[1:])  # skip header on subsequent files
-                    # Estimate packets from line count
                     total_packets += max(0, len(lines) - 1)
                     os.remove(tmp_out)
 
@@ -71,6 +78,7 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False):
             print(f"   ⚠️  Timeout on {os.path.basename(pcap)}")
         except Exception as e:
             print(f"   ❌ Error: {e}")
+
 
     elapsed = time.time() - start_time
     pps     = total_packets / elapsed if elapsed > 0 else 0

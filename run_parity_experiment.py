@@ -152,21 +152,26 @@ def run_tool(tool_name, tool_cfg, resume=False):
     else:
         clean_dirs(tool_cfg)
 
-    # 1. Git Checkout & Build (if branch specified and NOT resuming)
-    current_branch = subprocess.check_output("git rev-parse --abbrev-ref HEAD", shell=True, text=True).strip()
-    target_branch = tool_cfg.get("branch")
-    
-    if not (resume and has_data) and target_branch and target_branch != current_branch:
-        if not run(f"git checkout -f {target_branch}", f"Checkout {target_branch}"):
-            return False
-        # Sync branch with origin to pull latest smoke-test/wrapper fixes
-        run(f"git fetch origin {target_branch}", f"Fetch {target_branch} from origin")
-        if not run(f"git reset --hard origin/{target_branch}", f"Hard Reset to origin/{target_branch}"):
-            return False
-        if not run("git status", "Git Status Check", log_path=os.path.join(log_dir, "git.log")):
-            return False
-        if not run("make clean && make", "Rebuilding Lynceus Parity Engine", log_path=os.path.join(log_dir, "build.log")):
-            run(f"git checkout {current_branch}", "Returning to safety")
+    # 1. Git Checkout & Build (if NOT resuming)
+    if not (resume and has_data):
+        current_branch = subprocess.check_output("git rev-parse --abbrev-ref HEAD", shell=True, text=True).strip()
+        target_branch = tool_cfg.get("branch")
+        
+        if target_branch and target_branch != current_branch:
+            if not run(f"git checkout -f {target_branch}", f"Checkout {target_branch}"):
+                return False
+            # Sync branch with origin to pull latest smoke-test/wrapper fixes
+            run(f"git fetch origin {target_branch}", f"Fetch {target_branch} from origin")
+            if not run(f"git reset --hard origin/{target_branch}", f"Hard Reset to origin/{target_branch}"):
+                return False
+            if not run("git status", "Git Status Check", log_path=os.path.join(log_dir, "git.log")):
+                return False
+
+        # FAULT TOLERANCE: Always rebuild the Lynceus Engine to guarantee binaries exist
+        if not run("make clean && make", "Rebuilding Lynceus Engine", log_path=os.path.join(log_dir, "build.log")):
+            print("❌ FATAL: Compilation failed. Aborting experiment to prevent false positives.")
+            if target_branch and target_branch != current_branch:
+                run(f"git checkout {current_branch}", "Returning to safety")
             return False
 
     # 2. Extração
@@ -204,6 +209,39 @@ def run_tool(tool_name, tool_cfg, resume=False):
     save_results(tool_name, tool_cfg)
     return bench_ok
 
+def _get_resource_peaks(tool_dest):
+    metrics_files = glob.glob(os.path.join(tool_dest, "**", "resource_metrics.csv"), recursive=True)
+    peak_ram = 0.0
+    peak_cpu = 0.0
+    for mf in metrics_files:
+        try:
+            with open(mf) as f:
+                lines = f.readlines()[1:] # skip header
+                for line in lines:
+                    parts = line.strip().split(',')
+                    if len(parts) >= 3:
+                        cpu = float(parts[1])
+                        ram = float(parts[2])
+                        if cpu > peak_cpu: peak_cpu = cpu
+                        if ram > peak_ram: peak_ram = ram
+        except Exception: continue
+    return peak_ram, peak_cpu
+
+def _get_extraction_summary(tool_dest):
+    summary_files = glob.glob(os.path.join(tool_dest, "**", "summary.json"), recursive=True)
+    total_pkts = 0
+    avg_pps = 0.0
+    count = 0
+    for sf in summary_files:
+        try:
+            with open(sf) as f:
+                data = json.load(f)
+                total_pkts += data.get("packets_sent", 0)
+                avg_pps += data.get("pps", 0.0)
+                count += 1
+        except Exception: continue
+    return total_pkts, (avg_pps / count if count > 0 else 0.0)
+
 def generate_comparison_report(results=None):
     report = {"results": {}, "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")}
     
@@ -213,11 +251,17 @@ def generate_comparison_report(results=None):
     for tool_name in found_tools:
         if tool_name not in TOOLS: continue
         tool_dest = os.path.join(RESULTS_BASE, tool_name)
+        
+        # 1. Resource Metrics
+        peak_ram, peak_cpu = _get_resource_peaks(tool_dest)
+        
+        # 2. Extraction Summary
+        total_pkts, avg_pps = _get_extraction_summary(tool_dest)
+        
+        # 3. ML Metrics
         ml_files  = glob.glob(os.path.join(tool_dest, "**", "ml_results.json"), recursive=True)
         tool_metrics = {}
         for mf in sorted(ml_files):
-            # Resolve attack name from path
-            # Structure: results_parity/<tool>/data/processed/<processed_folder>/<attack>/ml_results.json
             proc_subdir = TOOLS[tool_name]["processed"]
             try:
                 rel_path = os.path.relpath(os.path.dirname(mf), os.path.join(tool_dest, proc_subdir))
@@ -229,27 +273,40 @@ def generate_comparison_report(results=None):
         report["results"][tool_name] = {
             "label": TOOLS[tool_name]["label"], 
             "status": "LOADED",
+            "performance": {
+                "peak_ram_mb": peak_ram,
+                "peak_cpu_pct": peak_cpu,
+                "total_packets": total_pkts,
+                "avg_pps": avg_pps
+            },
             "metrics_by_attack": tool_metrics
         }
 
     with open(os.path.join(RESULTS_BASE, "comparison_report.json"), "w") as f:
         json.dump(report, f, indent=2)
 
-    print(f"\n{'='*85}\n  COMPARISON REPORT — Lynceus Scientific Parity\n{'='*85}")
+    print(f"\n{'='*110}\n  SCIENTIFIC PARITY REPORT — Performance & Detection Matrix\n{'='*110}")
     all_attacks = set()
     for t in report["results"].values(): all_attacks.update(t["metrics_by_attack"].keys())
 
     for attack in sorted(all_attacks):
         if not attack or attack == ".": continue
-        print(f"\n  [{attack}]")
-        print(f"  {'Tool/Step':<40} {'F1':>8} {'Acc':>8} {'Prec':>8} {'Features':>10}")
-        print(f"  {'-'*40} {'-'*8} {'-'*8} {'-'*8} {'-'*10}")
+        print(f"\n  [Vetor: {attack}]")
+        print(f"  {'Tool/Step':<30} {'F1':>7} {'Acc':>7} {'Prec':>7} {'Rec':>7} | {'Packets':>10} {'PPS':>8} {'RAM':>8} {'CPU':>6}")
+        print(f"  {'-'*30} {'-'*7} {'-'*7} {'-'*7} {'-'*7} | {'-'*10} {'-'*8} {'-'*8} {'-'*6}")
+        
         for tname in EXECUTION_ORDER:
             if tname not in report["results"]: continue
             tdata = report["results"][tname]
             m = tdata["metrics_by_attack"].get(attack, {})
-            if m: print(f"  {tdata['label']:<40} {m.get('f1_score',0):>8.4f} {m.get('accuracy',0):>8.4f} {m.get('precision',0):>8.4f} {m.get('n_features',0):>10}")
-            else: print(f"  {tdata['label']:<40} {'N/A':>8}")
+            p = tdata["performance"]
+            
+            if m:
+                print(f"  {tdata['label']:<30} {m.get('f1_score',0):>7.4f} {m.get('accuracy',0):>7.4f} {m.get('precision',0):>7.4f} {m.get('recall',0):>7.4f} | "
+                      f"{p.get('total_packets',0):>10} {p.get('avg_pps',0):>8.0f} {p.get('peak_ram_mb',0):>8.1f} {p.get('peak_cpu_pct',0):>6.1f}%")
+            else:
+                print(f"  {tdata['label']:<30} {'N/A':>7}")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Lynceus Parity Orchestrator")

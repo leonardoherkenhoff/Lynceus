@@ -85,16 +85,18 @@ def _process_polars(file_path, category, output_file):
         return 0
         
     try:
-        # Scan lazy (does not load to RAM yet)
-        q = pl.scan_csv(file_path, infer_schema_length=10000, ignore_errors=True)
+        # Scan lazy with high inference length to avoid type mismatches (e.g. float vs int in IAT columns)
+        q = pl.scan_csv(file_path, infer_schema_length=100000, ignore_errors=True)
         
-        # Detect IP column from first few bytes
+        # Detect IP column
         columns = pl.read_csv(file_path, n_rows=0).columns
         ip_col = _detect_ip_column(columns)
 
         if ip_col:
             q = q.with_columns(
-                pl.when(pl.col(ip_col).cast(pl.Utf8).is_in(ATTACKER_IPS))
+                pl.col(ip_col).cast(pl.Utf8).alias(ip_col)
+            ).with_columns(
+                pl.when(pl.col(ip_col).is_in(ATTACKER_IPS))
                   .then(pl.lit(category))
                   .otherwise(pl.lit("BENIGN"))
                   .alias("Label")
