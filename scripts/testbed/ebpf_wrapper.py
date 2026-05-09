@@ -29,12 +29,14 @@ BASE_DIR = "/opt/eBPFNetFlowLyzer"
 DATA_RAW = os.path.join(BASE_DIR, "data/raw")
 DATA_INTERIM = os.path.join(BASE_DIR, "data/interim/EBPF_RAW")
 LOADER_BIN = os.path.join(BASE_DIR, "build/loader")
-LABELER_SCRIPT = "/tmp/lynceus_labeler.py" if os.path.exists("/tmp/lynceus_labeler.py") else os.path.join(BASE_DIR, "scripts/preprocessing/ebpf_labeler.py")
+LABELER_SCRIPT = "/tmp/lynceus_labeler.py"
+MONITOR_SCRIPT = "/tmp/lynceus_monitor.py"
 
 # Logical execution order for experimental categories.
 EXPERIMENT_ORDER = ["PCAPv6", "PCAP"]
 
-def process_pcap_dir(pcap_dir, category, smoke_test=False):
+def process_pcap_dir(pcap_dir, category, smoke_test=False, skip_labeling=False):
+
     """
     Orchestrates the telemetric extraction of a specific experimental category.
     """
@@ -95,7 +97,7 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False):
         time.sleep(5) 
         
         # --- Step 3: Stochastic Resource Profiling ---
-        monitor_script = "scripts/testbed/monitor.py"
+        monitor_script = MONITOR_SCRIPT
         proc_mon = None
         if os.path.exists(monitor_script):
             proc_mon = subprocess.Popen(["python3", monitor_script, str(proc_loader.pid), metrics_csv])
@@ -136,10 +138,12 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False):
         f_csv.close()
         print(f"   📂 Telemetry formalized in {os.path.basename(csv_output_path)}")
         
-        # Iterative Attribute Labeling (Ground Truth).
-        print(f"   🏷️  Attributing Ground Truth for {experiment_name}...")
-        label_cmd = f"python3 {LABELER_SCRIPT} --path {output_dir} --cleanup"
-        subprocess.run(label_cmd, shell=True, check=False)
+        if not skip_labeling:
+            # Iterative Attribute Labeling (Ground Truth).
+            print(f"   🏷️  Attributing Ground Truth for {experiment_name}...")
+            label_cmd = f"python3 {LABELER_SCRIPT} --path {output_dir} --cleanup"
+            subprocess.run(label_cmd, shell=True, check=False)
+
             
     finally:
         subprocess.run(["ip", "link", "delete", "veth0"], check=False, stderr=subprocess.DEVNULL)
@@ -158,6 +162,7 @@ def main():
     parser = argparse.ArgumentParser(description="Lynceus Extraction Wrapper")
     parser.add_argument("--output", type=str, help="Override interim output directory")
     parser.add_argument("--smoke-test", action="store_true", help="Process only the first PCAP")
+    parser.add_argument("--skip-labeling", action="store_true", help="Centralized labeling handled by orchestrator")
     args = parser.parse_args()
 
     if args.output:
@@ -181,7 +186,7 @@ def main():
             pcap_dirs = [pcap_dirs[0]]
 
         for pcap_dir in pcap_dirs:
-            process_pcap_dir(pcap_dir, category, smoke_test=args.smoke_test)
+            process_pcap_dir(pcap_dir, category, smoke_test=args.smoke_test, skip_labeling=args.skip_labeling)
             if args.smoke_test: break
         if args.smoke_test: break
 

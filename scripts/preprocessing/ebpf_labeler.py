@@ -85,29 +85,32 @@ def _process_polars(file_path, category, output_file):
         return 0
         
     try:
-        # Define schema overrides for critical numerical columns to avoid Int/Float confusion
-        # We read the first row to get columns, then apply overrides
-        sample = pl.read_csv(file_path, n_rows=1)
-        overrides = {}
-        for col in sample.columns:
-            if any(x in col for x in ["IAT", "Duration", "Rate", "Pay", "Hdr", "Idle", "Active", "Bulk"]):
-                overrides[col] = pl.Float64
+        # HARDENED SCHEMATIZATION: Force Float64 for all metrics to avoid Polars inference errors
+        # structural_cols are the only ones we keep as Utf8/Int64
+        structural_cols = ["src_ip", "dst_ip", "src_port", "dst_port", "protocol", "Label", "Timestamp"]
         
+        # Read only header to identify columns
+        all_cols = pl.read_csv(file_path, n_rows=0).columns
+        overrides = {}
+        for col in all_cols:
+            if col not in structural_cols:
+                overrides[col] = pl.Float64
+            elif "ip" in col.lower():
+                overrides[col] = pl.Utf8
+        
+        # Scan with explicit overrides
         q = pl.scan_csv(file_path, schema_overrides=overrides, ignore_errors=True)
         
-        # Detect IP column
-        columns = sample.columns
-        ip_col = _detect_ip_column(columns)
-
+        # Detect IP column for labeling
+        ip_col = _detect_ip_column(all_cols)
         if ip_col:
             q = q.with_columns(
-                pl.col(ip_col).cast(pl.Utf8).alias(ip_col)
-            ).with_columns(
                 pl.when(pl.col(ip_col).is_in(ATTACKER_IPS))
                   .then(pl.lit(category))
                   .otherwise(pl.lit("BENIGN"))
                   .alias("Label")
             )
+
 
         
         # Sink to CSV (streaming write)

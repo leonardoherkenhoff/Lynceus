@@ -93,8 +93,9 @@ def run_nfx_extraction(smoke_test=False):
                                         preexec_fn=os.setsid)
                 time.sleep(2)
                 
-                # Start Resource Monitor
+                monitor_script = "/tmp/lynceus_monitor.py"
                 proc_mon = subprocess.Popen(["python3", monitor_script, str(proc.pid), metrics_csv]) if os.path.exists(monitor_script) else None
+
 
                 print(f"   Replaying {os.path.basename(pcap)}...", flush=True)
                 limit_flag = ["--limit", "5000"] if smoke_test else []

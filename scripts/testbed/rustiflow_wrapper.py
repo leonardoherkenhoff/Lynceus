@@ -48,7 +48,7 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False):
         print(f"   Processing: {os.path.basename(pcap)}")
         tmp_out = os.path.join(output_dir, f"_tmp_{os.path.basename(pcap)}.csv")
         metrics_csv = os.path.join(output_dir, "resource_metrics.csv")
-        monitor_script = os.path.join(BASE_DIR, "scripts/testbed/monitor.py")
+        monitor_script = "/tmp/lynceus_monitor.py"
 
         # Ordem correta: global options ANTES do subcommand 'pcap'
         cmd = [RUSTIFLOW_BIN, "-f", "cic", "-o", "csv", "--header", "--export-path", tmp_out, "pcap", pcap]
