@@ -19,13 +19,17 @@ BASE_DIR     = "/opt/eBPFNetFlowLyzer"
 RESULTS_BASE = os.path.join(BASE_DIR, "results_parity")
 LABELER      = "/tmp/lynceus_labeler.py"
 BENCHMARK    = "/tmp/lynceus_benchmark.py"
+MONITOR      = "/tmp/lynceus_monitor.py"
+WRAPPER_EBPF = "/tmp/lynceus_ebpf_wrapper.py"
+WRAPPER_NFX  = "/tmp/lynceus_nfx_wrapper.py"
+WRAPPER_RUST = "/tmp/lynceus_rustiflow_wrapper.py"
 
 # Parity Benchmarking Orchestrator
 # Protocol: Base vs. Parity (NTL+AL, NFX, RustiFlow)
 
 TOOLS = {
     "lynceus_full": {
-        "wrapper":   "scripts/testbed/ebpf_wrapper.py",
+        "wrapper":   WRAPPER_EBPF,
         "interim":   "data/interim/LYNCEUS_FULL",
         "processed": "data/processed/LYNCEUS_FULL",
         "label":     "Lynceus (Base)",
@@ -33,7 +37,8 @@ TOOLS = {
         "branch":    "develop"
     },
     "lynceus_vs_ntl": {
-        "wrapper":   "scripts/testbed/ebpf_wrapper.py",
+        "branch":    "parity-netflowlyzer",
+        "wrapper":   WRAPPER_EBPF,
         "interim":   "data/interim/EBPF_PARITY_NTL",
         "processed": "data/processed/EBPF_PARITY_NTL",
         "label":     "Lynceus (NTL+AL Parity)",
@@ -41,21 +46,22 @@ TOOLS = {
         "branch":    "parity-netflowlyzer"
     },
     "nfx_full": {
-        "wrapper":   "scripts/testbed/nfx_wrapper.py",
+        "wrapper":   WRAPPER_NFX,
         "interim":   "data/interim/NFX_RAW",
         "processed": "data/processed/NFX",
         "label":     "NFX (Original)",
         "bench_args": ""
     },
     "rustiflow_full": {
-        "wrapper":   "scripts/testbed/rustiflow_wrapper.py",
+        "wrapper":   WRAPPER_RUST,
         "interim":   "data/interim/RUSTIFLOW_RAW",
         "processed": "data/processed/RUSTIFLOW",
         "label":     "RustiFlow (Original)",
         "bench_args": ""
     },
     "lynceus_vs_nfx": {
-        "wrapper":   "scripts/testbed/ebpf_wrapper.py",
+        "branch":    "parity-nfx",
+        "wrapper":   WRAPPER_EBPF,
         "interim":   "data/interim/EBPF_PARITY_NFX",
         "processed": "data/processed/EBPF_PARITY_NFX",
         "label":     "Lynceus (NFX Parity)",
@@ -63,7 +69,8 @@ TOOLS = {
         "branch":    "parity-nfx"
     },
     "lynceus_vs_rustiflow": {
-        "wrapper":   "scripts/testbed/ebpf_wrapper.py",
+        "branch":    "parity-rustiflow",
+        "wrapper":   WRAPPER_EBPF,
         "interim":   "data/interim/EBPF_PARITY_RUSTIFLOW",
         "processed": "data/processed/EBPF_PARITY_RUSTIFLOW",
         "label":     "Lynceus (RustiFlow Parity)",
@@ -324,10 +331,13 @@ def main():
 
     os.makedirs(RESULTS_BASE, exist_ok=True)
     
-    # FAULT TOLERANCE: Anchor critical scripts to /tmp to survive branch checkouts
+    # FAULT TOLERANCE: Anchor EVERYTHING to /tmp to survive branch checkouts
     shutil.copy2(os.path.join(BASE_DIR, "scripts/preprocessing/ebpf_labeler.py"), LABELER)
     shutil.copy2(os.path.join(BASE_DIR, "scripts/analysis/ebpf_run_benchmark.py"), BENCHMARK)
-    shutil.copy2(os.path.join(BASE_DIR, "scripts/testbed/monitor.py"), "/tmp/lynceus_monitor.py")
+    shutil.copy2(os.path.join(BASE_DIR, "scripts/testbed/monitor.py"), MONITOR)
+    shutil.copy2(os.path.join(BASE_DIR, "scripts/testbed/ebpf_wrapper.py"), WRAPPER_EBPF)
+    shutil.copy2(os.path.join(BASE_DIR, "scripts/testbed/nfx_wrapper.py"), WRAPPER_NFX)
+    shutil.copy2(os.path.join(BASE_DIR, "scripts/testbed/rustiflow_wrapper.py"), WRAPPER_RUST)
 
     results = {}; t_global = time.time()
     

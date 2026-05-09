@@ -32,19 +32,18 @@ def monitor_pid(pid, output_file):
     
     with open(output_file, 'w') as f:
         # Header for resource time-series dataset.
-        f.write("timestamp,cpu_percent,memory_rss_mb,memory_vms_mb,num_threads\n")
+        f.write("timestamp,cpu_percent,memory_mb\n")
         
         while proc.is_running():
             try:
-                # Capture empirical metrics via psutil interface.
-                cpu = proc.cpu_percent(interval=1.0)
-                mem = proc.memory_info()
-                rss_mb = mem.rss / (1024 * 1024)
-                vms_mb = mem.vms / (1024 * 1024)
-                threads = proc.num_threads()
+                # Interval=None means non-blocking CPU measurement
+                cpu = proc.cpu_percent(interval=None) 
+                # Memory in MB
+                mem = proc.memory_info().rss / (1024 * 1024)
                 
-                f.write(f"{time.time()},{cpu},{rss_mb:.2f},{vms_mb:.2f},{threads}\n")
+                f.write(f"{time.time()},{cpu},{mem}\n")
                 f.flush()
+                time.sleep(1)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 break
             except Exception as e:
