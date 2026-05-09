@@ -106,8 +106,9 @@ def run_nfx_extraction(smoke_test=False, skip_labeling=False):
 
                 print(f"   Replaying {os.path.basename(pcap)}...", flush=True)
                 limit_flag = ["--limit", "5000"] if smoke_test else []
-                subprocess.run(["tcpreplay", "-i", "veth0"] + limit_flag + [pcap], 
-                               check=True, timeout=300)
+                cmd = f"tcpreplay -i veth0 {' '.join(limit_flag)} {pcap}"
+                subprocess.run(cmd, shell=True, capture_output=True, text=True, 
+                               check=True, timeout=1800)
                 time.sleep(2)
                 
                 os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
