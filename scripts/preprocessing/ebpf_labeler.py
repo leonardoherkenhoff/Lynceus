@@ -89,8 +89,9 @@ def _process_polars(file_path, category, output_file):
         # structural_cols are the only ones we keep as Utf8/Int64
         structural_cols = ["src_ip", "dst_ip", "src_port", "dst_port", "protocol", "Label", "Timestamp"]
         
-        # Read only header to identify columns
-        all_cols = pl.read_csv(file_path, n_rows=0).columns
+        # Read only header to identify columns (ignore types at this stage)
+        all_cols = pl.read_csv(file_path, n_rows=0, infer_schema_length=0).columns
+
         overrides = {}
         for col in all_cols:
             if col not in structural_cols:
