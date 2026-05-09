@@ -85,19 +85,20 @@ def _process_polars(file_path, category, output_file):
         return 0
         
     try:
-        # HARDENED SCHEMATIZATION: Force Float64 for all metrics to avoid Polars inference errors
-        # structural_cols are the only ones we keep as Utf8/Int64
-        structural_cols = ["src_ip", "dst_ip", "src_port", "dst_port", "protocol", "Label", "Timestamp"]
-        
         # Read only header to identify columns (ignore types at this stage)
         all_cols = pl.read_csv(file_path, n_rows=0, infer_schema_length=0).columns
 
+        # HARDENED SCHEMATIZATION: Force Utf8 for identity/structural columns, Float64 for metrics
+
+        structural_keywords = ["ip", "src", "dst", "port", "protocol", "label", "timestamp"]
         overrides = {}
         for col in all_cols:
-            if col not in structural_cols:
-                overrides[col] = pl.Float64
-            elif "ip" in col.lower():
+            c_low = col.lower()
+            if any(key in c_low for key in structural_keywords):
                 overrides[col] = pl.Utf8
+            else:
+                overrides[col] = pl.Float64
+
         
         # Scan with explicit overrides
         q = pl.scan_csv(file_path, schema_overrides=overrides, ignore_errors=True)
