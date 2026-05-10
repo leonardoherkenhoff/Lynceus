@@ -122,7 +122,7 @@ def _process_polars(file_path, category, output_file):
         return pl.scan_csv(output_file).select(pl.len()).collect().item()
     except Exception as e:
         print(f"   ⚠️ Polars Streaming Error: {e}")
-        return 0
+        return -1
 
 
 def _process_pandas(file_path, category, output_file):
@@ -188,7 +188,8 @@ def process_file_auto(file_path):
         else:
             total_rows = _process_pandas(file_path, category, output_file)
 
-        return (file_path, True, total_rows)
+        success = total_rows > 0
+        return (file_path, success, max(0, total_rows))
     except Exception as e:
         print(f"   ❌ Attribution Error for {file_path}: {e}")
         return (file_path, False, 0)

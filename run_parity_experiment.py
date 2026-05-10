@@ -153,6 +153,9 @@ def run_tool(tool_name, tool_cfg, resume=False):
     else:
         clean_dirs(tool_cfg)
 
+    target_branch = None
+    current_branch = None
+
     # 1. Git Checkout & Build (if NOT resuming)
     if not (resume and has_data):
         current_branch = subprocess.check_output("git rev-parse --abbrev-ref HEAD", shell=True, text=True).strip()
