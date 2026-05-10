@@ -181,6 +181,9 @@ struct worker_t {
 static struct worker_t *workers;
 static int num_workers = 1;
 static volatile bool exiting = false;
+static _Atomic uint64_t g_total_events = 0;
+static uint64_t g_max_events = 0; // 0 = unlimited
+
 static void sig_handler(int sig) { (void)sig; exiting = true; }
 
 static FILE *g_out_f = NULL;
@@ -441,6 +444,8 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
         for (int i=0; i<8; i++) if (e->rec.tcp_flags & (1<<i)) { s->flags[i]++; s->b_flags[i]++; }
     }
     if (s->t_pay.n >= 1000 || (e->rec.tcp_flags & 0x05)) { flush_flow_record(w, s, e->timestamp_ns); s->active = 0; }
+    uint64_t total = atomic_fetch_add_explicit(&g_total_events, 1, memory_order_relaxed);
+    if (g_max_events > 0 && total >= g_max_events) { exiting = true; }
     w->processed_events++; return 0;
 }
 
@@ -536,6 +541,14 @@ int main(int argc, char **argv) {
     init_boot_time();
     init_log2_table();
     if (argc < 2) return 1;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--limit") == 0 && (i + 1) < argc) {
+            g_max_events = strtoull(argv[i+1], NULL, 10);
+            fprintf(stderr, "[*] Event limit set to %lu\n", g_max_events);
+        }
+    }
+
     struct rlimit r = {RLIM_INFINITY, RLIM_INFINITY}; setrlimit(RLIMIT_MEMLOCK, &r);
     signal(SIGINT, sig_handler); signal(SIGTERM, sig_handler);
     int cores = sysconf(_SC_NPROCESSORS_ONLN);
