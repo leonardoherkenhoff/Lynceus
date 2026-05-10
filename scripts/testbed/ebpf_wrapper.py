@@ -36,7 +36,7 @@ MONITOR_SCRIPT = os.path.join(BASE_DIR, "scripts/testbed/monitor.py")
 # Logical execution order for experimental categories.
 EXPERIMENT_ORDER = ["PCAPv6", "PCAP"]
 
-def process_pcap_dir(pcap_dir, category, smoke_test=False, skip_labeling=False):
+def process_pcap_dir(pcap_dir, category, smoke_test=False, skip_labeling=False, max_events=0):
 
     """
     Orchestrates the telemetric extraction of a specific experimental category.
@@ -74,8 +74,12 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False, skip_labeling=False):
         
         # Agnostic Output: Capture engine stdout stream directly to the interim directory.
         f_csv = open(csv_output_path, 'w')
+        loader_args = [LOADER_BIN, "veth1"]
+        if max_events > 0:
+            loader_args.extend(["--limit", str(max_events)])
+            
         proc_loader = subprocess.Popen(
-            [LOADER_BIN, "veth1"], 
+            loader_args, 
             stdout=f_csv, 
             stderr=subprocess.PIPE,
             text=True,
@@ -164,6 +168,7 @@ def main():
     parser.add_argument("--output", type=str, help="Override interim output directory")
     parser.add_argument("--smoke-test", action="store_true", help="Process only the first PCAP")
     parser.add_argument("--skip-labeling", action="store_true", help="Centralized labeling handled by orchestrator")
+    parser.add_argument("--max-events", type=int, default=0, help="Max flow events to capture per category")
     args = parser.parse_args()
 
     if args.output:
@@ -187,7 +192,8 @@ def main():
             pcap_dirs = [pcap_dirs[0]]
 
         for pcap_dir in pcap_dirs:
-            process_pcap_dir(pcap_dir, category, smoke_test=args.smoke_test, skip_labeling=args.skip_labeling)
+            process_pcap_dir(pcap_dir, category, smoke_test=args.smoke_test, 
+                             skip_labeling=args.skip_labeling, max_events=args.max_events)
             if args.smoke_test: break
         if args.smoke_test: break
 
