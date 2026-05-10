@@ -81,8 +81,8 @@ TTL_DROP = [
 
 # Adaptive sample limit to prevent OOM on 32GB RAM servers
 # For 400+ features, we target ~10GB matrix size
-DEFAULT_MAX_SAMPLES = 5_000_000
-HIGH_DENSITY_MAX_SAMPLES = 2_500_000 
+DEFAULT_MAX_SAMPLES = 3_000_000
+HIGH_DENSITY_MAX_SAMPLES = 2_000_000 
 CHUNK_SIZE = 250_000
 
 def load_dataset(file_path, drop_cols):
@@ -93,7 +93,7 @@ def load_dataset(file_path, drop_cols):
     sample_df = pd.read_csv(file_path, nrows=1)
     n_features = len([c for c in sample_df.columns if c not in drop_cols and c != 'Label'])
     
-    # Adaptive limit: if we have >300 features, cap at 2.5M to fit in 16GB free RAM
+    # Adaptive limit: if we have >300 features, cap at 2.0M to fit in 30GB free RAM with sklearn overhead
     max_s = HIGH_DENSITY_MAX_SAMPLES if n_features > 300 else DEFAULT_MAX_SAMPLES
     
     if USE_POLARS:
@@ -396,7 +396,7 @@ def run_benchmark():
                     continue
 
                 clf = RandomForestClassifier(
-                    n_estimators=100, n_jobs=12, random_state=42
+                    n_estimators=100, n_jobs=24, random_state=42
                 )
 
                 # Apply Logical Parity Filtering if requested
@@ -528,7 +528,7 @@ def _run_split_validation(file_path, attack_name, drop_cols):
             return
 
         clf = RandomForestClassifier(
-            n_estimators=100, n_jobs=12, random_state=42
+            n_estimators=100, n_jobs=24, random_state=42
         )
         
         # Apply Logical Parity Filtering if requested
