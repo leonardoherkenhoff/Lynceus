@@ -196,7 +196,7 @@ def run_tool(tool_name, tool_cfg, resume=False):
     labeling_ok = True
     if not (resume and has_data):
         labeler_cmd = (f"sudo python3 -u {LABELER} --input {os.path.join(BASE_DIR, tool_cfg['interim'])} "
-                       f"--output {os.path.join(BASE_DIR, tool_cfg['processed'])}")
+                       f"--output {os.path.join(BASE_DIR, tool_cfg['processed'])} --cleanup")
         labeling_ok = run(labeler_cmd, f"Labeling — {tool_cfg['label']}", log_path=os.path.join(log_dir, "labeling.log"))
         
         # ⚠️  CRITICAL: Cleanup will happen AFTER save_results to preserve metrics

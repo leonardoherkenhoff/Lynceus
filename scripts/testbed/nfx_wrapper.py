@@ -35,7 +35,7 @@ def _sanitize_nfx_csv(raw_path, clean_path):
         for m in matches:
             f.write(f"{m[0]},{m[1]},{m[2]},{m[3]},{m[4]},{m[5]},{m[6]}\n")
 
-def run_nfx_extraction(smoke_test=False):
+def run_nfx_extraction(smoke_test=False, max_events=0):
     if not os.path.exists(NFX_BIN):
         print(f"❌ NFX Binary not found at {NFX_BIN}"); sys.exit(1)
 
@@ -51,7 +51,11 @@ def run_nfx_extraction(smoke_test=False):
     pcaps = sorted(pcaps)
     if smoke_test: pcaps = pcaps[:1]
 
+    total_flows = 0
     for i, pcap in enumerate(pcaps):
+        if max_events > 0 and total_flows >= max_events:
+            print(f"   🛑 Limit reached ({max_events}). Skipping remaining PCAPs.")
+            break
         category = os.path.basename(os.path.dirname(pcap))
         out_dir = os.path.join(INTERIM_DIR, category)
         os.makedirs(out_dir, exist_ok=True)
@@ -86,11 +90,17 @@ def run_nfx_extraction(smoke_test=False):
             elapsed = time.time() - start_time
             subprocess.run("ip link delete veth0 2>/dev/null || true", shell=True)
             _sanitize_nfx_csv(raw_file, out_file)
+            # Rough estimate of new flows
+            if os.path.exists(out_file):
+                with open(out_file) as f:
+                    new_flows = sum(1 for _ in f) - 1
+                    total_flows += max(0, new_flows)
             print(f"   ✅ Done in {elapsed:.1f}s")
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--smoke-test", action="store_true")
+    parser.add_argument("--max-events", type=int, default=0)
     args = parser.parse_args()
-    run_nfx_extraction(smoke_test=args.smoke_test)
+    run_nfx_extraction(smoke_test=args.smoke_test, max_events=args.max_events)
