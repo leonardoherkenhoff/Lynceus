@@ -1,7 +1,13 @@
 /**
  * @file loader.c
- * @brief User-space control plane for eBPF telemetry extraction.
- * Auto-scales workers, flow tables, and buffers based on available hardware.
+ * @brief Lynceus Control Plane.
+ *
+ * @details
+ * Multi-threaded event ingestion and flow aggregation.
+ * Online 4th-order statistical computation and behavioral histogramming.
+ * Dynamic hardware resource scaling (CPU/RAM).
+ *
+ * @version 1.1
  */
 
 #define _GNU_SOURCE
@@ -439,7 +445,7 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
     }
     if (s->t_pay.n >= 1000 || (e->rec.tcp_flags & 0x05)) { flush_flow_record(w, s, e->timestamp_ns); s->active = 0; }
     uint64_t total = atomic_fetch_add_explicit(&g_total_events, 1, memory_order_relaxed);
-    if (g_max_events > 0 && total >= g_max_events) { exiting = true; }
+    if (g_max_events > 0 && total >= g_max_events) { exiting = true; return -1; }
     w->processed_events++; return 0;
 }
 

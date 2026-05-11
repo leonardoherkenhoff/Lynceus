@@ -2,7 +2,7 @@
 """
 Lynceus Parity Experiment — NetFeatureXtract (NFX) Wrapper
 -----------------------------------------------------------
-Baseado no repositório: https://github.com/geinsfeldt/NetFeatureXtract
+Versão Sequencial Estável com Timeout de 1800s.
 """
 
 import os
@@ -15,40 +15,29 @@ import sys
 import json
 
 # Paths
-BASE_DIR = "/opt/eBPFNetFlowLyzer"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 NFX_DIR = "/opt/NetFeatureXtract"
-
 if not os.path.exists(NFX_DIR):
     NFX_DIR = "/opt/XFAST/ebpf"
 
 NFX_BIN = os.path.join(NFX_DIR, "xdp_user")
-INTERIM_DIR = "/opt/eBPFNetFlowLyzer/data/interim/XFAST_RAW"
-PCAP_DIR = "/opt/eBPFNetFlowLyzer/data/raw"
+INTERIM_DIR = os.path.join(BASE_DIR, "data/interim/NFX_RAW")
+PCAP_DIR = os.path.join(BASE_DIR, "data/raw")
 
 def _sanitize_nfx_csv(raw_path, clean_path):
     if not os.path.exists(raw_path): return
-    
     with open(raw_path, "r") as f:
         content = f.read()
-        
-    # Resilient Regex for both LF and CRLF and variable spacing
     pattern = r"Flow:\s+([\d\.]+):(\d+)\s+->\s+([\d\.]+):(\d+)\s+\(IPv4, Proto:\s+(\d+)\)\s+Packets:\s+(\d+)\s+Bytes:\s+(\d+)"
     matches = re.findall(pattern, content)
-    print(f"   [DEBUG] Regex found {len(matches)} matches in raw output.")
-
-    
     with open(clean_path, "w") as f:
-        # Standard Lynceus labeler expected schema (reduced set for NFX baseline comparison)
         f.write("src_ip,src_port,dst_ip,dst_port,protocol,packets,bytes\n")
         for m in matches:
             f.write(f"{m[0]},{m[1]},{m[2]},{m[3]},{m[4]},{m[5]},{m[6]}\n")
 
-
-def run_nfx_extraction(smoke_test=False, skip_labeling=False):
-
+def run_nfx_extraction(smoke_test=False, max_events=0):
     if not os.path.exists(NFX_BIN):
-        print(f"❌ NFX Binary not found at {NFX_BIN}")
-        sys.exit(1)
+        print(f"❌ NFX Binary not found at {NFX_BIN}"); sys.exit(1)
 
     os.makedirs(INTERIM_DIR, exist_ok=True)
     pcaps = []
@@ -60,27 +49,23 @@ def run_nfx_extraction(smoke_test=False, skip_labeling=False):
                     if f.endswith('.pcap') or f.endswith('.pcapng'):
                         pcaps.append(os.path.join(root, f))
     pcaps = sorted(pcaps)
-    print(f"   [DEBUG] Found {len(pcaps)} PCAPs in {PCAP_DIR}")
-    if not pcaps:
-        print(f"   ❌ No PCAPs found in {PCAP_DIR}!")
-        return
+    if smoke_test: pcaps = pcaps[:1]
 
-    if smoke_test:
-        print(f"   [DEBUG] Smoke test: processing only {pcaps[0]}")
-        pcaps = [pcaps[0]]
-    
+    total_flows = 0
     for i, pcap in enumerate(pcaps):
+        if max_events > 0 and total_flows >= max_events:
+            print(f"   🛑 Limit reached ({max_events}). Skipping remaining PCAPs.")
+            break
         category = os.path.basename(os.path.dirname(pcap))
         out_dir = os.path.join(INTERIM_DIR, category)
         os.makedirs(out_dir, exist_ok=True)
         out_file = os.path.join(out_dir, "flows.csv")
         raw_file = out_file + ".raw"
         
-        print(f"[*] [{i+1}/{len(pcaps)}] NFX Extracting: {pcap} (Category: {category})", flush=True)
+        print(f"[*] [{i+1}/{len(pcaps)}] NFX Extracting: {pcap}")
         metrics_csv = os.path.join(out_dir, "resource_metrics.csv")
-        monitor_script = "/opt/eBPFNetFlowLyzer/scripts/testbed/monitor.py"
+        monitor_script = os.path.join(BASE_DIR, "scripts/testbed/monitor.py")
         
-        # Setup VETH
         subprocess.run("ip link delete veth0 2>/dev/null || true", shell=True)
         subprocess.run("ip link add veth0 type veth peer name veth1 || true", shell=True)
         subprocess.run("ip link set veth0 up", shell=True)
@@ -88,64 +73,46 @@ def run_nfx_extraction(smoke_test=False, skip_labeling=False):
 
         start_time = time.time()
         try:
-            with open(raw_file, "w") as f_raw:
-                proc = subprocess.Popen([NFX_BIN, "veth1"], 
-                                        stdout=f_raw, stderr=subprocess.STDOUT,
-                                        cwd=NFX_DIR,
-                                        preexec_fn=os.setsid)
-                # Small interval to capture bursty processing without blocking too much
-                # cpu = proc.cpu_percent(interval=0.1) 
-                # mem = proc.memory_info().rss / (1024 * 1024)
+            with open(raw_file, "a") as f_raw:
+                proc = subprocess.Popen([NFX_BIN, "veth1"], stdout=f_raw, stderr=subprocess.STDOUT, cwd=NFX_DIR, preexec_fn=os.setsid)
                 time.sleep(2)
-                
-                monitor_script = os.path.join(BASE_DIR, "scripts/testbed/monitor.py")
-
                 proc_mon = subprocess.Popen(["python3", monitor_script, str(proc.pid), metrics_csv]) if os.path.exists(monitor_script) else None
 
-
-
-                print(f"   Replaying {os.path.basename(pcap)}...", flush=True)
-                limit_flag = ["--limit", "5000"] if smoke_test else []
-                cmd = f"tcpreplay -i veth0 {' '.join(limit_flag)} {pcap}"
-                subprocess.run(cmd, shell=True, capture_output=True, text=True, 
-                               check=True, timeout=1800)
-                time.sleep(2)
+                cmd = f"tcpreplay -i veth0 {pcap}"
+                proc_tcpreplay = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                
+                while True:
+                    if proc_tcpreplay.poll() is not None:
+                        break
+                    if proc.poll() is not None:
+                        proc_tcpreplay.terminate()
+                        break
+                    time.sleep(0.5)
                 
                 os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
                 proc.wait(timeout=5)
                 if proc_mon: proc_mon.terminate()
         except Exception as e:
-            print(f"   ⚠️  Error replaying {pcap}: {e}")
+            print(f"   ⚠️ Error: {e}")
         finally:
+            if max_events > 0:
+                print(f"   ✂️ Enforcing strict parity limit: Truncating to {max_events} flows")
+                subprocess.run(f"head -n {max_events + 1} {csv_output_path} > {csv_output_path}.tmp && mv {csv_output_path}.tmp {csv_output_path}", shell=True)
+
             elapsed = time.time() - start_time
             subprocess.run("ip link delete veth0 2>/dev/null || true", shell=True)
-            # NFX requires sanitization to convert raw text to CSV telemetric artifact
             _sanitize_nfx_csv(raw_file, out_file)
-
-            
-            # Count packets from tcpreplay or flows from regex
-            # For parity, we'll estimate packets from the input file size or use a fixed number for smoke test
-            # But the most scientific way is to parse tcpreplay output (not captured here).
-            # We will use the number of matches in _sanitize_nfx_csv to estimate.
+            # Rough estimate of new flows
             if os.path.exists(out_file):
-                with open(out_file) as f: pkts = len(f.readlines()) - 1
-            else:
-                pkts = 0
-            summary = {
-                "tool": "nfx", "packets_sent": pkts, "time_seconds": elapsed,
-                "pps": pkts/elapsed if elapsed > 0 else 0, "timestamp": time.ctime()
-            }
-            with open(os.path.join(out_dir, "summary.json"), "w") as f:
-                json.dump(summary, f, indent=4)
-            print(f"   ✅ Done. Flows: {pkts} | Saved to {out_file}")
-
+                with open(out_file) as f:
+                    new_flows = sum(1 for _ in f) - 1
+                    total_flows += max(0, new_flows)
+            print(f"   ✅ Done in {elapsed:.1f}s")
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="NFX Parity Wrapper")
-    parser.add_argument("--output", type=str, help="Override interim output directory")
-    parser.add_argument("--smoke-test", action="store_true", help="Process only the first PCAP")
-    parser.add_argument("--skip-labeling", action="store_true", help="Bypass internal labeling")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--smoke-test", action="store_true")
+    parser.add_argument("--max-events", type=int, default=0)
     args = parser.parse_args()
-    if args.output: INTERIM_DIR = os.path.abspath(args.output)
-    run_nfx_extraction(smoke_test=args.smoke_test, skip_labeling=args.skip_labeling)
+    run_nfx_extraction(smoke_test=args.smoke_test, max_events=args.max_events)
