@@ -18,7 +18,7 @@ DATA_INTERIM   = os.path.join(BASE_DIR, "data/interim/RUSTIFLOW_RAW")
 FEATURE_SET    = "rustiflow"   # 83 features CIC-compatíveis
 EXPERIMENT_ORDER = ["PCAP", "PCAPv6"]
 
-def process_pcap_dir(pcap_dir, category, smoke_test=False, skip_labeling=False):
+def process_pcap_dir(pcap_dir, category, smoke_test=False, skip_labeling=False, max_events=0):
     rel_path   = os.path.relpath(pcap_dir, os.path.join(DATA_RAW, category))
     output_dir = os.path.normpath(os.path.join(DATA_INTERIM, category, rel_path))
     os.makedirs(output_dir, exist_ok=True)
@@ -39,6 +39,9 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False, skip_labeling=False):
     first_file    = True
 
     for pcap in pcaps:
+        if max_events > 0 and total_packets >= max_events:
+            print(f"   🛑 Limit reached ({max_events}). Skipping remaining PCAPs.")
+            break
         print(f"   Processing: {os.path.basename(pcap)}")
         tmp_out = os.path.join(output_dir, f"_tmp_{os.path.basename(pcap)}.csv")
         metrics_csv = os.path.join(output_dir, "resource_metrics.csv")
@@ -69,6 +72,10 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False, skip_labeling=False):
         except Exception as e:
             print(f"   ❌ Error: {e}")
 
+    if max_events > 0:
+        print(f"   ✂️ Enforcing strict parity limit: Truncating to {max_events} flows")
+        subprocess.run(f"head -n {max_events + 1} {csv_output_path} > {csv_output_path}.tmp && mv {csv_output_path}.tmp {csv_output_path}", shell=True)
+
     elapsed = time.time() - start_time
     pps     = total_packets / elapsed if elapsed > 0 else 0
     summary = {"tool": "rustiflow", "packets_sent": total_packets, "time_seconds": elapsed, "pps": pps, "timestamp": time.ctime()}
@@ -76,7 +83,7 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False, skip_labeling=False):
         json.dump(summary, f, indent=4)
     print(f"✅ DONE: {total_packets} flows | {elapsed:.1f}s | {pps:.0f} fps")
 
-def run_rustiflow_extraction(smoke_test=False, skip_labeling=False):
+def run_rustiflow_extraction(smoke_test=False, skip_labeling=False, max_events=0):
     for category in EXPERIMENT_ORDER:
         base_cat = os.path.join(DATA_RAW, category)
         if not os.path.exists(base_cat): continue
@@ -84,7 +91,8 @@ def run_rustiflow_extraction(smoke_test=False, skip_labeling=False):
         if smoke_test and pcap_dirs:
             pcap_dirs = [pcap_dirs[0]]
         for pcap_dir in pcap_dirs:
-            process_pcap_dir(pcap_dir, category, smoke_test=smoke_test, skip_labeling=skip_labeling)
+            process_pcap_dir(pcap_dir, category, smoke_test=smoke_test, 
+                             skip_labeling=skip_labeling, max_events=max_events)
             if smoke_test: break
         if smoke_test: break
 
@@ -94,6 +102,8 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=str, help="Override interim output directory")
     parser.add_argument("--smoke-test", action="store_true", help="Process only the first PCAP")
     parser.add_argument("--skip-labeling", action="store_true", help="Bypass internal labeling")
+    parser.add_argument("--max-events", type=int, default=0, help="Max flows to capture")
     args = parser.parse_args()
     if args.output: DATA_INTERIM = os.path.abspath(args.output)
-    run_rustiflow_extraction(smoke_test=args.smoke_test, skip_labeling=args.skip_labeling)
+    run_rustiflow_extraction(smoke_test=args.smoke_test, skip_labeling=args.skip_labeling, 
+                             max_events=args.max_events)
