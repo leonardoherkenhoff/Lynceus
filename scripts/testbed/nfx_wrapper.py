@@ -53,11 +53,16 @@ def run_nfx_extraction(smoke_test=False, max_events=0, skip_labeling=False):
     if smoke_test: pcaps = pcaps[:1]
 
     total_flows = 0
+    current_category = None
     for i, pcap in enumerate(pcaps):
-        if max_events > 0 and total_flows >= max_events:
-            print(f"   🛑 Limit reached ({max_events}). Skipping remaining PCAPs.")
-            break
         category = os.path.basename(os.path.dirname(pcap))
+        if category != current_category:
+            current_category = category
+            total_flows = 0
+
+        if max_events > 0 and total_flows >= max_events:
+            print(f"   🛑 Limit reached ({max_events}) for {category}. Skipping remaining PCAPs for this vector.")
+            continue
         out_dir = os.path.join(INTERIM_DIR, category)
         os.makedirs(out_dir, exist_ok=True)
         out_file = os.path.join(out_dir, "flows.csv")
