@@ -80,9 +80,9 @@ TTL_DROP = [
 ]
 
 # Adaptive sample limit to prevent OOM on 32GB RAM servers
-# For 400+ features, we target ~10GB matrix size
-DEFAULT_MAX_SAMPLES = 3_000_000
-HIGH_DENSITY_MAX_SAMPLES = 2_000_000 
+# For 400+ features, we target ~4GB matrix size
+DEFAULT_MAX_SAMPLES = 1_500_000
+HIGH_DENSITY_MAX_SAMPLES = 800_000 
 CHUNK_SIZE = 250_000
 
 def load_dataset(file_path, drop_cols):
@@ -396,7 +396,7 @@ def run_benchmark():
                     continue
 
                 clf = RandomForestClassifier(
-                    n_estimators=100, n_jobs=12, random_state=42
+                    n_estimators=100, n_jobs=8, random_state=42
                 )
 
                 # Apply Logical Parity Filtering if requested
