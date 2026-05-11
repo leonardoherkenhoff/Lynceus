@@ -96,13 +96,14 @@ def run_nfx_extraction(smoke_test=False, max_events=0, skip_labeling=False):
         except Exception as e:
             print(f"   ⚠️ Error: {e}")
         finally:
-            if max_events > 0:
-                print(f"   ✂️ Enforcing strict parity limit: Truncating to {max_events} flows")
-                subprocess.run(f"head -n {max_events + 1} {csv_output_path} > {csv_output_path}.tmp && mv {csv_output_path}.tmp {csv_output_path}", shell=True)
-
             elapsed = time.time() - start_time
             subprocess.run("ip link delete veth0 2>/dev/null || true", shell=True)
             _sanitize_nfx_csv(raw_file, out_file)
+            
+            if max_events > 0 and os.path.exists(out_file):
+                print(f"   ✂️ Enforcing strict parity limit: Truncating to {max_events} flows")
+                subprocess.run(f"head -n {max_events + 1} {out_file} > {out_file}.tmp && mv {out_file}.tmp {out_file}", shell=True)
+
             # Rough estimate of new flows
             if os.path.exists(out_file):
                 with open(out_file) as f:
