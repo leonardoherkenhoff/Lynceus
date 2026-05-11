@@ -150,6 +150,8 @@ def run_tool(tool_name, tool_cfg, resume=False):
     
     if resume and has_data:
         print(f"[*] Resuming: Found existing processed data. Skipping extraction and labeling.")
+    elif resume and os.path.exists(os.path.join(BASE_DIR, tool_cfg["interim"])):
+        print(f"[*] Resuming: Found existing interim data. Preserving for continuation.")
     else:
         clean_dirs(tool_cfg)
 
