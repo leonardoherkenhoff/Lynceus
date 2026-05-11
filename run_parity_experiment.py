@@ -181,15 +181,19 @@ def run_tool(tool_name, tool_cfg, resume=False):
     # 2. Extração
     extraction_ok = True
     if not (resume and has_data):
-        extraction_cmd = f"sudo python3 -u {tool_cfg['wrapper']} --output {os.path.join(BASE_DIR, tool_cfg['interim'])} --skip-labeling --max-events 2000000"
+        # FAULT TOLERANCE: Skip NFX for IPv6 (not supported by original tool)
+        if tool_name == "nfx_full":
+             extraction_cmd = f"sudo python3 -u {tool_cfg['wrapper']} --output {os.path.join(BASE_DIR, tool_cfg['interim'])} --skip-labeling --max-events 2000000 --skip-ipv6"
+        else:
+             extraction_cmd = f"sudo python3 -u {tool_cfg['wrapper']} --output {os.path.join(BASE_DIR, tool_cfg['interim'])} --skip-labeling --max-events 2000000"
+        
         extraction_ok = run(extraction_cmd, f"Extração — {tool_cfg['label']}", log_path=os.path.join(log_dir, "extraction.log"))
-
     
     # Return to original branch immediately after extraction
     if target_branch and target_branch != current_branch:
         run(f"git checkout {current_branch}", f"Returning to {current_branch}")
 
-    if not extraction_ok:
+    if not extraction_ok and not resume:
         return False
 
     # 3. Labeling

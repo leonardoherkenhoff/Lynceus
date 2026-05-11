@@ -35,7 +35,7 @@ def _sanitize_nfx_csv(raw_path, clean_path):
         for m in matches:
             f.write(f"{m[0]},{m[1]},{m[2]},{m[3]},{m[4]},{m[5]},{m[6]}\n")
 
-def run_nfx_extraction(smoke_test=False, max_events=0, skip_labeling=False):
+def run_nfx_extraction(smoke_test=False, max_events=0, skip_labeling=False, skip_ipv6=False):
     global INTERIM_DIR
     if not os.path.exists(NFX_BIN):
         print(f"❌ NFX Binary not found at {NFX_BIN}"); sys.exit(1)
@@ -49,6 +49,10 @@ def run_nfx_extraction(smoke_test=False, max_events=0, skip_labeling=False):
 
     pcaps = []
     for cat in ["PCAP", "PCAPv6"]:
+        if skip_ipv6 and cat == "PCAPv6":
+            print(f"[*] Skipping {cat} (IPv6) per request.")
+            continue
+            
         cat_dir = os.path.join(PCAP_DIR, cat)
         if os.path.exists(cat_dir):
             for root, _, files in os.walk(cat_dir):
@@ -159,6 +163,7 @@ if __name__ == "__main__":
     parser.add_argument("--max-events", type=int, default=0)
     parser.add_argument("--output", type=str, help="Override interim output directory")
     parser.add_argument("--skip-labeling", action="store_true", help="Bypass internal labeling")
+    parser.add_argument("--skip-ipv6", action="store_true", help="Skip IPv6 PCAPs")
     args = parser.parse_args()
     if args.output: INTERIM_DIR = os.path.abspath(args.output)
-    run_nfx_extraction(smoke_test=args.smoke_test, max_events=args.max_events, skip_labeling=args.skip_labeling)
+    run_nfx_extraction(smoke_test=args.smoke_test, max_events=args.max_events, skip_labeling=args.skip_labeling, skip_ipv6=args.skip_ipv6)
