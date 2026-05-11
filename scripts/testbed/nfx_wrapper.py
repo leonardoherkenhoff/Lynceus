@@ -35,7 +35,8 @@ def _sanitize_nfx_csv(raw_path, clean_path):
         for m in matches:
             f.write(f"{m[0]},{m[1]},{m[2]},{m[3]},{m[4]},{m[5]},{m[6]}\n")
 
-def run_nfx_extraction(smoke_test=False, max_events=0):
+def run_nfx_extraction(smoke_test=False, max_events=0, skip_labeling=False):
+    global INTERIM_DIR
     if not os.path.exists(NFX_BIN):
         print(f"❌ NFX Binary not found at {NFX_BIN}"); sys.exit(1)
 
@@ -114,5 +115,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--smoke-test", action="store_true")
     parser.add_argument("--max-events", type=int, default=0)
+    parser.add_argument("--output", type=str, help="Override interim output directory")
+    parser.add_argument("--skip-labeling", action="store_true", help="Bypass internal labeling")
     args = parser.parse_args()
-    run_nfx_extraction(smoke_test=args.smoke_test, max_events=args.max_events)
+    if args.output: INTERIM_DIR = os.path.abspath(args.output)
+    run_nfx_extraction(smoke_test=args.smoke_test, max_events=args.max_events, skip_labeling=args.skip_labeling)
