@@ -41,6 +41,12 @@ def run_nfx_extraction(smoke_test=False, max_events=0, skip_labeling=False):
         print(f"❌ NFX Binary not found at {NFX_BIN}"); sys.exit(1)
 
     os.makedirs(INTERIM_DIR, exist_ok=True)
+    state_file = os.path.join(INTERIM_DIR, "processed_pcaps.txt")
+    processed_pcaps = set()
+    if os.path.exists(state_file):
+        with open(state_file, "r") as f:
+            processed_pcaps = set(line.strip() for line in f if line.strip())
+
     pcaps = []
     for cat in ["PCAP", "PCAPv6"]:
         cat_dir = os.path.join(PCAP_DIR, cat)
@@ -56,17 +62,28 @@ def run_nfx_extraction(smoke_test=False, max_events=0, skip_labeling=False):
     current_category = None
     for i, pcap in enumerate(pcaps):
         category = os.path.basename(os.path.dirname(pcap))
-        if category != current_category:
-            current_category = category
-            total_flows = 0
-
-        if max_events > 0 and total_flows >= max_events:
-            print(f"   🛑 Limit reached ({max_events}) for {category}. Skipping remaining PCAPs for this vector.")
-            continue
         out_dir = os.path.join(INTERIM_DIR, category)
         os.makedirs(out_dir, exist_ok=True)
         out_file = os.path.join(out_dir, "flows.csv")
         raw_file = out_file + ".raw"
+
+        if category != current_category:
+            current_category = category
+            total_flows = 0
+            if os.path.exists(out_file):
+                with open(out_file, "r") as f:
+                    total_flows = max(0, sum(1 for _ in f) - 1)
+
+        if pcap in processed_pcaps:
+            print(f"[*] [{i+1}/{len(pcaps)}] Skipping already processed: {pcap}")
+            continue
+
+        if max_events > 0 and total_flows >= max_events:
+            print(f"   🛑 Limit reached ({max_events}) for {category}. Skipping remaining PCAPs for this vector.")
+            # Record skipped file as processed so we don't try it again
+            with open(state_file, "a") as sf:
+                sf.write(pcap + "\n")
+            continue
         
         print(f"[*] [{i+1}/{len(pcaps)}] NFX Extracting: {pcap}")
         metrics_csv = os.path.join(out_dir, "resource_metrics.csv")
@@ -78,13 +95,22 @@ def run_nfx_extraction(smoke_test=False, max_events=0, skip_labeling=False):
         subprocess.run("ip link set veth1 up", shell=True)
 
         start_time = time.time()
+        temp_pcap = None
+        target_pcap = pcap
+
         try:
+            if pcap.endswith(".pcapng"):
+                temp_pcap = pcap + ".temp.pcap"
+                print(f"   🔄 Converting pcapng to pcap...")
+                subprocess.run(["editcap", "-F", "pcap", pcap, temp_pcap], check=True)
+                target_pcap = temp_pcap
+
             with open(raw_file, "a") as f_raw:
                 proc = subprocess.Popen([NFX_BIN, "veth1"], stdout=f_raw, stderr=subprocess.STDOUT, cwd=NFX_DIR, preexec_fn=os.setsid)
                 time.sleep(2)
                 proc_mon = subprocess.Popen(["python3", monitor_script, str(proc.pid), metrics_csv]) if os.path.exists(monitor_script) else None
 
-                cmd = f"tcpreplay -i veth0 {pcap}"
+                cmd = f"tcpreplay -i veth0 {target_pcap}"
                 proc_tcpreplay = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                 
                 while True:
@@ -98,6 +124,9 @@ def run_nfx_extraction(smoke_test=False, max_events=0, skip_labeling=False):
                 os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
                 proc.wait(timeout=5)
                 if proc_mon: proc_mon.terminate()
+        except subprocess.TimeoutExpired:
+            print("   ⚠️ Timeout waiting for NFX to exit, forcing kill.")
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         except Exception as e:
             print(f"   ⚠️ Error: {e}")
         finally:
@@ -105,15 +134,22 @@ def run_nfx_extraction(smoke_test=False, max_events=0, skip_labeling=False):
             subprocess.run("ip link delete veth0 2>/dev/null || true", shell=True)
             _sanitize_nfx_csv(raw_file, out_file)
             
+            if temp_pcap and os.path.exists(temp_pcap):
+                os.remove(temp_pcap)
+
             if max_events > 0 and os.path.exists(out_file):
                 print(f"   ✂️ Enforcing strict parity limit: Truncating to {max_events} flows")
                 subprocess.run(f"head -n {max_events + 1} {out_file} > {out_file}.tmp && mv {out_file}.tmp {out_file}", shell=True)
 
-            # Rough estimate of new flows
             if os.path.exists(out_file):
                 with open(out_file) as f:
                     new_flows = sum(1 for _ in f) - 1
-                    total_flows += max(0, new_flows)
+                    total_flows = max(0, new_flows)
+            
+            with open(state_file, "a") as sf:
+                sf.write(pcap + "\n")
+            processed_pcaps.add(pcap)
+            
             print(f"   ✅ Done in {elapsed:.1f}s")
 
 if __name__ == "__main__":
