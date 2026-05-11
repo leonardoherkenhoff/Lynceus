@@ -72,6 +72,10 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False, skip_labeling=False, 
         except Exception as e:
             print(f"   ❌ Error: {e}")
 
+    if max_events > 0:
+        print(f"   ✂️ Enforcing strict parity limit: Truncating to {max_events} flows")
+        subprocess.run(f"head -n {max_events + 1} {csv_output_path} > {csv_output_path}.tmp && mv {csv_output_path}.tmp {csv_output_path}", shell=True)
+
     elapsed = time.time() - start_time
     pps     = total_packets / elapsed if elapsed > 0 else 0
     summary = {"tool": "rustiflow", "packets_sent": total_packets, "time_seconds": elapsed, "pps": pps, "timestamp": time.ctime()}

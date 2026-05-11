@@ -79,7 +79,15 @@ def run_nfx_extraction(smoke_test=False, max_events=0):
                 proc_mon = subprocess.Popen(["python3", monitor_script, str(proc.pid), metrics_csv]) if os.path.exists(monitor_script) else None
 
                 cmd = f"tcpreplay -i veth0 {pcap}"
-                subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True, timeout=1800)
+                proc_tcpreplay = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                
+                while True:
+                    if proc_tcpreplay.poll() is not None:
+                        break
+                    if proc.poll() is not None:
+                        proc_tcpreplay.terminate()
+                        break
+                    time.sleep(0.5)
                 
                 os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
                 proc.wait(timeout=5)
@@ -87,6 +95,10 @@ def run_nfx_extraction(smoke_test=False, max_events=0):
         except Exception as e:
             print(f"   ⚠️ Error: {e}")
         finally:
+            if max_events > 0:
+                print(f"   ✂️ Enforcing strict parity limit: Truncating to {max_events} flows")
+                subprocess.run(f"head -n {max_events + 1} {csv_output_path} > {csv_output_path}.tmp && mv {csv_output_path}.tmp {csv_output_path}", shell=True)
+
             elapsed = time.time() - start_time
             subprocess.run("ip link delete veth0 2>/dev/null || true", shell=True)
             _sanitize_nfx_csv(raw_file, out_file)

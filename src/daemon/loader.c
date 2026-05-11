@@ -445,7 +445,7 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
     }
     if (s->t_pay.n >= 1000 || (e->rec.tcp_flags & 0x05)) { flush_flow_record(w, s, e->timestamp_ns); s->active = 0; }
     uint64_t total = atomic_fetch_add_explicit(&g_total_events, 1, memory_order_relaxed);
-    if (g_max_events > 0 && total >= g_max_events) { exiting = true; }
+    if (g_max_events > 0 && total >= g_max_events) { exiting = true; return -1; }
     w->processed_events++; return 0;
 }
 

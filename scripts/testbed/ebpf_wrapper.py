@@ -115,11 +115,24 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False, skip_labeling=False, 
             limit_flag = "--limit 5000" if smoke_test else ""
             cmd = f"tcpreplay -i veth0 -t {limit_flag} {p} 2>&1"
             try:
-                res = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
-                matches = re.findall(r"(\d+)\s+packets", res.stdout)
-                if matches: total_packets += int(matches[0])
-            except subprocess.CalledProcessError as e:
-                print(f"   ❌ Injection Error: {e.stderr}")
+                proc_tcpreplay = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                while True:
+                    if proc_tcpreplay.poll() is not None:
+                        break
+                    if proc_loader.poll() is not None:
+                        proc_tcpreplay.terminate()
+                        break
+                    time.sleep(0.5)
+                
+                out, _ = proc_tcpreplay.communicate()
+                matches = re.findall(r"(\d+)\s+packets", out)
+                if matches: total_packets += int(matches[-1])
+                
+                if proc_loader.poll() is not None:
+                    print("   🛑 Engine exited early (limit reached). Aborting PCAP replay.")
+                    break
+            except Exception as e:
+                print(f"   ❌ Injection Error: {e}")
 
         elapsed = time.time() - start_time
         pps = total_packets / elapsed if elapsed > 0 else 0
@@ -141,6 +154,11 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False, skip_labeling=False, 
         f_csv.flush()
         os.fsync(f_csv.fileno())
         f_csv.close()
+        
+        if max_events > 0:
+            print(f"   ✂️ Enforcing strict parity limit: Truncating to {max_events} flows")
+            subprocess.run(f"head -n {max_events + 1} {csv_output_path} > {csv_output_path}.tmp && mv {csv_output_path}.tmp {csv_output_path}", shell=True)
+            
         print(f"   📂 Telemetry formalized in {os.path.basename(csv_output_path)}")
         
         if not skip_labeling:
