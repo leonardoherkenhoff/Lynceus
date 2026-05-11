@@ -181,7 +181,8 @@ struct worker_t {
 static struct worker_t *workers;
 static int num_workers = 1;
 static volatile bool exiting = false;
-static _Atomic uint64_t g_total_events = 0;
+static _Atomic uint64_t g_flushed_flows = 0;
+static _Atomic uint64_t g_active_flows = 0;
 static uint64_t g_max_events = 0; // 0 = unlimited
 
 static void sig_handler(int sig) { (void)sig; exiting = true; }
@@ -272,6 +273,10 @@ static inline void fast_ip_to_str(char *buf, int *off, uint8_t ver, const uint8_
 
 static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t now_ns) {
     if (!s->active || s->t_pay.n == 0) return;
+    
+    atomic_fetch_add_explicit(&g_flushed_flows, 1, memory_order_relaxed);
+    atomic_fetch_sub_explicit(&g_active_flows, 1, memory_order_relaxed);
+
     struct spsc_queue *q = &g_queues[w->id];
     uint32_t t = atomic_load_explicit(&q->tail, memory_order_relaxed);
     uint32_t h = atomic_load_explicit(&q->head, memory_order_acquire);
@@ -396,6 +401,15 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
     }
     struct flow_state *s = &w->flow_table[idx];
     if (!s->active) {
+        if (g_max_events > 0) {
+            uint64_t active = atomic_load_explicit(&g_active_flows, memory_order_relaxed);
+            uint64_t flushed = atomic_load_explicit(&g_flushed_flows, memory_order_relaxed);
+            if (active + flushed >= g_max_events) {
+                exiting = true;
+                return -1;
+            }
+        }
+        atomic_fetch_add_explicit(&g_active_flows, 1, memory_order_relaxed);
         memset(s, 0, sizeof(*s)); s->key = e->key; s->active = 1;
         s->active_start = e->rec.start_ts ? e->rec.start_ts : e->timestamp_ns;
         s->ip_ver = e->rec.ip_ver; s->eth_proto = e->rec.eth_proto;
@@ -444,8 +458,7 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
         for (int i=0; i<8; i++) if (e->rec.tcp_flags & (1<<i)) { s->flags[i]++; s->b_flags[i]++; }
     }
     if (s->t_pay.n >= 1000 || (e->rec.tcp_flags & 0x05)) { flush_flow_record(w, s, e->timestamp_ns); s->active = 0; }
-    uint64_t total = atomic_fetch_add_explicit(&g_total_events, 1, memory_order_relaxed);
-    if (g_max_events > 0 && total >= g_max_events) { exiting = true; return -1; }
+    if (exiting) return -1;
     w->processed_events++; return 0;
 }
 
