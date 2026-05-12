@@ -189,6 +189,9 @@ def run_tool(tool_name, tool_cfg, resume=False):
         else:
              extraction_cmd = f"sudo python3 -u {tool_cfg['wrapper']} --output {os.path.join(BASE_DIR, tool_cfg['interim'])} --skip-labeling --max-events 2000000"
         
+        if args.filter:
+             extraction_cmd += f" --filter {args.filter}"
+        
         extraction_ok = run(extraction_cmd, f"Extração — {tool_cfg['label']}", log_path=os.path.join(log_dir, "extraction.log"))
     
     # Return to original branch immediately after extraction
@@ -326,6 +329,7 @@ def main():
     parser.add_argument("--steps", nargs="+", default=EXECUTION_ORDER, choices=list(TOOLS.keys()))
     parser.add_argument("--resume", action="store_true", help="Skip extraction/labeling if processed data exists")
     parser.add_argument("--smoke-test", action="store_true", help="Quick validation of the full pipeline")
+    parser.add_argument("--filter", type=str, default=None, help="Filter PCAPs by name (regex)")
     args = parser.parse_args()
 
     if os.geteuid() != 0:

@@ -84,7 +84,7 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False, skip_labeling=False, 
         json.dump(summary, f, indent=4)
     print(f"✅ DONE: {total_packets} flows | {elapsed:.1f}s | {pps:.0f} fps")
 
-def run_rustiflow_extraction(smoke_test=False, skip_labeling=False, max_events=0):
+def run_rustiflow_extraction(smoke_test=False, skip_labeling=False, max_events=0, filter_atk=None):
     for category in EXPERIMENT_ORDER:
         base_cat = os.path.join(DATA_RAW, category)
         if not os.path.exists(base_cat): continue
@@ -92,6 +92,8 @@ def run_rustiflow_extraction(smoke_test=False, skip_labeling=False, max_events=0
         if smoke_test and pcap_dirs:
             pcap_dirs = [pcap_dirs[0]]
         for pcap_dir in pcap_dirs:
+            if filter_atk and filter_atk.lower() not in pcap_dir.lower():
+                continue
             process_pcap_dir(pcap_dir, category, smoke_test=smoke_test, 
                              skip_labeling=skip_labeling, max_events=max_events)
             if smoke_test: break
@@ -104,7 +106,8 @@ if __name__ == "__main__":
     parser.add_argument("--smoke-test", action="store_true", help="Process only the first PCAP")
     parser.add_argument("--skip-labeling", action="store_true", help="Bypass internal labeling")
     parser.add_argument("--max-events", type=int, default=0, help="Max flows to capture")
+    parser.add_argument("--filter", type=str, default=None, help="Filter PCAP directories by name (regex)")
     args = parser.parse_args()
     if args.output: DATA_INTERIM = os.path.abspath(args.output)
     run_rustiflow_extraction(smoke_test=args.smoke_test, skip_labeling=args.skip_labeling, 
-                             max_events=args.max_events)
+                             max_events=args.max_events, filter_atk=args.filter)

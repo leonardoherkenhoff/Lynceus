@@ -56,9 +56,11 @@ def run_nfx_extraction(smoke_test=False, max_events=0, skip_labeling=False, skip
         cat_dir = os.path.join(PCAP_DIR, cat)
         if os.path.exists(cat_dir):
             for root, _, files in os.walk(cat_dir):
-                for f in files:
                     if f.endswith('.pcap') or f.endswith('.pcapng'):
-                        pcaps.append(os.path.join(root, f))
+                        pcap_path = os.path.join(root, f)
+                        if args.filter and not re.search(args.filter, pcap_path, re.IGNORECASE):
+                            continue
+                        pcaps.append(pcap_path)
     pcaps = sorted(pcaps)
     if smoke_test: pcaps = pcaps[:1]
 
@@ -164,6 +166,7 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=str, help="Override interim output directory")
     parser.add_argument("--skip-labeling", action="store_true", help="Bypass internal labeling")
     parser.add_argument("--skip-ipv6", action="store_true", help="Skip IPv6 PCAPs")
+    parser.add_argument("--filter", type=str, default=None, help="Filter PCAPs by name (regex)")
     args = parser.parse_args()
     if args.output: INTERIM_DIR = os.path.abspath(args.output)
     run_nfx_extraction(smoke_test=args.smoke_test, max_events=args.max_events, skip_labeling=args.skip_labeling, skip_ipv6=args.skip_ipv6)

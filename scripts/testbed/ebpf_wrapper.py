@@ -187,6 +187,7 @@ def main():
     parser.add_argument("--smoke-test", action="store_true", help="Process only the first PCAP")
     parser.add_argument("--skip-labeling", action="store_true", help="Centralized labeling handled by orchestrator")
     parser.add_argument("--max-events", type=int, default=0, help="Max flow events to capture per category")
+    parser.add_argument("--filter", type=str, default=None, help="Filter PCAP directories by name (regex)")
     args = parser.parse_args()
 
     if args.output:
@@ -210,6 +211,8 @@ def main():
             pcap_dirs = [pcap_dirs[0]]
 
         for pcap_dir in pcap_dirs:
+            if args.filter and not re.search(args.filter, pcap_dir, re.IGNORECASE):
+                continue
             process_pcap_dir(pcap_dir, category, smoke_test=args.smoke_test, 
                              skip_labeling=args.skip_labeling, max_events=args.max_events)
             if args.smoke_test: break
