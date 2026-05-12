@@ -1,0 +1,38 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{sbc-template}[2007/04/11]
+\RequirePackage[a4paper,top=3.5cm,left=3cm,right=3cm,bottom=2.5cm]{geometry}
+\RequirePackage{times}
+\RequirePackage{indentfirst}
+\setlength{\parindent}{1.27cm}
+\renewcommand{\normalsize}{\fontsize{12}{14}\selectfont}
+
+\newcommand{\address}[1]{\gdef\@address{#1}}
+\def\@maketitle{%
+  \begin{center}%
+  \let \footnote \thanks
+    {\LARGE\bf \@title \par}%
+    \vskip 1.5em%
+    {\large
+      \lineskip .5em%
+      \begin{tabular}[t]{c}%
+        \@author
+      \end{tabular}\par}%
+    \vskip 1em%
+    {\large \@address \par}%
+  \end{center}%
+  \par
+  \vskip 1.5em}
+
+\renewcommand{\abstractname}{Abstract}
+\renewenvironment{abstract}{%
+  \begin{center}%
+    {\bfseries \abstractname\vspace{-.5em}\vspace{0pt}}%
+  \end{center}%
+  \itshape
+}{\par\vspace{\baselineskip}}
+\newenvironment{resumo}{%
+  \begin{center}%
+    {\bfseries Resumo\vspace{-.5em}\vspace{0pt}}%
+  \end{center}%
+  \itshape
+}{\par\vspace{\baselineskip}}

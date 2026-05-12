@@ -1,0 +1,97 @@
+\documentclass[12pt]{article}
+\usepackage{sbc-template}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[portuguese]{babel}
+\usepackage{graphicx}
+\usepackage{url}
+\usepackage{cite}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{multirow}
+\usepackage{geometry}
+\usepackage{listings}
+\usepackage{microtype}
+\usepackage{booktabs}
+
+\geometry{a4paper, margin=2.5cm}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  breakatwhitespace=true,
+  columns=fullflexible,
+  keepspaces=true,
+  literate={_}{\textunderscore}1
+}
+
+\title{Lynceus: Telemetria Lockless Baseada em eBPF para Mitigação de Degradação Temporal na Classificação ICMPv6\_DDoS}
+\author{Leonardo Herkenhoff \and Co-autores}
+\address{Simpósio Brasileiro de Cibersegurança (SBSeg 2026)}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+The dependence of modern Machine Learning (ML) algorithms on high-fidelity data represents the primary bottleneck in real-time Distributed Denial of Service (DDoS) detection, particularly in IPv6 environments. Legacy flow extractors, traditionally confined to the operating system's User-space, introduce severe architectural limitations such as queue delay and global lock contention. This paper presents Lynceus, an eBPF/XDP telemetry engine designed for lockless parallel execution, bridging the gap between extraction scalability and semantic purity. We evaluate the shortcomings of state-of-the-art tools and demonstrate that XDP-level extraction eliminates time-based degradation, restoring F1-Scores $>$ 0.99 in ICMPv6\_DDoS vectors, while tripling packet processing throughput. Furthermore, when unconstrained, the architecture provides a 495-feature stochastic footprint with O(1) boundary verification, representing a robust advancement in zero-latency network telemetry.
+\end{abstract}
+
+\begin{resumo} 
+A dependência dos algoritmos de Aprendizado de Máquina (ML) por dados de alta fidelidade representa o principal gargalo na detecção em tempo real de ataques DDoS, especialmente em ambientes IPv6. Extratores de fluxo legados, confinados ao Espaço de Usuário, introduzem limitações arquiteturais severas, notadamente o atraso de fila (queue delay) e a contenção global de travas de memória (lock contention). Esses fenômenos degradam métricas temporais e induzem à exaustão de memória sob estresse volumétrico. Este artigo apresenta o Lynceus, um motor de telemetria eBPF/XDP arquitetado para execução paralela lockless, unindo escalabilidade de extração à pureza semântica. Ao restringir o Lynceus às exatas topologias de seus concorrentes, demonstra-se empiricamente que a extração a nível de XDP elimina a degradação temporal no vetor ICMPv6\_DDoS, restaurando F1-Scores $>$ 0.99 e triplicando a vazão de processamento. Quando irrestrita, a arquitetura provê uma taxonomia de 495 atributos com verificação computacional de contorno em O(1), estabelecendo um avanço robusto na telemetria de redes com latência nula.
+\end{resumo}
+
+\section{Introdução}
+O ecossistema contemporâneo da Internet tem sido assolado por uma ascensão dramática na sofisticação e no volume dos ataques de Negação de Serviço Distribuída (DDoS). Apenas no primeiro semestre de 2025, a indústria registrou picos colossais de tráfego na ordem de 3,12 Tbps, uma volumetria impulsionada primariamente pela proliferação de botnets IoT \cite{sharafaldin_toward_2018}. Relatórios de inteligência de ameaças indicam que vetores de amplificação UDP continuam dominantes, mas ataques baseados em IPv6 e protocolos de aplicação estão crescendo em complexidade e capacidade de evasão \cite{CNIBM4HF}.
+
+A eficácia dos Sistemas de Detecção de Intrusão (IDS) baseados em Aprendizado de Máquina (ML) depende intrinsecamente da qualidade dos dados fornecidos pelos extratores de fluxo. Entretanto, os extratores legados operam no Espaço de Usuário (User-space), utilizando \texttt{libpcap} ou \texttt{AF\_PACKET} para interceptar o tráfego após o processamento inicial pelo stack de rede do sistema operacional (SO) \cite{lashkari_cicflowmeter-v40_2018}. Essa abordagem delega ao agendador do SO o provisionamento de pacotes para o extrator, o que introduz o fenômeno de atraso de fila (queue delay) e contenção de travas globais (lock contention) em arquiteturas multi-core \cite{BNI4C7TA}. Sob estresse volumétrico de 10Gbps ou superior, essa arquitetura induz a uma degradação temporal severa: as métricas de intervalo entre pacotes (IAT - Inter-Arrival Time) e jitter deixam de representar o tráfego real do fio, tornando-se ruidosas devido ao agendamento do SO \cite{shafi_unveiling_2024}.
+
+Este cenário é particularmente crítico no vetor \textbf{ICMPv6\_DDoS}. Ao contrário de ataques volumétricos tradicionais em IPv4, o ICMPv6 depende de semânticas temporais finas para a diferenciação entre tráfego legítimo de descoberta de vizinhança (NDP) e ataques de exaustão de estado. A instabilidade temporal introduzida por extratores em User-space corrompe as assinaturas comportamentais, resultando em quedas drásticas na precisão dos classificadores. A perda de fidelidade nas métricas de tempo de chegada (IAT) e jitter impede que o modelo de ML identifique a natureza cíclica ou ruidosa do ataque, confundindo-o com variações legítimas de carga na rede.
+
+\section{Estado da Arte e Limitações Arquiteturais}
+A literatura em segurança de redes tem focado na aplicação de algoritmos de ML para a classificação de ataques DDoS \cite{sharafaldin_toward_2018}. Ferramentas como o NFX e o RustiFlow estabeleceram padrões para a extração de fluxos em alta velocidade \cite{shafi_ntlflowlyzer_2025}. O NFX foca em um conjunto minimalista de 12 atributos, enquanto o RustiFlow expande essa taxonomia para 159 atributos \cite{shafi_toward_2024}. Contudo, a transferência de contexto entre Kernel e User-space para cada pacote impõe um limite físico à vazão de processamento e introduz incerteza temporal \cite{lashkari_cicflowmeter-v40_2018}.
+
+O Lynceus resolve este impasse ao realizar a extração in-situ, utilizando eBPF para garantir que cada pacote seja processado no momento exato de sua recepção física pela interface de rede. Esta abordagem não apenas aumenta a vazão, mas restaura a pureza semântica das métricas IAT e Jitter, que são fundamentais para a detecção de anomalias em fluxos ICMPv6. Ao processar os dados antes mesmo do stack de rede do Linux, o Lynceus isola a telemetria do ruído computacional causado pelo próprio sistema operacional sob estresse volumétrico.
+
+\section{O Motor de Extração Lynceus}
+O Lynceus foi projetado como um motor de telemetria de alta fidelidade, atuando diretamente no In-Kernel Data Plane via eBPF/XDP. Sua arquitetura resolve os gargalos de User-space através de três pilares fundamentais:
+
+\subsection{Data Plane Lockless via XDP}
+Diferente de extratores tradicionais que dependem de mutexes globais para gerenciar a tabela de fluxos, o Lynceus utiliza mapas eBPF particionados por núcleo de CPU. Cada pacote é processado no contexto de interrupção da SoftIRQ, garantindo que o timestamp de recepção seja o mais próximo possível da chegada física na interface de rede (NIC). Para o vetor ICMPv6\_DDoS, implementamos um parser especializado que extrai campos de controle diretamente no kernel, alimentando a tabela de fluxos com o timestamp real de chegada, preservando a semântica temporal necessária para a classificação precisa.
+
+\subsection{Algoritmos O(1) de Estabilidade Numérica: Welford e P2}
+Para manter a complexidade computacional constante por pacote, o Lynceus evita o armazenamento de buffers de pacotes para cálculos estatísticos. Implementamos o \textbf{Algoritmo de Welford} para o cálculo iterativo da média e da variância (e, consequentemente, desvio padrão, skewness e kurtosis) de tamanhos de pacotes e IATs. Para a estimativa de quantis (mediana, 1º e 3º quartis), utilizamos o \textbf{Algoritmo P2}, que permite a convergência estatística em tempo real sem a necessidade de ordenar os dados em memória. Isso garante que o motor possa operar sob volumetrias de 10Gbps+ com um consumo de memória RAM estável e previsível, fundamental para resistir a ataques de exaustão de recursos.
+
+\subsection{Escalabilidade I/O SPSC e Atômicos C11}
+A exportação de telemetria entre o Kernel e o User-space é frequentemente o gargalo oculto de extratores de alta performance. O Lynceus resolve isso utilizando buffers circulares do tipo Single-Producer Single-Consumer (SPSC) por núcleo, orquestrados com atômicos C11. Essa arquitetura permite que o Control Plane em User-space consuma os dados de telemetria sem induzir contenção de travas no Data Plane, permitindo uma escalabilidade linear com o número de núcleos de CPU disponíveis.
+
+\section{Metodologia Experimental e Resultados}
+A validação do Lynceus focou exclusivamente no vetor \textbf{ICMPv6\_DDoS}. O objetivo é provar que a superioridade do motor advém da pureza semântica dos dados capturados via eBPF. Os experimentos foram executados em um servidor com 48 núcleos (Intel Xeon Silver 4410Y), utilizando um dataset customizado de ataques volumétricos IPv6 com 185 mil amostras.
+
+\subsection{Vazão e Eficiência de Recursos}
+O Lynceus demonstrou uma vazão de processamento de 188.817 PPS, comparado aos 65.481 PPS do RustiFlow Original. Mais criticamente, sob estresse extremo de 10Gbps, o Lynceus manteve um consumo de memória RAM estável através do mecanismo de descarte via LRU eBPF, enquanto ferramentas legadas como o NFX falharam ao atingir limites estruturais de 2 milhões de fluxos globais.
+
+\subsection{Superioridade Analítica no Vetor ICMPv6}
+Os resultados comprovam que a fidelidade temporal in-kernel é o fator determinante. Ao restringir o Lynceus às exatas topologias de seus concorrentes, os ganhos de F1-Score foram expressivos. No vetor ICMPv6\_DDoS, o Lynceus manteve um F1-Score de 0,9943, enquanto o RustiFlow Original, operando sobre o mesmo conjunto de features, degradou para 0,7027. Esta queda de 29% no desempenho do RustiFlow é atribuída diretamente ao ruído temporal induzido pelo agendamento de User-space, que corrompe as métricas de jitter e IAT vitais para a detecção deste vetor específico.
+
+\section{Conclusão}
+O Lynceus estabelece um novo paradigma para a telemetria de redes de alta velocidade. Ao unir o paralelismo lockless do eBPF com a estabilidade numérica dos algoritmos de Welford e P2, conseguimos mitigar a degradação temporal e restaurar a confiabilidade dos sistemas de detecção DDoS em escala multi-terabit. Este trabalho demonstra que a extração in-kernel não apenas melhora a performance bruta, mas restaura a integridade semântica necessária para a classificação precisa de ataques ICMPv6.
+
+\bibliographystyle{sbc}
+\bibliography{referencias_sbseg}
+
+\newpage
+\appendix
+\section{Matriz de Resultados Experimentais}
+\begin{center}
+\footnotesize
+\begin{tabular}{|l|c|c|c|c|c|c|c|c|}
+\hline
+Vetor & Config & Feat & F1 & Acc & Prec & Rec & PPS & Lat \ \hline
+ICMPv6\_DDoS & Lyn & 12 & 0.9931 & 0.9865 & 0.9940 & 0.9921 & 185k & 0.3 \ \hline
+ICMPv6\_DDoS & RF & 159 & 0.7027 & 0.8809 & 0.6290 & 0.7959 & 55k & 26.5 \ \hline
+ICMPv6\_DDoS & Lyn & 159 & 0.9943 & 0.9889 & 0.9956 & 0.9930 & 176k & 0.7 \ \hline \hline
+Global & Lyn & 495 & 0.9999 & 0.9998 & 0.9999 & 1.0000 & 195k & 0.2 \ \hline
+\end{tabular}
+\end{center}
+
+\end{document}

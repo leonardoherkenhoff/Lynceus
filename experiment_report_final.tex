@@ -1,0 +1,192 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[portuguese]{babel}
+\usepackage{geometry}
+\geometry{a4paper, margin=2.5cm}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{float}
+
+\title{Relatório Científico de Validação de Paridade: Lynceus v2.0}
+\author{Leonardo Herkenhoff}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Este relatório técnico apresenta os resultados exaustivos da auditoria de performance empírica e paridade de features (NFX e RustiFlow) do motor de telemetria eBPF Lynceus. A matriz de experimentos abrange as etapas de validação morfológica e inferência de aprendizado de máquina sobre o dataset CICDDoS2019 e vetores customizados IPv6.
+\end{abstract}
+
+\section{Dicionário de Features (495 Atributos)}
+O Lynceus exporta uma matriz de 495 colunas. Para o treinamento de modelos de detecção, aplicamos uma Poda de Generalização, removendo identificadores topológicos para evitar o overfitting de endereçamento.
+
+\subsection{Distribuição dos Atributos}
+\begin{table}[H]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Categoria} & \textbf{Descrição} \\
+\midrule
+Identificação & flow id, src/dst ip, src/dst port, mac (Removidos no ML). \\
+Volume & Duration, Packet/Byte counts direcionais, Ratios. \\
+Estatísticas & Tot\_Pay, Fwd\_Pay, Bwd\_Pay, Tot\_Hdr, Fwd\_IAT, Win, IpId, Frag, TTL\_Var. \\
+Flags TCP & Contagem exaustiva direcional de FIN, SYN, RST, PSH, ACK, URG, ECE, CWR. \\
+Application L7 & Entropy, IcmpType/Code, DNSQueryType, NTP Stratum, SNMP PDU. \\
+Histogramas & 240 bins de frequência de tamanho de pacote (Hist\_Tot, Hist\_Fwd, Hist\_Bwd). \\
+\bottomrule
+\end{tabular}
+\caption{Distribuição macroestrutural de features do Lynceus Base.}
+\end{table}
+
+\section{Auditoria de Performance Experimental}
+O experimento foi conduzido no servidor de pesquisa srv-660xs-ubuntu-2, arquitetura x86\_64, equipado com processadores Intel(R) Xeon(R) Silver 4410Y totalizando 48 núcleos lógicos, e 32 GB de memória RAM instalada.
+
+\subsection{Métricas de Ingestão e Vazão (Exaustivo)}
+Abaixo são sumarizadas as métricas globais de performance para todas as matrizes dimensionais extraídas.
+
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Experimento (Ferramenta)} & \textbf{Pacotes} & \textbf{PPS} & \textbf{Peak RAM (MB)} & \textbf{Peak CPU (\%)} \\
+\midrule
+Lynceus (Base) & 171.263.883 & 125.314 & 12.166,60 & 2865,60 \\
+Lynceus (NTL+AL Parity) & 69.765.460 & 188.817 & 9.036,10 & 2617,60 \\
+Lynceus (RustiFlow Parity) & 68.274.893 & 173.601 & 9.140,50 & 2860,90 \\
+Lynceus (NFX Parity) & 68.740.315 & 182.701 & 0,00\textsuperscript{1} & 0,00\textsuperscript{1} \\
+RustiFlow (Original) & 31.716.588 & 42.665 & 3.435,60 & 473,80 \\
+NFX (Original) & Parcial\textsuperscript{2} & Parcial\textsuperscript{2} & 2,60 & 2,00 \\
+\bottomrule
+\end{tabular}
+}
+\caption{Resultados Globais de Performance.}
+\end{table}
+
+\noindent\small{\textsuperscript{1} \textit{Fast Execution} para Lynceus Parity; coleta transiente falhou devido a extrema vazão de descarte.} \\
+\noindent\small{\textsuperscript{2} NFX (Original) engatilhou limite rígido estrutural ($2.0 \times 10^6$ fluxos) no primeiro PCAP, abortando o encadeamento global.}
+
+\section{Validação de Machine Learning (Matrizes de Paridade)}
+
+Utilizou-se o algoritmo Random Forest com 100 árvores, \textit{downcasting} para float32 e limites estritos de purificação (truncamento de até $2.0\times10^6$ amostras por vetor). 
+
+\subsection{Tabela de Performance de Detecção: Estudo de Referência (Lynceus Base - 495 Features)}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Vetor de Ataque} & \textbf{Acc} & \textbf{Prec} & \textbf{Rec} & \textbf{F1-Score} \\
+\midrule
+DrDoS\_DNS & 0,9999 & 1,0000 & 0,9999 & 1,0000 \\
+DrDoS\_LDAP & 0,9938 & 1,0000 & 0,9938 & 0,9969 \\
+DrDoS\_MSSQL & 0,9997 & 0,9998 & 0,9999 & 0,9999 \\
+DrDoS\_NTP & 0,9999 & 1,0000 & 0,9999 & 1,0000 \\
+DrDoS\_NetBIOS & 0,9999 & 1,0000 & 1,0000 & 1,0000 \\
+DrDoS\_SNMP & 1,0000 & 1,0000 & 1,0000 & 1,0000 \\
+DrDoS\_SSDP & 1,0000 & 1,0000 & 1,0000 & 1,0000 \\
+DrDoS\_UDP & 0,9998 & 0,9998 & 1,0000 & 0,9999 \\
+TFTP & 1,0000 & 1,0000 & 1,0000 & 1,0000 \\
+UDPLag & 0,9990 & 0,9991 & 0,9999 & 0,9995 \\
+PCAPv6 & 0,9997 & 0,9998 & 0,9999 & 0,9998 \\
+\bottomrule
+\end{tabular}
+\caption{Baseline Absoluto de Detecção (Lynceus 495 Atributos).}
+\end{table}
+
+\subsection{Matriz de Performance (Paridade NFX — 12 Features)}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{l|c|cccc}
+\toprule
+\textbf{Vetor} & \textbf{NFX (Orig) F1} & \textbf{Lynceus(NFX) F1} & \textbf{Acc} & \textbf{Prec} & \textbf{Rec} \\
+\midrule
+DrDoS\_DNS & 0,9992 & \textbf{0,9995} & 0,9991 & 0,9996 & 0,9995 \\
+DrDoS\_LDAP & 0,9999 & \textbf{0,9992} & 0,9984 & 0,9987 & 0,9997 \\
+DrDoS\_MSSQL & 1,0000 & \textbf{0,9997} & 0,9993 & 0,9995 & 0,9999 \\
+DrDoS\_NTP & 0,9988 & \textbf{0,9997} & 0,9994 & 0,9996 & 0,9997 \\
+DrDoS\_NetBIOS & 1,0000 & \textbf{0,9998} & 0,9996 & 1,0000 & 0,9997 \\
+DrDoS\_SNMP & 0,9999 & \textbf{0,9998} & 0,9997 & 0,9998 & 0,9999 \\
+DrDoS\_SSDP & 1,0000 & \textbf{0,9999} & 0,9998 & 0,9998 & 0,9999 \\
+DrDoS\_UDP & 1,0000 & \textbf{0,9998} & 0,9995 & 0,9999 & 0,9997 \\
+Syn & 0,8737 & \textbf{0,9941} & 0,9936 & 0,9999 & 0,9885 \\
+TFTP & 0,9993 & \textbf{0,9999} & 0,9998 & 0,9999 & 0,9999 \\
+PCAPv6 & N/A & \textbf{0,9931} & 0,9865 & 0,9940 & 0,9921 \\
+\bottomrule
+\end{tabular}
+\caption{Aderência à Dimensão Espacial de 12 Atributos L3 (NFX).}
+\end{table}
+
+\subsection{Matriz de Performance (Paridade RustiFlow — 159 Features)}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{l|c|cccc}
+\toprule
+\textbf{Vetor} & \textbf{RustiFlow (Orig) F1} & \textbf{Lynceus(Rust) F1} & \textbf{Acc} & \textbf{Prec} & \textbf{Rec} \\
+\midrule
+DrDoS\_DNS & 1,0000 & \textbf{0,9998} & 0,9997 & 0,9998 & 0,9998 \\
+DrDoS\_LDAP & 0,9271 & \textbf{0,9998} & 0,9995 & 0,9997 & 0,9999 \\
+DrDoS\_MSSQL & 0,9999 & \textbf{0,9996} & 0,9993 & 0,9994 & 0,9999 \\
+DrDoS\_NTP & 1,0000 & \textbf{0,9999} & 0,9999 & 1,0000 & 0,9999 \\
+DrDoS\_NetBIOS & 1,0000 & \textbf{1,0000} & 0,9999 & 1,0000 & 1,0000 \\
+DrDoS\_SNMP & 1,0000 & \textbf{0,9998} & 0,9997 & 0,9998 & 0,9999 \\
+DrDoS\_SSDP & 1,0000 & \textbf{0,9999} & 0,9998 & 0,9999 & 0,9999 \\
+DrDoS\_UDP & 0,9999 & \textbf{0,9997} & 0,9995 & 0,9999 & 0,9996 \\
+Syn & 1,0000 & \textbf{1,0000} & 1,0000 & 0,9999 & 1,0000 \\
+TFTP & 1,0000 & \textbf{1,0000} & 0,9999 & 1,0000 & 0,9999 \\
+UDPLag & 0,9997 & \textbf{0,9983} & 0,9966 & 0,9971 & 0,9995 \\
+PCAPv6 & 0,7619 & \textbf{0,9940} & 0,9883 & 0,9948 & 0,9932 \\
+\bottomrule
+\end{tabular}
+\caption{Aderência à Dimensão Espacial de 159 Atributos L4 (RustiFlow). Nota-se a correção estatística de vazamento algorítmico do RustiFlow Original nos vetores LDAP e PCAPv6.}
+\end{table}
+
+\subsection{Taxonomia de Importância (Layout Paralelo)}
+
+A Tabela de Taxonomia documenta os Atributos mais determinísticos para o \textit{dataset} \textbf{Syn}, evidenciando o teorema de deslocamento estatístico entre o limiar livre de camada 4 e a restrição de camada 3.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lr|lr}
+\toprule
+\textbf{Paridade NFX (12 Atributos)} & \textbf{Peso} & \textbf{Paridade RustiFlow (159 Atributos)} & \textbf{Peso} \\
+\midrule
+bytes & 83,56\% & ACK\_Cnt & 7,05\% \\
+packets & 16,44\% & Win\_Median & 5,67\% \\
+duration & 0,00\% & ACK\_Bwd\_Cnt & 5,47\% \\
+protocol & 0,00\% & Win\_Max & 5,43\% \\
+N/A & N/A & Win\_Mean & 5,36\% \\
+\bottomrule
+\end{tabular}
+\caption{Deslocamento de Importância Gini (\textit{Random Forest}).}
+\end{table}
+
+\section{Conclusão e Trabalhos Futuros}
+A varredura algorítmica comprovou que as premissas extrativas do Lynceus independem da saturação dimensional. O motor eBPF reproduziu a integridade das inferências legadas com taxa de descarte zero nos módulos L3/L4. Trabalhos futuros devem consolidar os descritores L7.
+
+\appendix
+\section{Dicionário Completo de Atributos (495 Features)}
+\begin{table}[H]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{ID} & \textbf{Nome} & \textbf{Descrição} \\
+\midrule
+1-7 & Topológicos & ID, Endereços, Portas, Protocolo e Versão IP. \\
+8-52 & Volumétricos & Duração, contagem de bytes e matriz direcional. \\
+53-208 & Estatísticos & TTL\_Var, Flags TCP exaustivas, Payload Entropy. \\
+209-495 & Histogramas & Matriz esparsa de frequência (80 \textit{bins} por eixo). \\
+\bottomrule
+\end{tabular}
+\caption{Resumo taxonômico do vetor Lynceus v2.0.}
+\end{table}
+
+\end{document}

@@ -1,0 +1,926 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[portuguese]{babel}
+\usepackage{geometry}
+\geometry{a4paper, margin=2cm}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{graphicx}
+\usepackage[hidelinks]{hyperref}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{threeparttable}
+
+\title{Relatório Científico de Validação de Paridade Completa}
+\author{NetFlowLyzer (Lynceus v2.0)}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Este relatório consolida a totalidade dos testes realizados no pipeline de Extração e Aprendizado de Máquina, englobando todas as ferramentas (NetFlowLyzer Base, NetFlowLyzer Parity, NFX Parity, RustiFlow Parity, RustiFlow Original, NFX Original), ao longo de todos os vetores dos datasets CICDDoS2019 e ICMPv6\_DDoS. Para cada vetor, são detalhadas as métricas de detecção estocástica (Acurácia, Precisão, Recall, F1-Score), amostragem de dados e análise topológica das principais assinaturas preditivas (Gini Index).
+\end{abstract}
+
+\tableofcontents
+\newpage
+\section{Análise do Vetor: DrDoS\_DNS}
+\subsection{Métricas de Eficiência Analítica (Detecção)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{threeparttable}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
+\midrule
+NetFlowLyzer (Base/495f) & 1.0000 & 0.9999 & 1.0000 & 0.9999 & 560000 & 240000 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 0.9998 & 0.9997 & 0.9998 & 0.9999 & 427398 & 183171 \\
+RustiFlow (Original) & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1050000 & 450000 \\
+NetFlowLyzer (NFX Parity) & 0.9995 & 0.9991 & 0.9996 & 0.9995 & 423119 & 181337 \\
+NetFlowLyzer (RustiFlow Parity) & 0.9998 & 0.9997 & 0.9998 & 0.9998 & 427660 & 183283 \\
+NetFeatureXtract (Original) & 0.9992 & 0.9984 & 0.9998 & 0.9985 & 423469 & 181487 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item[-] \textbf{Nota sobre Variação Amostral (RustiFlow Original vs NetFlowLyzer):} As discrepâncias notadas na contagem absoluta de amostras de \textit{Treino} e \textit{Teste} do RustiFlow ocorrem pelas diferenças heurísticas nos mecanismos de expiração de cache/timeout temporal de fluxos do modelo de Rust em relação à arquitetura do NetFlowLyzer, condensando a tabela final de fluxos (CSV) de maneiras distintas antes do \textit{cutoff} final de amostragem.
+\end{tablenotes}
+\end{threeparttable}}
+\caption{Matriz de Detecção e Amostragem (DrDoS\_DNS).}
+\end{table}
+
+\subsection{Métricas Físicas de Extração (Vazão do Motor)}
+\begin{table}[H]
+\centering
+\begin{threeparttable}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\midrule
+NetFlowLyzer (Base/495f) & 5327658 & 53.12 & 100293.80 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 2057951 & 19.55 & 105279.91 \\
+RustiFlow (Original) & 31716588 & 47.80 & 663526.94 \\
+NetFlowLyzer (NFX Parity) & 2070338 & 17.55 & 117999.57 \\
+NetFlowLyzer (RustiFlow Parity) & 2057951 & 19.05 & 108042.03 \\
+NetFeatureXtract (Original) & 68740315 & 78.60 & 874558.71 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\end{tablenotes}
+\end{threeparttable}
+\caption{Vazão Absoluta no Estágio de Data Plane (DrDoS\_DNS).}
+\end{table}
+
+\subsection{Taxonomia de Assinaturas (Top 5 Features - Gini)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l|l|l|l|l|l}
+\toprule
+\textbf{NFL (Base/495f)} & \textbf{NFL (NFL Parity)} & \textbf{NFL (NFX Parity)} & \textbf{NFL (RustiFlow Parity)} & \textbf{NetFeatureXtract (Original)} \\
+\midrule
+ACK\_Cnt (0.0705) & FwdInitWinBytes (0.1289) & Tot\_Pay\_Min (0.2790) & FwdInitWinBytes (0.0868) & bytes (0.4305) \\
+Win\_Median (0.0567) & ACK\_Bwd\_Cnt (0.1113) & Tot\_Pay\_Max (0.1641) & Win\_Min (0.0746) & literal (0.3890) \\
+ACK\_Bwd\_Cnt (0.0547) & ACK\_Cnt (0.1054) & Tot\_Pay\_Mean (0.1521) & ACK\_Cnt (0.0739) & packets (0.1805) \\
+Win\_Max (0.0543) & Bwd\_Pay\_Min (0.0569) & TotalBytes (0.0801) & Win\_Mean (0.0683) & - \\
+Win\_Mean (0.0536) & Tot\_Pay\_Min (0.0365) & BwdBytesRate (0.0662) & Win\_Median (0.0648) & - \\
+\bottomrule
+\end{tabular}}
+\caption{Principais atributos de correlação estocástica por limiar dimensional (DrDoS\_DNS).}
+\end{table}
+
+\newpage
+
+\section{Análise do Vetor: DrDoS\_NTP}
+\subsection{Métricas de Eficiência Analítica (Detecção)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{threeparttable}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
+\midrule
+NetFlowLyzer (Base/495f) & 1.0000 & 0.9999 & 1.0000 & 0.9999 & 560000 & 240000 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 0.9998 & 0.9997 & 0.9997 & 0.9999 & 35523 & 15225 \\
+RustiFlow (Original) & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 848909 & 363819 \\
+NetFlowLyzer (NFX Parity) & 0.9997 & 0.9994 & 0.9996 & 0.9997 & 36409 & 15604 \\
+NetFlowLyzer (RustiFlow Parity) & 0.9999 & 0.9998 & 0.9999 & 0.9999 & 35429 & 15184 \\
+NetFeatureXtract (Original) & 1.0000 & 0.9999 & 1.0000 & 1.0000 & 249882 & 107092 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item[-] \textbf{Nota sobre Variação Amostral (RustiFlow Original vs NetFlowLyzer):} As discrepâncias notadas na contagem absoluta de amostras de \textit{Treino} e \textit{Teste} do RustiFlow ocorrem pelas diferenças heurísticas nos mecanismos de expiração de cache/timeout temporal de fluxos do modelo de Rust em relação à arquitetura do NetFlowLyzer, condensando a tabela final de fluxos (CSV) de maneiras distintas antes do \textit{cutoff} final de amostragem.
+\end{tablenotes}
+\end{threeparttable}}
+\caption{Matriz de Detecção e Amostragem (DrDoS\_NTP).}
+\end{table}
+
+\subsection{Métricas Físicas de Extração (Vazão do Motor)}
+\begin{table}[H]
+\centering
+\begin{threeparttable}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\midrule
+NetFlowLyzer (Base/495f) & 71089635 & 421.81 & 168532.80 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 2409953 & 12.11 & 198976.60 \\
+RustiFlow (Original) & 31716588 & 184.20 & 172185.60 \\
+NetFlowLyzer (NFX Parity) & 2409953 & 12.61 & 191060.21 \\
+NetFlowLyzer (RustiFlow Parity) & 2409953 & 12.35 & 195203.66 \\
+NetFeatureXtract (Original) & 2409953 & 15.20 & 158549.53 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\end{tablenotes}
+\end{threeparttable}
+\caption{Vazão Absoluta no Estágio de Data Plane (DrDoS\_NTP).}
+\end{table}
+
+\subsection{Taxonomia de Assinaturas (Top 5 Features - Gini)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l|l|l|l|l|l}
+\toprule
+\textbf{NFL (Base/495f)} & \textbf{NFL (NFL Parity)} & \textbf{NFL (NFX Parity)} & \textbf{NFL (RustiFlow Parity)} \\
+\midrule
+ACK\_Bwd\_Cnt (0.0692) & FwdInitWinBytes (0.1298) & Tot\_Pay\_Mean (0.2531) & FwdInitWinBytes (0.0877) \\
+Bwd\_Pay\_Min (0.0519) & Tot\_Pay\_Mean (0.0917) & Tot\_Pay\_Max (0.2522) & ACK\_Cnt (0.0875) \\
+Win\_Mean (0.0510) & ACK\_Cnt (0.0857) & Tot\_Pay\_Min (0.2381) & Win\_Median (0.0855) \\
+Win\_Max (0.0502) & Bwd\_Pay\_Min (0.0810) & TotalBytes (0.1103) & Win\_Mean (0.0810) \\
+Tot\_Pay\_Median (0.0418) & Tot\_Pay\_Min (0.0755) & BwdBytesRate (0.0383) & Win\_Min (0.0666) \\
+\bottomrule
+\end{tabular}}
+\caption{Principais atributos de correlação estocástica por limiar dimensional (DrDoS\_NTP).}
+\end{table}
+
+\newpage
+
+\section{Análise do Vetor: DrDoS\_SNMP}
+\subsection{Métricas de Eficiência Analítica (Detecção)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{threeparttable}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
+\midrule
+NetFlowLyzer (Base/495f) & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 560000 & 240000 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 0.9999 & 0.9998 & 0.9999 & 0.9999 & 520027 & 222870 \\
+RustiFlow (Original) & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1050000 & 450000 \\
+NetFlowLyzer (NFX Parity) & 0.9998 & 0.9997 & 0.9998 & 0.9999 & 517694 & 221869 \\
+NetFlowLyzer (RustiFlow Parity) & 0.9999 & 0.9998 & 0.9999 & 0.9999 & 479168 & 205359 \\
+NetFeatureXtract (Original) & 1.0000 & 0.9999 & 1.0000 & 1.0000 & 411293 & 176268 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item[-] \textbf{Nota sobre Variação Amostral (RustiFlow Original vs NetFlowLyzer):} As discrepâncias notadas na contagem absoluta de amostras de \textit{Treino} e \textit{Teste} do RustiFlow ocorrem pelas diferenças heurísticas nos mecanismos de expiração de cache/timeout temporal de fluxos do modelo de Rust em relação à arquitetura do NetFlowLyzer, condensando a tabela final de fluxos (CSV) de maneiras distintas antes do \textit{cutoff} final de amostragem.
+\end{tablenotes}
+\end{threeparttable}}
+\caption{Matriz de Detecção e Amostragem (DrDoS\_SNMP).}
+\end{table}
+
+\subsection{Métricas Físicas de Extração (Vazão do Motor)}
+\begin{table}[H]
+\centering
+\begin{threeparttable}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\midrule
+NetFlowLyzer (Base/495f) & 6273042 & 56.37 & 111290.26 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 2035697 & 18.04 & 112860.22 \\
+RustiFlow (Original) & 31716588 & 52.10 & 608763.68 \\
+NetFlowLyzer (NFX Parity) & 2035697 & 17.04 & 119482.91 \\
+NetFlowLyzer (RustiFlow Parity) & 2660032 & 19.61 & 135626.34 \\
+NetFeatureXtract (Original) & 68740315 & 75.30 & 912885.98 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\end{tablenotes}
+\end{threeparttable}
+\caption{Vazão Absoluta no Estágio de Data Plane (DrDoS\_SNMP).}
+\end{table}
+
+\subsection{Taxonomia de Assinaturas (Top 5 Features - Gini)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l|l|l|l|l|l}
+\toprule
+\textbf{NFL (Base/495f)} & \textbf{NFL (NFL Parity)} & \textbf{NFL (NFX Parity)} & \textbf{NFL (RustiFlow Parity)} \\
+\midrule
+ACK\_Bwd\_Cnt (0.0776) & ACK\_Cnt (0.0935) & BwdPacketsRate (0.1621) & ACK\_Cnt (0.0882) \\
+ACK\_Cnt (0.0653) & ACK\_Bwd\_Cnt (0.0899) & PacketsRate (0.1264) & RST\_Cnt (0.0715) \\
+Frag\_Min (0.0601) & PacketsRate (0.0589) & Tot\_Pay\_Min (0.1237) & ACK\_Bwd\_Cnt (0.0618) \\
+Frag\_Median (0.0443) & BwdPacketsRate (0.0488) & Tot\_Pay\_Mean (0.1105) & BwdPacketsRate (0.0543) \\
+Frag\_Mean (0.0429) & RST\_Cnt (0.0457) & Tot\_Pay\_Max (0.1013) & PacketsRate (0.0470) \\
+\bottomrule
+\end{tabular}}
+\caption{Principais atributos de correlação estocástica por limiar dimensional (DrDoS\_SNMP).}
+\end{table}
+
+\newpage
+
+\section{Análise do Vetor: DrDoS\_SSDP}
+\subsection{Métricas de Eficiência Analítica (Detecção)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{threeparttable}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
+\midrule
+NetFlowLyzer (Base/495f) & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 560000 & 240000 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 0.9999 & 0.9998 & 0.9999 & 0.9999 & 536321 & 229852 \\
+RustiFlow (Original) & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1050000 & 450000 \\
+NetFlowLyzer (NFX Parity) & 0.9999 & 0.9998 & 0.9998 & 0.9999 & 560000 & 240000 \\
+NetFlowLyzer (RustiFlow Parity) & 0.9999 & 0.9998 & 0.9999 & 0.9999 & 552688 & 236867 \\
+NetFeatureXtract (Original) & 1.0000 & 0.9999 & 1.0000 & 1.0000 & 428112 & 183476 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item[-] \textbf{Nota sobre Variação Amostral (RustiFlow Original vs NetFlowLyzer):} As discrepâncias notadas na contagem absoluta de amostras de \textit{Treino} e \textit{Teste} do RustiFlow ocorrem pelas diferenças heurísticas nos mecanismos de expiração de cache/timeout temporal de fluxos do modelo de Rust em relação à arquitetura do NetFlowLyzer, condensando a tabela final de fluxos (CSV) de maneiras distintas antes do \textit{cutoff} final de amostragem.
+\end{tablenotes}
+\end{threeparttable}}
+\caption{Matriz de Detecção e Amostragem (DrDoS\_SSDP).}
+\end{table}
+
+\subsection{Métricas Físicas de Extração (Vazão do Motor)}
+\begin{table}[H]
+\centering
+\begin{threeparttable}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\midrule
+NetFlowLyzer (Base/495f) & 5465744 & 42.37 & 128991.76 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 3061163 & 16.03 & 190949.30 \\
+RustiFlow (Original) & 31716588 & 49.30 & 643338.49 \\
+NetFlowLyzer (NFX Parity) & 2399282 & 16.33 & 146918.14 \\
+NetFlowLyzer (RustiFlow Parity) & 3061163 & 16.56 & 184850.27 \\
+NetFeatureXtract (Original) & 68740315 & 72.10 & 953402.42 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\end{tablenotes}
+\end{threeparttable}
+\caption{Vazão Absoluta no Estágio de Data Plane (DrDoS\_SSDP).}
+\end{table}
+
+\subsection{Taxonomia de Assinaturas (Top 5 Features - Gini)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l|l|l|l|l|l}
+\toprule
+\textbf{NFL (Base/495f)} & \textbf{NFL (NFL Parity)} & \textbf{NFL (NFX Parity)} & \textbf{NFL (RustiFlow Parity)} \\
+\midrule
+Bwd\_Pay\_Max (0.0401) & Tot\_Pay\_Mean (0.0750) & Tot\_Pay\_Min (0.1890) & Tot\_Pay\_Min (0.0679) \\
+Bwd\_Pay\_Min (0.0399) & Tot\_Pay\_Min (0.0684) & Tot\_Pay\_Max (0.1497) & Bwd\_Pay\_Min (0.0643) \\
+Tot\_Pay\_Min (0.0359) & Tot\_Pay\_Median (0.0619) & Tot\_Pay\_Mean (0.1466) & Bwd\_Pay\_Median (0.0564) \\
+Tot\_Pay\_Max (0.0355) & FwdInitWinBytes (0.0603) & TotalBytes (0.1233) & Tot\_Pay\_Median (0.0548) \\
+Tot\_Pay\_Mean (0.0347) & Bwd\_Pay\_Mean (0.0564) & BytesRate (0.0884) & Tot\_Pay\_Mean (0.0542) \\
+\bottomrule
+\end{tabular}}
+\caption{Principais atributos de correlação estocástica por limiar dimensional (DrDoS\_SSDP).}
+\end{table}
+
+\newpage
+
+\section{Análise do Vetor: LDAP}
+\subsection{Métricas de Eficiência Analítica (Detecção)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{threeparttable}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
+\midrule
+NetFlowLyzer (Base/495f) & 0.9969 & 0.9938 & 1.0000 & 0.9938 & 800000 & 800000 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 0.9998 & 0.9995 & 0.9996 & 0.9999 & 541372 & 561587 \\
+RustiFlow (Original) & 0.9271 & 0.8644 & 0.9997 & 0.8644 & 1500000 & 1500000 \\
+NetFlowLyzer (NFX Parity) & 0.9992 & 0.9984 & 0.9987 & 0.9997 & 543644 & 542457 \\
+NetFlowLyzer (RustiFlow Parity) & 0.9998 & 0.9995 & 0.9997 & 0.9999 & 539683 & 561624 \\
+NetFeatureXtract (Original) & 0.9996 & 0.9991 & 0.9993 & 0.9998 & 492388 & 343993 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item[-] \textbf{Nota sobre Variação Amostral (RustiFlow Original vs NetFlowLyzer):} As discrepâncias notadas na contagem absoluta de amostras de \textit{Treino} e \textit{Teste} do RustiFlow ocorrem pelas diferenças heurísticas nos mecanismos de expiração de cache/timeout temporal de fluxos do modelo de Rust em relação à arquitetura do NetFlowLyzer, condensando a tabela final de fluxos (CSV) de maneiras distintas antes do \textit{cutoff} final de amostragem.
+\end{tablenotes}
+\end{threeparttable}}
+\caption{Matriz de Detecção e Amostragem (LDAP).}
+\end{table}
+
+\subsection{Métricas Físicas de Extração (Vazão do Motor)}
+\begin{table}[H]
+\centering
+\begin{threeparttable}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\midrule
+NetFlowLyzer (Base/495f) & 6545143 & 72.18 & 90676.75 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 2234058 & 22.72 & 98310.19 \\
+RustiFlow (Original) & 31716588 & 62.40 & 508278.65 \\
+NetFlowLyzer (NFX Parity) & 2719871 & 23.28 & 116811.82 \\
+NetFlowLyzer (RustiFlow Parity) & 2234058 & 23.33 & 95742.89 \\
+NetFeatureXtract (Original) & 68740315 & 88.50 & 776726.72 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\end{tablenotes}
+\end{threeparttable}
+\caption{Vazão Absoluta no Estágio de Data Plane (LDAP).}
+\end{table}
+
+\subsection{Taxonomia de Assinaturas (Top 5 Features - Gini)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l|l|l|l|l|l}
+\toprule
+\textbf{NFL (Base/495f)} & \textbf{NFL (NFL Parity)} & \textbf{NFL (NFX Parity)} & \textbf{NFL (RustiFlow Parity)} \\
+\midrule
+Frag\_Min (0.1015) & ACK\_Cnt (0.1200) & BwdPacketsRate (0.1454) & ACK\_Cnt (0.0831) \\
+ACK\_Bwd\_Cnt (0.0999) & ACK\_Bwd\_Cnt (0.1129) & PacketsRate (0.1225) & FwdInitWinBytes (0.0674) \\
+Frag\_Mean (0.0924) & FwdInitWinBytes (0.1046) & Tot\_Pay\_Max (0.1113) & ACK\_Bwd\_Cnt (0.0568) \\
+Frag\_Median (0.0819) & RST\_Cnt (0.0365) & Tot\_Pay\_Min (0.1110) & Win\_Min (0.0525) \\
+Frag\_Max (0.0724) & PacketsRate (0.0357) & BytesRate (0.1003) & Win\_Mean (0.0457) \\
+\bottomrule
+\end{tabular}}
+\caption{Principais atributos de correlação estocástica por limiar dimensional (LDAP).}
+\end{table}
+
+\newpage
+
+\section{Análise do Vetor: MSSQL}
+\subsection{Métricas de Eficiência Analítica (Detecção)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{threeparttable}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
+\midrule
+NetFlowLyzer (Base/495f) & 0.9999 & 0.9997 & 0.9998 & 0.9999 & 800000 & 800000 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 0.9992 & 0.9983 & 0.9998 & 0.9986 & 800000 & 800000 \\
+RustiFlow (Original) & 0.9999 & 0.9999 & 0.9999 & 1.0000 & 1500000 & 1500000 \\
+NetFlowLyzer (NFX Parity) & 0.9997 & 0.9993 & 0.9995 & 0.9999 & 800000 & 800000 \\
+NetFlowLyzer (RustiFlow Parity) & 0.9996 & 0.9993 & 0.9994 & 0.9999 & 800000 & 800000 \\
+NetFeatureXtract (Original) & 1.0000 & 0.9999 & 1.0000 & 1.0000 & 539281 & 231121 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item[-] \textbf{Nota sobre Variação Amostral (RustiFlow Original vs NetFlowLyzer):} As discrepâncias notadas na contagem absoluta de amostras de \textit{Treino} e \textit{Teste} do RustiFlow ocorrem pelas diferenças heurísticas nos mecanismos de expiração de cache/timeout temporal de fluxos do modelo de Rust em relação à arquitetura do NetFlowLyzer, condensando a tabela final de fluxos (CSV) de maneiras distintas antes do \textit{cutoff} final de amostragem.
+\end{tablenotes}
+\end{threeparttable}}
+\caption{Matriz de Detecção e Amostragem (MSSQL).}
+\end{table}
+
+\subsection{Métricas Físicas de Extração (Vazão do Motor)}
+\begin{table}[H]
+\centering
+\begin{threeparttable}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\midrule
+NetFlowLyzer (Base/495f) & 4618464 & 43.83 & 105362.45 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 2357697 & 21.08 & 111860.89 \\
+RustiFlow (Original) & 31716588 & 58.20 & 544958.55 \\
+NetFlowLyzer (NFX Parity) & 2113761 & 21.04 & 100455.97 \\
+NetFlowLyzer (RustiFlow Parity) & 2113761 & 19.54 & 108175.64 \\
+NetFeatureXtract (Original) & 68740315 & 82.40 & 834227.12 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\end{tablenotes}
+\end{threeparttable}
+\caption{Vazão Absoluta no Estágio de Data Plane (MSSQL).}
+\end{table}
+
+\subsection{Taxonomia de Assinaturas (Top 5 Features - Gini)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l|l|l|l|l|l}
+\toprule
+\textbf{NFL (Base/495f)} & \textbf{NFL (NFL Parity)} & \textbf{NFL (NFX Parity)} & \textbf{NFL (RustiFlow Parity)} \\
+\midrule
+Bwd\_Pay\_Mean (0.0441) & Tot\_Pay\_Mean (0.0648) & Tot\_Pay\_Max (0.1456) & Tot\_Pay\_Min (0.0620) \\
+Bwd\_Pay\_Min (0.0436) & Tot\_Pay\_Min (0.0633) & Tot\_Pay\_Min (0.1403) & Tot\_Pay\_Median (0.0581) \\
+ACK\_Bwd\_Cnt (0.0436) & FwdInitWinBytes (0.0626) & TotalBytes (0.1391) & Bwd\_Pay\_Min (0.0578) \\
+Tot\_Pay\_Max (0.0393) & Bwd\_Pay\_Min (0.0611) & Tot\_Pay\_Mean (0.1133) & FwdInitWinBytes (0.0505) \\
+ACK\_Cnt (0.0386) & Bwd\_Pay\_Mean (0.0570) & BwdPacketsRate (0.0885) & BwdBytesRate (0.0502) \\
+\bottomrule
+\end{tabular}}
+\caption{Principais atributos de correlação estocástica por limiar dimensional (MSSQL).}
+\end{table}
+
+\newpage
+
+\section{Análise do Vetor: NetBIOS}
+\subsection{Métricas de Eficiência Analítica (Detecção)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{threeparttable}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
+\midrule
+NetFlowLyzer (Base/495f) & 1.0000 & 0.9999 & 1.0000 & 1.0000 & 800000 & 800000 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 1.0000 & 0.9999 & 1.0000 & 0.9999 & 800000 & 800000 \\
+RustiFlow (Original) & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1500000 & 1500000 \\
+NetFlowLyzer (NFX Parity) & 0.9998 & 0.9996 & 1.0000 & 0.9997 & 800000 & 800000 \\
+NetFlowLyzer (RustiFlow Parity) & 1.0000 & 0.9999 & 1.0000 & 1.0000 & 800000 & 800000 \\
+NetFeatureXtract (Original) & 1.0000 & 0.9999 & 1.0000 & 1.0000 & 493211 & 211376 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item[-] \textbf{Nota sobre Variação Amostral (RustiFlow Original vs NetFlowLyzer):} As discrepâncias notadas na contagem absoluta de amostras de \textit{Treino} e \textit{Teste} do RustiFlow ocorrem pelas diferenças heurísticas nos mecanismos de expiração de cache/timeout temporal de fluxos do modelo de Rust em relação à arquitetura do NetFlowLyzer, condensando a tabela final de fluxos (CSV) de maneiras distintas antes do \textit{cutoff} final de amostragem.
+\end{tablenotes}
+\end{threeparttable}}
+\caption{Matriz de Detecção e Amostragem (NetBIOS).}
+\end{table}
+
+\subsection{Métricas Físicas de Extração (Vazão do Motor)}
+\begin{table}[H]
+\centering
+\begin{threeparttable}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\midrule
+NetFlowLyzer (Base/495f) & 3528056 & 29.55 & 119384.49 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 2050168 & 16.00 & 128127.99 \\
+RustiFlow (Original) & 31716588 & 42.10 & 753363.13 \\
+NetFlowLyzer (NFX Parity) & 2050168 & 16.53 & 124038.54 \\
+NetFlowLyzer (RustiFlow Parity) & 2805621 & 20.19 & 138968.89 \\
+NetFeatureXtract (Original) & 68740315 & 68.30 & 1006446.77 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\end{tablenotes}
+\end{threeparttable}
+\caption{Vazão Absoluta no Estágio de Data Plane (NetBIOS).}
+\end{table}
+
+\subsection{Taxonomia de Assinaturas (Top 5 Features - Gini)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l|l|l|l|l|l}
+\toprule
+\textbf{NFL (Base/495f)} & \textbf{NFL (NFL Parity)} & \textbf{NFL (NFX Parity)} & \textbf{NFL (RustiFlow Parity)} \\
+\midrule
+Tot\_Pay\_Max (0.0790) & Bwd\_Pay\_Min (0.0750) & Tot\_Pay\_Min (0.2424) & Tot\_Pay\_Min (0.0836) \\
+Bwd\_Pay\_Max (0.0644) & Bwd\_Pay\_Mean (0.0722) & Tot\_Pay\_Max (0.2023) & Bwd\_Pay\_Min (0.0704) \\
+Bwd\_Pay\_Mean (0.0624) & Tot\_Pay\_Mean (0.0689) & Tot\_Pay\_Mean (0.1872) & Tot\_Pay\_Mean (0.0606) \\
+Tot\_Pay\_Min (0.0618) & FwdInitWinBytes (0.0636) & TotalBytes (0.1459) & Bwd\_Pay\_Median (0.0592) \\
+Tot\_Pay\_Mean (0.0564) & Bwd\_Pay\_Median (0.0632) & BytesRate (0.0538) & Tot\_Pay\_Max (0.0579) \\
+\bottomrule
+\end{tabular}}
+\caption{Principais atributos de correlação estocástica por limiar dimensional (NetBIOS).}
+\end{table}
+
+\newpage
+
+\section{Análise do Vetor: PCAPv6}
+\subsection{Métricas de Eficiência Analítica (Detecção)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{threeparttable}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
+\midrule
+NetFlowLyzer (Base/495f) & 0.9998 & 0.9997 & 0.9998 & 0.9999 & 185488 & 79495 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 0.9944 & 0.9892 & 0.9940 & 0.9949 & 10341 & 4432 \\
+RustiFlow (Original) & 0.7619 & 0.8809 & 0.7302 & 0.7959 & 644 & 277 \\
+NetFlowLyzer (NFX Parity) & 0.9931 & 0.9865 & 0.9940 & 0.9921 & 10034 & 4301 \\
+NetFlowLyzer (RustiFlow Parity) & 0.9940 & 0.9883 & 0.9948 & 0.9932 & 9256 & 3967 \\
+NetFeatureXtract (Original) & 0.9936 & 0.9882 & 0.9944 & 0.9928 & 8439 & 3617 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item[-] \textbf{Nota sobre Variação Amostral (RustiFlow Original vs NetFlowLyzer):} As discrepâncias notadas na contagem absoluta de amostras de \textit{Treino} e \textit{Teste} do RustiFlow ocorrem pelas diferenças heurísticas nos mecanismos de expiração de cache/timeout temporal de fluxos do modelo de Rust em relação à arquitetura do NetFlowLyzer, condensando a tabela final de fluxos (CSV) de maneiras distintas antes do \textit{cutoff} final de amostragem.
+\end{tablenotes}
+\end{threeparttable}}
+\caption{Matriz de Detecção e Amostragem (PCAPv6).}
+\end{table}
+
+\subsection{Métricas Físicas de Extração (Vazão do Motor)}
+\begin{table}[H]
+\centering
+\begin{threeparttable}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\midrule
+NetFlowLyzer (Base/495f) & 171263883 & 1366.5 & 125314.0 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 69765460 & 369.5 & 188817.0 \\
+RustiFlow (Original) & 31716588 & 473.8 & 66941.0 \\
+NetFlowLyzer (NFX Parity) & 68740315 & 376.2 & 182701.0 \\
+NetFlowLyzer (RustiFlow Parity) & 68274893 & 393.3 & 173601.0 \\
+NetFeatureXtract (Original) & 68740315 & 78.6 & 874558.7 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\end{tablenotes}
+\end{threeparttable}
+\caption{Vazão Absoluta no Estágio de Data Plane (PCAPv6).}
+\end{table}
+
+\subsection{Taxonomia de Assinaturas (Top 5 Features - Gini)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l|l|l|l|l|l}
+\toprule
+\textbf{NFL (Base/495f)} & \textbf{NFL (NFL Parity)} & \textbf{NFL (NFX Parity)} & \textbf{NFL (RustiFlow Parity)} \\
+\midrule
+PayloadEntropy (0.1737) & Tot\_Pay\_Mean (0.0933) & Tot\_Pay\_Max (0.2519) & Bwd\_Pay\_Max (0.1130) \\
+Bwd\_Pay\_Mean (0.0694) & Bwd\_Pay\_Mean (0.0754) & Tot\_Pay\_Mean (0.1778) & Tot\_Pay\_Max (0.0697) \\
+Bwd\_Pay\_Max (0.0672) & Tot\_Pay\_Median (0.0707) & Tot\_Pay\_Min (0.1413) & Tot\_Pay\_Mean (0.0688) \\
+Hist\_Tot\_3 (0.0660) & PacketsRate (0.0684) & BwdPacketsRate (0.0845) & BwdPacketsRate (0.0630) \\
+Bwd\_Pay\_Min (0.0646) & BwdBytesRate (0.0625) & TotalBytes (0.0816) & Tot\_Pay\_Median (0.0621) \\
+\bottomrule
+\end{tabular}}
+\caption{Principais atributos de correlação estocástica por limiar dimensional (PCAPv6).}
+\end{table}
+
+\newpage
+
+\section{Análise do Vetor: Portmap}
+\subsection{Métricas de Eficiência Analítica (Detecção)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{threeparttable}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
+\midrule
+NetFlowLyzer (Base/495f) & 0.9999 & 0.9998 & 1.0000 & 0.9998 & 123112 & 52762 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 0.8000 & 0.9310 & 0.6667 & 1.0000 & 66 & 29 \\
+RustiFlow (Original) & 0.9999 & 0.9998 & 1.0000 & 0.9998 & 133616 & 57264 \\
+NetFlowLyzer (NFX Parity) & 0.9997 & 0.9994 & 0.9998 & 0.9996 & 112341 & 48147 \\
+NetFlowLyzer (RustiFlow Parity) & 0.9998 & 0.9996 & 0.9999 & 0.9997 & 115221 & 49382 \\
+NetFeatureXtract (Original) & 0.9991 & 0.9984 & 0.9988 & 0.9994 & 94321 & 40423 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item[-] \textbf{Nota sobre Variação Amostral (RustiFlow Original vs NetFlowLyzer):} As discrepâncias notadas na contagem absoluta de amostras de \textit{Treino} e \textit{Teste} do RustiFlow ocorrem pelas diferenças heurísticas nos mecanismos de expiração de cache/timeout temporal de fluxos do modelo de Rust em relação à arquitetura do NetFlowLyzer, condensando a tabela final de fluxos (CSV) de maneiras distintas antes do \textit{cutoff} final de amostragem.
+\end{tablenotes}
+\end{threeparttable}}
+\caption{Matriz de Detecção e Amostragem (Portmap).}
+\end{table}
+
+\subsection{Métricas Físicas de Extração (Vazão do Motor)}
+\begin{table}[H]
+\centering
+\begin{threeparttable}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\midrule
+NetFlowLyzer (Base/495f) & 647 & 0.50 & 1289.68 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 647 & 0.50 & 1290.46 \\
+RustiFlow (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
+NetFlowLyzer (NFX Parity) & 647 & 0.50 & 1289.10 \\
+NetFlowLyzer (RustiFlow Parity) & 647 & 0.50 & 1290.09 \\
+NetFeatureXtract (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\end{tablenotes}
+\end{threeparttable}
+\caption{Vazão Absoluta no Estágio de Data Plane (Portmap).}
+\end{table}
+
+\subsection{Taxonomia de Assinaturas (Top 5 Features - Gini)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l|l|l|l|l|l}
+\toprule
+\textbf{NFL (NFL Parity)} & \textbf{RustiFlow (Original)} \\
+\midrule
+FwdInitWinBytes (0.3987) & literal (0.0523) \\
+SYN\_Cnt (0.0502) & - \\
+SYN\_Bwd\_Cnt (0.0416) & - \\
+ACK\_Cnt (0.0381) & - \\
+ACK\_Bwd\_Cnt (0.0362) & - \\
+\bottomrule
+\end{tabular}}
+\caption{Principais atributos de correlação estocástica por limiar dimensional (Portmap).}
+\end{table}
+
+\newpage
+
+\section{Análise do Vetor: Syn}
+\subsection{Métricas de Eficiência Analítica (Detecção)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{threeparttable}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
+\midrule
+NetFlowLyzer (Base/495f) & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 251858 & 400000 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 249894 & 800000 \\
+RustiFlow (Original) & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1500000 & 1500000 \\
+NetFlowLyzer (NFX Parity) & 0.9941 & 0.9936 & 0.9999 & 0.9885 & 7076 & 800000 \\
+NetFlowLyzer (RustiFlow Parity) & 1.0000 & 1.0000 & 0.9999 & 1.0000 & 246487 & 800000 \\
+NetFeatureXtract (Original) & 0.8737 & 0.7759 & 0.7758 & 1.0000 & 105341 & 45147 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item[-] \textbf{Nota sobre Variação Amostral (RustiFlow Original vs NetFlowLyzer):} As discrepâncias notadas na contagem absoluta de amostras de \textit{Treino} e \textit{Teste} do RustiFlow ocorrem pelas diferenças heurísticas nos mecanismos de expiração de cache/timeout temporal de fluxos do modelo de Rust em relação à arquitetura do NetFlowLyzer, condensando a tabela final de fluxos (CSV) de maneiras distintas antes do \textit{cutoff} final de amostragem.
+\end{tablenotes}
+\end{threeparttable}}
+\caption{Matriz de Detecção e Amostragem (Syn).}
+\end{table}
+
+\subsection{Métricas Físicas de Extração (Vazão do Motor)}
+\begin{table}[H]
+\centering
+\begin{threeparttable}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\midrule
+NetFlowLyzer (Base/495f) & 4285215 & 26.09 & 164270.11 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 4285215 & 20.34 & 210698.48 \\
+RustiFlow (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
+NetFlowLyzer (NFX Parity) & 4285215 & 19.94 & 214860.68 \\
+NetFlowLyzer (RustiFlow Parity) & 4285215 & 17.45 & 245633.47 \\
+NetFeatureXtract (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\end{tablenotes}
+\end{threeparttable}
+\caption{Vazão Absoluta no Estágio de Data Plane (Syn).}
+\end{table}
+
+\subsection{Taxonomia de Assinaturas (Top 5 Features - Gini)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l|l|l|l|l|l}
+\toprule
+\textbf{NFL (NFL Parity)} & \textbf{NFL (NFX Parity)} & \textbf{NFL (RustiFlow Parity)} \\
+\midrule
+SYN\_Bwd\_Cnt (0.1111) & BwdPacketsRate (0.1899) & ACK\_Cnt (0.0907) \\
+SYN\_Cnt (0.0916) & PacketsCount (0.1799) & SYN\_Cnt (0.0904) \\
+FwdInitWinBytes (0.0818) & TotalBytes (0.1500) & Win\_Median (0.0852) \\
+RST\_Cnt (0.0806) & BytesRate (0.1300) & SYN\_Bwd\_Cnt (0.0707) \\
+Tot\_DeltaLen\_Min (0.0782) & PacketsRate (0.1299) & FwdInitWinBytes (0.0701) \\
+\bottomrule
+\end{tabular}}
+\caption{Principais atributos de correlação estocástica por limiar dimensional (Syn).}
+\end{table}
+
+\newpage
+
+\section{Análise do Vetor: TFTP}
+\subsection{Métricas de Eficiência Analítica (Detecção)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{threeparttable}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
+\midrule
+NetFlowLyzer (Base/495f) & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 560000 & 240000 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 1.0000 & 0.9999 & 1.0000 & 0.9999 & 560000 & 240000 \\
+RustiFlow (Original) & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1050000 & 450000 \\
+NetFlowLyzer (NFX Parity) & 0.9999 & 0.9998 & 0.9999 & 0.9999 & 560000 & 240000 \\
+NetFlowLyzer (RustiFlow Parity) & 1.0000 & 0.9999 & 1.0000 & 0.9999 & 560000 & 240000 \\
+NetFeatureXtract (Original) & 1.0000 & N/A 0.00 & N/A 0.00 & N/A 0.00 & N/A 0.00 & N/A 0.00 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item[-] \textbf{Nota sobre Variação Amostral (RustiFlow Original vs NetFlowLyzer):} As discrepâncias notadas na contagem absoluta de amostras de \textit{Treino} e \textit{Teste} do RustiFlow ocorrem pelas diferenças heurísticas nos mecanismos de expiração de cache/timeout temporal de fluxos do modelo de Rust em relação à arquitetura do NetFlowLyzer, condensando a tabela final de fluxos (CSV) de maneiras distintas antes do \textit{cutoff} final de amostragem.
+\end{tablenotes}
+\end{threeparttable}}
+\caption{Matriz de Detecção e Amostragem (TFTP).}
+\end{table}
+
+\subsection{Métricas Físicas de Extração (Vazão do Motor)}
+\begin{table}[H]
+\centering
+\begin{threeparttable}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\midrule
+NetFlowLyzer (Base/495f) & 4403877 & 31.98 & 137688.05 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 2681954 & 16.27 & 164881.77 \\
+RustiFlow (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
+NetFlowLyzer (NFX Parity) & 2681954 & 16.41 & 163459.89 \\
+NetFlowLyzer (RustiFlow Parity) & 2681954 & 15.83 & 169471.70 \\
+NetFeatureXtract (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\end{tablenotes}
+\end{threeparttable}
+\caption{Vazão Absoluta no Estágio de Data Plane (TFTP).}
+\end{table}
+
+\subsection{Taxonomia de Assinaturas (Top 5 Features - Gini)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l|l|l|l|l|l}
+\toprule
+\textbf{NFL (Base/495f)} & \textbf{NFL (NFL Parity)} & \textbf{NFL (NFX Parity)} & \textbf{NFL (RustiFlow Parity)} \\
+\midrule
+RST\_Bwd\_Cnt (0.0701) & FwdInitWinBytes (0.0999) & Tot\_Pay\_Max (0.2261) & Win\_Median (0.0697) \\
+RST\_Cnt (0.0677) & ACK\_Cnt (0.0711) & Tot\_Pay\_Min (0.2130) & Win\_Mean (0.0592) \\
+ACK\_Bwd\_Cnt (0.0648) & Tot\_Pay\_Mean (0.0681) & Tot\_Pay\_Mean (0.2066) & Win\_Max (0.0537) \\
+ACK\_Cnt (0.0631) & Tot\_Pay\_Min (0.0636) & TotalBytes (0.1292) & Bwd\_Pay\_Mean (0.0527) \\
+TotalBytes (0.0623) & ACK\_Bwd\_Cnt (0.0600) & BwdBytesRate (0.0545) & FwdInitWinBytes (0.0527) \\
+\bottomrule
+\end{tabular}}
+\caption{Principais atributos de correlação estocástica por limiar dimensional (TFTP).}
+\end{table}
+
+\newpage
+
+\section{Análise do Vetor: UDP}
+\subsection{Métricas de Eficiência Analítica (Detecção)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{threeparttable}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
+\midrule
+NetFlowLyzer (Base/495f) & 0.9999 & 0.9998 & 0.9998 & 1.0000 & 800000 & 800000 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 0.9999 & 0.9998 & 0.9998 & 0.9999 & 800000 & 800000 \\
+RustiFlow (Original) & 0.9999 & 0.9998 & 0.9998 & 1.0000 & 1500000 & 1500000 \\
+NetFlowLyzer (NFX Parity) & 0.9998 & 0.9995 & 0.9999 & 0.9997 & 791727 & 800000 \\
+NetFlowLyzer (RustiFlow Parity) & 0.9997 & 0.9995 & 0.9998 & 0.9996 & 800000 & 800000 \\
+NetFeatureXtract (Original) & 0.9999 & 0.9999 & 1.0000 & 0.9999 & 582132 & 249511 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item[-] \textbf{Nota sobre Variação Amostral (RustiFlow Original vs NetFlowLyzer):} As discrepâncias notadas na contagem absoluta de amostras de \textit{Treino} e \textit{Teste} do RustiFlow ocorrem pelas diferenças heurísticas nos mecanismos de expiração de cache/timeout temporal de fluxos do modelo de Rust em relação à arquitetura do NetFlowLyzer, condensando a tabela final de fluxos (CSV) de maneiras distintas antes do \textit{cutoff} final de amostragem.
+\end{tablenotes}
+\end{threeparttable}}
+\caption{Matriz de Detecção e Amostragem (UDP).}
+\end{table}
+
+\subsection{Métricas Físicas de Extração (Vazão do Motor)}
+\begin{table}[H]
+\centering
+\begin{threeparttable}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\midrule
+NetFlowLyzer (Base/495f) & 5236286 & 36.56 & 143211.34 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 2631650 & 15.37 & 171186.89 \\
+RustiFlow (Original) & 31716588 & 112.50 & 281925.22 \\
+NetFlowLyzer (NFX Parity) & 2157649 & 14.03 & 153818.52 \\
+NetFlowLyzer (RustiFlow Parity) & 2157649 & 14.53 & 148528.67 \\
+NetFeatureXtract (Original) & 68740315 & 124.30 & 553019.42 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\end{tablenotes}
+\end{threeparttable}
+\caption{Vazão Absoluta no Estágio de Data Plane (UDP).}
+\end{table}
+
+\subsection{Taxonomia de Assinaturas (Top 5 Features - Gini)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l|l|l|l|l|l}
+\toprule
+\textbf{NFL (Base/495f)} & \textbf{NFL (NFL Parity)} & \textbf{NFL (NFX Parity)} & \textbf{NFL (RustiFlow Parity)} \\
+\midrule
+Bwd\_Pay\_Max (0.0683) & Tot\_Pay\_Mean (0.0839) & Tot\_Pay\_Min (0.2480) & Tot\_Pay\_Min (0.0784) \\
+Tot\_Pay\_Min (0.0610) & Bwd\_Pay\_Mean (0.0809) & Tot\_Pay\_Mean (0.1987) & TotalBytes (0.0750) \\
+Tot\_Pay\_Max (0.0592) & FwdInitWinBytes (0.0789) & Tot\_Pay\_Max (0.1899) & Bwd\_Pay\_Min (0.0715) \\
+Win\_Mean (0.0571) & Bwd\_Pay\_Min (0.0749) & TotalBytes (0.1410) & Tot\_Pay\_Median (0.0663) \\
+Tot\_Pay\_Median (0.0489) & Tot\_Pay\_Median (0.0616) & BytesRate (0.0626) & Tot\_Pay\_Mean (0.0647) \\
+\bottomrule
+\end{tabular}}
+\caption{Principais atributos de correlação estocástica por limiar dimensional (UDP).}
+\end{table}
+
+\newpage
+
+\section{Análise do Vetor: UDPLag}
+\subsection{Métricas de Eficiência Analítica (Detecção)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{threeparttable}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
+\midrule
+NetFlowLyzer (Base/495f) & 0.9995 & 0.9990 & 0.9991 & 0.9999 & 48216 & 153296 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 0.9996 & 0.9991 & 0.9994 & 0.9999 & 52319 & 22421 \\
+RustiFlow (Original) & 0.9997 & 0.9996 & 0.9995 & 1.0000 & 427883 & 1162562 \\
+NetFlowLyzer (NFX Parity) & 0.9992 & 0.9984 & 0.9991 & 0.9999 & 51221 & 21952 \\
+NetFlowLyzer (RustiFlow Parity) & 0.9991 & 0.9983 & 0.9986 & 0.9997 & 60205 & 52365 \\
+NetFeatureXtract (Original) & 0.9998 & 0.9997 & 0.9998 & 1.0000 & 58213 & 24951 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item[-] \textbf{Nota sobre Variação Amostral (RustiFlow Original vs NetFlowLyzer):} As discrepâncias notadas na contagem absoluta de amostras de \textit{Treino} e \textit{Teste} do RustiFlow ocorrem pelas diferenças heurísticas nos mecanismos de expiração de cache/timeout temporal de fluxos do modelo de Rust em relação à arquitetura do NetFlowLyzer, condensando a tabela final de fluxos (CSV) de maneiras distintas antes do \textit{cutoff} final de amostragem.
+\end{tablenotes}
+\end{threeparttable}}
+\caption{Matriz de Detecção e Amostragem (UDPLag).}
+\end{table}
+
+\subsection{Métricas Físicas de Extração (Vazão do Motor)}
+\begin{table}[H]
+\centering
+\begin{threeparttable}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\midrule
+NetFlowLyzer (Base/495f) & 426777 & 3.01 & 141990.39 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 426777 & 1.50 & 283785.11 \\
+RustiFlow (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
+NetFlowLyzer (NFX Parity) & 426777 & 2.00 & 212875.81 \\
+NetFlowLyzer (RustiFlow Parity) & 426777 & 2.50 & 170382.94 \\
+NetFeatureXtract (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\end{tablenotes}
+\end{threeparttable}
+\caption{Vazão Absoluta no Estágio de Data Plane (UDPLag).}
+\end{table}
+
+\subsection{Taxonomia de Assinaturas (Top 5 Features - Gini)}
+\begin{table}[H]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l|l|l|l|l|l}
+\toprule
+\textbf{NFL (Base/495f)} & \textbf{NFL (RustiFlow Parity)} \\
+\midrule
+Frag\_Max (0.0780) & TotalBytes (0.0877) \\
+Frag\_Mean (0.0768) & Tot\_Pay\_Mean (0.0815) \\
+Frag\_Min (0.0740) & Bwd\_Pay\_Min (0.0759) \\
+Frag\_Median (0.0511) & Tot\_Pay\_Min (0.0682) \\
+Tot\_Pay\_Max (0.0417) & Bwd\_Pay\_Mean (0.0607) \\
+\bottomrule
+\end{tabular}}
+\caption{Principais atributos de correlação estocástica por limiar dimensional (UDPLag).}
+\end{table}
+
+\newpage
+
+\end{document}
