@@ -108,17 +108,32 @@ def _load_polars(file_path, drop_cols, max_samples):
     df = pl.read_csv(file_path, n_rows=max_samples, infer_schema_length=10000,
                      ignore_errors=True)
 
-    # Drop unwanted columns (only those that exist).
-    existing_drops = [c for c in drop_cols if c in df.columns]
-    if existing_drops:
-        df = df.drop(existing_drops)
-
-    if 'Label' not in df.columns:
-        return None, None
-
     # Extract labels.
     y = (df['Label'].cast(pl.Utf8).str.to_uppercase() != 'BENIGN').cast(pl.UInt8)
     df = df.drop('Label')
+
+    # LEAKAGE PURGE: Regex-based column removal (Case-Insensitive)
+    # This prevents 'Src Port', 'source_port', 'src_ip', etc., from leaking.
+    identity_patterns = [
+        r'.*port.*', r'.*ip.*', r'.*address.*', r'.*timestamp.*', r'.*mac.*',
+        r'.*proto.*', r'.*ver.*', r'.*label.*', r'.*id.*', r'.*tunnel.*'
+    ]
+    
+    cols_to_drop = []
+    for col in df.columns:
+        for pat in identity_patterns:
+            if re.search(pat, col, re.IGNORECASE):
+                cols_to_drop.append(col)
+                break
+    
+    if cols_to_drop:
+        print(f"    ⚠️  LEAKAGE PURGE: Dropping {len(cols_to_drop)} identity features: {cols_to_drop[:5]}...")
+        df = df.drop(cols_to_drop)
+
+    # Final drop of any remaining explicit columns in drop_cols
+    existing_drops = [c for c in drop_cols if c in df.columns]
+    if existing_drops:
+        df = df.drop(existing_drops)
 
     # Cast and handle Infs/NaNs only for numeric columns
     for col in df.columns:

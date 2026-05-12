@@ -48,7 +48,8 @@ def process_pcap_dir(pcap_dir, category, smoke_test=False, skip_labeling=False, 
         monitor_script = os.path.join(BASE_DIR, "scripts/testbed/monitor.py")
 
 
-        cmd = [RUSTIFLOW_BIN, "-f", "cic", "-o", "csv", "--header", "--export-path", tmp_out, "pcap", pcap]
+        # Use -f rustiflow for maximum features parity
+        cmd = [RUSTIFLOW_BIN, "-f", "rustiflow", "-o", "csv", "--header", "--export-path", tmp_out, "pcap", pcap]
         try:
             p_rust = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             proc_mon = subprocess.Popen(["python3", monitor_script, str(p_rust.pid), metrics_csv]) if os.path.exists(monitor_script) else None
