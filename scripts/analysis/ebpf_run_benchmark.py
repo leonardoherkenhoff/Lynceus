@@ -97,6 +97,10 @@ def load_dataset(file_path, drop_cols):
     # Adaptive limit: if we have >300 features, cap at 2.0M to fit in 30GB free RAM with sklearn overhead
     max_s = HIGH_DENSITY_MAX_SAMPLES if n_features > 300 else DEFAULT_MAX_SAMPLES
     
+    # MANUAL OVERRIDE (for OOM prevention on dense vectors like Syn)
+    if args and args.max_samples:
+        max_s = args.max_samples
+    
     if USE_POLARS:
         return _load_polars(file_path, drop_cols, max_s)
     return _load_pandas(file_path, drop_cols, max_s)
@@ -291,6 +295,13 @@ def get_relative_key(file_path, processed_dir):
         str: Extracted logical key (e.g., 'PCAP/01-12/DrDoS_DNS').
     """
     rel = os.path.relpath(os.path.dirname(file_path), processed_dir)
+    
+    # SBSeg Normalization: Remove tool-specific prefix to enable Cross-Day matching
+    # e.g., 'LYNCEUS_FULL/PCAP/01-12/Syn' -> 'PCAP/01-12/Syn'
+    parts = rel.split(os.sep)
+    tool_folders = ['LYNCEUS_FULL', 'EBPF_PARITY_NTL', 'EBPF_PARITY_NFX', 'EBPF_PARITY_RUSTIFLOW', 'RUSTIFLOW', 'NFX', 'processed']
+    if parts[0] in tool_folders:
+        return os.path.join(*parts[1:])
     return rel
 
 
@@ -315,6 +326,10 @@ def run_benchmark():
     parser.add_argument(
         '--parity-mode', type=str, choices=['rustiflow', 'nfx', 'ntl'], default=None,
         help='Filter Lynceus features to match another tool (Scientific Parity)'
+    )
+    parser.add_argument(
+        '--max-samples', type=int, default=None,
+        help='Manually override maximum samples to load (prevents OOM)'
     )
     global args
     args = parser.parse_args()
