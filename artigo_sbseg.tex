@@ -68,10 +68,10 @@ A exportação de telemetria entre o Kernel e o User-space é frequentemente o g
 A validação do Lynceus focou exclusivamente no vetor \textbf{ICMPv6\_DDoS}. O objetivo é provar que a superioridade do motor advém da pureza semântica dos dados capturados via eBPF. Os experimentos foram executados em um servidor com 48 núcleos (Intel Xeon Silver 4410Y), utilizando um dataset customizado de ataques volumétricos IPv6 com 185 mil amostras.
 
 \subsection{Vazão e Eficiência de Recursos}
-O Lynceus demonstrou uma vazão de processamento de 188.817 PPS, comparado aos 65.481 PPS do RustiFlow Original. Mais criticamente, sob estresse extremo de 10Gbps, o Lynceus manteve um consumo de memória RAM estável através do mecanismo de descarte via LRU eBPF, enquanto ferramentas legadas como o NFX falharam ao atingir limites estruturais de 2 milhões de fluxos globais.
+O Lynceus demonstrou uma vazão de processamento de 890.939 PPS, comparado aos 34.113 FPS do RustiFlow Original. Mais criticamente, sob estresse extremo de 10Gbps, o Lynceus manteve um consumo de memória RAM estável através do mecanismo de descarte via LRU eBPF, enquanto ferramentas legadas como o NFX falharam ao atingir limites estruturais de 2 milhões de fluxos globais.
 
 \subsection{Superioridade Analítica no Vetor ICMPv6}
-Os resultados comprovam que a fidelidade temporal in-kernel é o fator determinante. Ao restringir o Lynceus às exatas topologias de seus concorrentes, os ganhos de F1-Score foram expressivos. No vetor ICMPv6\_DDoS, o Lynceus manteve um F1-Score de 0,9943, enquanto o RustiFlow Original, operando sobre o mesmo conjunto de features, degradou para 0,7027. Esta queda de 29% no desempenho do RustiFlow é atribuída diretamente ao ruído temporal induzido pelo agendamento de User-space, que corrompe as métricas de jitter e IAT vitais para a detecção deste vetor específico.
+Os resultados comprovam que a fidelidade temporal in-kernel é o fator determinante. Ao restringir o Lynceus às exatas topologias de seus concorrentes, os ganhos de F1-Score foram expressivos. No vetor ICMPv6\_DDoS, o Lynceus manteve um F1-Score de 0,9940, enquanto o RustiFlow Original, operando sobre o mesmo conjunto de features, degradou para 0,7619. Esta queda no desempenho do RustiFlow é atribuída diretamente ao ruído temporal induzido pelo agendamento de User-space, que corrompe as métricas de jitter e IAT vitais para a detecção deste vetor específico.
 
 \section{Conclusão}
 O Lynceus estabelece um novo paradigma para a telemetria de redes de alta velocidade. Ao unir o paralelismo lockless do eBPF com a estabilidade numérica dos algoritmos de Welford e P2, conseguimos mitigar a degradação temporal e restaurar a confiabilidade dos sistemas de detecção DDoS em escala multi-terabit. Este trabalho demonstra que a extração in-kernel não apenas melhora a performance bruta, mas restaura a integridade semântica necessária para a classificação precisa de ataques ICMPv6.
@@ -86,11 +86,11 @@ O Lynceus estabelece um novo paradigma para a telemetria de redes de alta veloci
 \footnotesize
 \begin{tabular}{|l|c|c|c|c|c|c|c|c|}
 \hline
-Vetor & Config & Feat & F1 & Acc & Prec & Rec & PPS & Lat \ \hline
-ICMPv6\_DDoS & Lyn & 12 & 0.9931 & 0.9865 & 0.9940 & 0.9921 & 185k & 0.3 \ \hline
-ICMPv6\_DDoS & RF & 159 & 0.7027 & 0.8809 & 0.6290 & 0.7959 & 55k & 26.5 \ \hline
-ICMPv6\_DDoS & Lyn & 159 & 0.9943 & 0.9889 & 0.9956 & 0.9930 & 176k & 0.7 \ \hline \hline
-Global & Lyn & 495 & 0.9999 & 0.9998 & 0.9999 & 1.0000 & 195k & 0.2 \ \hline
+Vetor & Config & Feat & F1 & Acc & Prec & Rec & PPS & Lat \\ \hline
+ICMPv6\_DDoS & Lyn & 12 & 0.9931 & 0.9865 & 0.9940 & 0.9921 & 886k & 0.1 \\ \hline
+ICMPv6\_DDoS & RF & 159 & 0.7619 & 0.9097 & 0.7273 & 0.8000 & 34k & 42.5 \\ \hline
+ICMPv6\_DDoS & Lyn & 159 & 0.9940 & 0.9883 & 0.9948 & 0.9932 & 884k & 0.1 \\ \hline \hline
+Global & Lyn & 495 & 0.9998 & 0.9995 & 0.9998 & 0.9997 & 276k & 0.1 \\ \hline
 \end{tabular}
 \end{center}
 

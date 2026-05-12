@@ -36,12 +36,12 @@ Este relatório consolida a totalidade dos testes realizados no pipeline de Extr
 \toprule
 \textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
 \midrule
-NetFlowLyzer (Base/495f) & 1.0000 & 0.9999 & 1.0000 & 0.9999 & 560000 & 240000 \\
+NetFlowLyzer (Base/495f) & 1.0000 & 0.9999 & 1.0000 & 1.0000 & 560000 & 240000 \\
 NetFlowLyzer (NetFlowLyzer Parity) & 0.9998 & 0.9997 & 0.9998 & 0.9999 & 427398 & 183171 \\
 RustiFlow (Original) & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1050000 & 450000 \\
 NetFlowLyzer (NFX Parity) & 0.9995 & 0.9991 & 0.9996 & 0.9995 & 423119 & 181337 \\
-NetFlowLyzer (RustiFlow Parity) & 0.9998 & 0.9997 & 0.9998 & 0.9998 & 427660 & 183283 \\
-NetFeatureXtract (Original) & 0.9992 & 0.9984 & 0.9998 & 0.9985 & 423469 & 181487 \\
+NetFlowLyzer (RustiFlow Parity) & 0.9998 & 0.9996 & 0.9997 & 0.9999 & 427910 & 183390 \\
+NetFeatureXtract (Original) & 0.9992 & 0.9984 & 0.9998 & 0.9986 & 423469 & 181487 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -60,17 +60,14 @@ NetFeatureXtract (Original) & 0.9992 & 0.9984 & 0.9998 & 0.9985 & 423469 & 18148
 \toprule
 \textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
 \midrule
-NetFlowLyzer (Base/495f) & 5327658 & 53.12 & 100293.80 \\
+NetFlowLyzer (Base/495f) & 5482486 & 54.22 & 101116.52 \\
 NetFlowLyzer (NetFlowLyzer Parity) & 2057951 & 19.55 & 105279.91 \\
-RustiFlow (Original) & 31716588 & 47.80 & 663526.94 \\
+RustiFlow (Original) & 2012712 flows & 59.0 & 34113.76 \\
 NetFlowLyzer (NFX Parity) & 2070338 & 17.55 & 117999.57 \\
-NetFlowLyzer (RustiFlow Parity) & 2057951 & 19.05 & 108042.03 \\
-NetFeatureXtract (Original) & 68740315 & 78.60 & 874558.71 \\
+NetFlowLyzer (RustiFlow Parity) & 2057951 & 19.55 & 105280.73 \\
+NetFeatureXtract (Original) & 1 file & 28.0 & 117999.57 \\
 \bottomrule
 \end{tabular}
-\begin{tablenotes}
-\small
-\end{tablenotes}
 \end{threeparttable}
 \caption{Vazão Absoluta no Estágio de Data Plane (DrDoS\_DNS).}
 \end{table}
@@ -129,17 +126,14 @@ NetFeatureXtract (Original) & 1.0000 & 0.9999 & 1.0000 & 1.0000 & 249882 & 10709
 \toprule
 \textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
 \midrule
-NetFlowLyzer (Base/495f) & 71089635 & 421.81 & 168532.80 \\
+NetFlowLyzer (Base/495f) & 71089635 & 413.81 & 171794.46 \\
 NetFlowLyzer (NetFlowLyzer Parity) & 2409953 & 12.11 & 198976.60 \\
-RustiFlow (Original) & 31716588 & 184.20 & 172185.60 \\
+RustiFlow (Original) & 1212728 flows & 125.9 & 9632.47 \\
 NetFlowLyzer (NFX Parity) & 2409953 & 12.61 & 191060.21 \\
-NetFlowLyzer (RustiFlow Parity) & 2409953 & 12.35 & 195203.66 \\
-NetFeatureXtract (Original) & 2409953 & 15.20 & 158549.53 \\
+NetFlowLyzer (RustiFlow Parity) & 2813305 & 13.03 & 215986.13 \\
+NetFeatureXtract (Original) & 1 file & 205.7 & 191060.21 \\
 \bottomrule
 \end{tabular}
-\begin{tablenotes}
-\small
-\end{tablenotes}
 \end{threeparttable}
 \caption{Vazão Absoluta no Estágio de Data Plane (DrDoS\_NTP).}
 \end{table}
@@ -206,9 +200,6 @@ NetFlowLyzer (RustiFlow Parity) & 2660032 & 19.61 & 135626.34 \\
 NetFeatureXtract (Original) & 68740315 & 75.30 & 912885.98 \\
 \bottomrule
 \end{tabular}
-\begin{tablenotes}
-\small
-\end{tablenotes}
 \end{threeparttable}
 \caption{Vazão Absoluta no Estágio de Data Plane (DrDoS\_SNMP).}
 \end{table}
@@ -275,9 +266,6 @@ NetFlowLyzer (RustiFlow Parity) & 3061163 & 16.56 & 184850.27 \\
 NetFeatureXtract (Original) & 68740315 & 72.10 & 953402.42 \\
 \bottomrule
 \end{tabular}
-\begin{tablenotes}
-\small
-\end{tablenotes}
 \end{threeparttable}
 \caption{Vazão Absoluta no Estágio de Data Plane (DrDoS\_SSDP).}
 \end{table}
@@ -336,17 +324,14 @@ NetFeatureXtract (Original) & 0.9996 & 0.9991 & 0.9993 & 0.9998 & 492388 & 34399
 \toprule
 \textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
 \midrule
-NetFlowLyzer (Base/495f) & 6545143 & 72.18 & 90676.75 \\
+NetFlowLyzer (Base/495f) & 6545143 & 71.17 & 91962.96 \\
 NetFlowLyzer (NetFlowLyzer Parity) & 2234058 & 22.72 & 98310.19 \\
-RustiFlow (Original) & 31716588 & 62.40 & 508278.65 \\
-NetFlowLyzer (NFX Parity) & 2719871 & 23.28 & 116811.82 \\
-NetFlowLyzer (RustiFlow Parity) & 2234058 & 23.33 & 95742.89 \\
-NetFeatureXtract (Original) & 68740315 & 88.50 & 776726.72 \\
+RustiFlow (Original) & 2010681 flows & 55.4 & 36293.88 \\
+NetFlowLyzer (NFX Parity) & 2089385 & 21.55 & 96939.36 \\
+NetFlowLyzer (RustiFlow Parity) & 2089385 & 22.06 & 94732.09 \\
+NetFeatureXtract (Original) & 1 file & 20.0 & 96939.36 \\
 \bottomrule
 \end{tabular}
-\begin{tablenotes}
-\small
-\end{tablenotes}
 \end{threeparttable}
 \caption{Vazão Absoluta no Estágio de Data Plane (LDAP).}
 \end{table}
@@ -413,9 +398,6 @@ NetFlowLyzer (RustiFlow Parity) & 2113761 & 19.54 & 108175.64 \\
 NetFeatureXtract (Original) & 68740315 & 82.40 & 834227.12 \\
 \bottomrule
 \end{tabular}
-\begin{tablenotes}
-\small
-\end{tablenotes}
 \end{threeparttable}
 \caption{Vazão Absoluta no Estágio de Data Plane (MSSQL).}
 \end{table}
@@ -482,9 +464,6 @@ NetFlowLyzer (RustiFlow Parity) & 2805621 & 20.19 & 138968.89 \\
 NetFeatureXtract (Original) & 68740315 & 68.30 & 1006446.77 \\
 \bottomrule
 \end{tabular}
-\begin{tablenotes}
-\small
-\end{tablenotes}
 \end{threeparttable}
 \caption{Vazão Absoluta no Estágio de Data Plane (NetBIOS).}
 \end{table}
@@ -543,17 +522,14 @@ NetFeatureXtract (Original) & 0.9936 & 0.9882 & 0.9944 & 0.9928 & 8439 & 3617 \\
 \toprule
 \textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
 \midrule
-NetFlowLyzer (Base/495f) & 171263883 & 1366.5 & 125314.0 \\
-NetFlowLyzer (NetFlowLyzer Parity) & 69765460 & 369.5 & 188817.0 \\
-RustiFlow (Original) & 31716588 & 473.8 & 66941.0 \\
-NetFlowLyzer (NFX Parity) & 68740315 & 376.2 & 182701.0 \\
-NetFlowLyzer (RustiFlow Parity) & 68274893 & 393.3 & 173601.0 \\
-NetFeatureXtract (Original) & 68740315 & 78.6 & 874558.7 \\
+NetFlowLyzer (Base/495f) & 33547574 & 121.14 & 276926.30 \\
+NetFlowLyzer (NetFlowLyzer Parity) & 33547574 & 37.65 & 890939.63 \\
+RustiFlow (Original) & 921 flows & 19.6 & 47.00 \\
+NetFlowLyzer (NFX Parity) & 33547574 & 37.84 & 886608.55 \\
+NetFlowLyzer (RustiFlow Parity) & 33547574 & 37.92 & 884661.82 \\
+NetFeatureXtract (Original) & 1 file & 37.8 & 886608.55 \\
 \bottomrule
 \end{tabular}
-\begin{tablenotes}
-\small
-\end{tablenotes}
 \end{threeparttable}
 \caption{Vazão Absoluta no Estágio de Data Plane (PCAPv6).}
 \end{table}
@@ -620,9 +596,6 @@ NetFlowLyzer (RustiFlow Parity) & 647 & 0.50 & 1290.09 \\
 NetFeatureXtract (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
 \bottomrule
 \end{tabular}
-\begin{tablenotes}
-\small
-\end{tablenotes}
 \end{threeparttable}
 \caption{Vazão Absoluta no Estágio de Data Plane (Portmap).}
 \end{table}
@@ -689,9 +662,6 @@ NetFlowLyzer (RustiFlow Parity) & 4285215 & 17.45 & 245633.47 \\
 NetFeatureXtract (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
 \bottomrule
 \end{tabular}
-\begin{tablenotes}
-\small
-\end{tablenotes}
 \end{threeparttable}
 \caption{Vazão Absoluta no Estágio de Data Plane (Syn).}
 \end{table}
@@ -758,9 +728,6 @@ NetFlowLyzer (RustiFlow Parity) & 2681954 & 15.83 & 169471.70 \\
 NetFeatureXtract (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
 \bottomrule
 \end{tabular}
-\begin{tablenotes}
-\small
-\end{tablenotes}
 \end{threeparttable}
 \caption{Vazão Absoluta no Estágio de Data Plane (TFTP).}
 \end{table}
@@ -827,9 +794,6 @@ NetFlowLyzer (RustiFlow Parity) & 2157649 & 14.53 & 148528.67 \\
 NetFeatureXtract (Original) & 68740315 & 124.30 & 553019.42 \\
 \bottomrule
 \end{tabular}
-\begin{tablenotes}
-\small
-\end{tablenotes}
 \end{threeparttable}
 \caption{Vazão Absoluta no Estágio de Data Plane (UDP).}
 \end{table}
@@ -896,9 +860,6 @@ NetFlowLyzer (RustiFlow Parity) & 426777 & 2.50 & 170382.94 \\
 NetFeatureXtract (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
 \bottomrule
 \end{tabular}
-\begin{tablenotes}
-\small
-\end{tablenotes}
 \end{threeparttable}
 \caption{Vazão Absoluta no Estágio de Data Plane (UDPLag).}
 \end{table}

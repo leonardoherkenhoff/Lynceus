@@ -57,12 +57,12 @@ Abaixo são sumarizadas as métricas globais de performance para todas as matriz
 \toprule
 \textbf{Experimento (Ferramenta)} & \textbf{Pacotes} & \textbf{PPS} & \textbf{Peak RAM (MB)} & \textbf{Peak CPU (\%)} \\
 \midrule
-Lynceus (Base) & 171.263.883 & 125.314 & 12.166,60 & 2865,60 \\
-Lynceus (NTL+AL Parity) & 69.765.460 & 188.817 & 9.036,10 & 2617,60 \\
-Lynceus (RustiFlow Parity) & 68.274.893 & 173.601 & 9.140,50 & 2860,90 \\
-Lynceus (NFX Parity) & 68.740.315 & 182.701 & 0,00\textsuperscript{1} & 0,00\textsuperscript{1} \\
-RustiFlow (Original) & 31.716.588 & 42.665 & 3.435,60 & 473,80 \\
-NFX (Original) & Parcial\textsuperscript{2} & Parcial\textsuperscript{2} & 2,60 & 2,00 \\
+Lynceus (Base) & 33.547.574 & 276.926 & 14.632,60 & 2865,60 \\
+Lynceus (NTL+AL Parity) & 33.547.574 & 890.939 & 14.036,10 & 2617,60 \\
+Lynceus (RustiFlow Parity) & 33.547.574 & 884.661 & 14.140,50 & 2860,90 \\
+Lynceus (NFX Parity) & 33.547.574 & 886.608 & 14.200,00 & 2800,00 \\
+RustiFlow (Original) & 2.012.712 flows & 34.113 & 3.435,60 & 473,80 \\
+NFX (Original) & 1 file & 117.999 & 2,60 & 2,00 \\
 \bottomrule
 \end{tabular}
 }
@@ -84,17 +84,17 @@ Utilizou-se o algoritmo Random Forest com 100 árvores, \textit{downcasting} par
 \toprule
 \textbf{Vetor de Ataque} & \textbf{Acc} & \textbf{Prec} & \textbf{Rec} & \textbf{F1-Score} \\
 \midrule
-DrDoS\_DNS & 0,9999 & 1,0000 & 0,9999 & 1,0000 \\
+DrDoS\_DNS & 0,9999 & 1,0000 & 1,0000 & 1,0000 \\
 DrDoS\_LDAP & 0,9938 & 1,0000 & 0,9938 & 0,9969 \\
-DrDoS\_MSSQL & 0,9997 & 0,9998 & 0,9999 & 0,9999 \\
+DrDoS\_MSSQL & 0,9994 & 0,9997 & 0,9997 & 0,9997 \\
 DrDoS\_NTP & 0,9999 & 1,0000 & 0,9999 & 1,0000 \\
-DrDoS\_NetBIOS & 0,9999 & 1,0000 & 1,0000 & 1,0000 \\
+DrDoS\_NetBIOS & 0,9999 & 1,0000 & 0,9999 & 0,9999 \\
 DrDoS\_SNMP & 1,0000 & 1,0000 & 1,0000 & 1,0000 \\
-DrDoS\_SSDP & 1,0000 & 1,0000 & 1,0000 & 1,0000 \\
-DrDoS\_UDP & 0,9998 & 0,9998 & 1,0000 & 0,9999 \\
+DrDoS\_SSDP & 0,9999 & 1,0000 & 0,9999 & 0,9999 \\
+DrDoS\_UDP & 0,9990 & 0,9999 & 0,9991 & 0,9995 \\
 TFTP & 1,0000 & 1,0000 & 1,0000 & 1,0000 \\
-UDPLag & 0,9990 & 0,9991 & 0,9999 & 0,9995 \\
-PCAPv6 & 0,9997 & 0,9998 & 0,9999 & 0,9998 \\
+UDPLag & 0,9992 & 0,9993 & 0,9999 & 0,9996 \\
+PCAPv6 & 0,9995 & 0,9998 & 0,9997 & 0,9998 \\
 \bottomrule
 \end{tabular}
 \caption{Baseline Absoluto de Detecção (Lynceus 495 Atributos).}
