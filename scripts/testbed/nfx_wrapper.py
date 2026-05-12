@@ -65,7 +65,7 @@ def run_nfx_extraction(smoke_test=False, max_events=0, skip_labeling=False, skip
     total_flows = 0
     current_category = None
     for i, pcap in enumerate(pcaps):
-        category = os.path.basename(os.path.dirname(pcap))
+        category = os.path.relpath(os.path.dirname(pcap), PCAP_DIR)
         out_dir = os.path.join(INTERIM_DIR, category)
         os.makedirs(out_dir, exist_ok=True)
         out_file = os.path.join(out_dir, "flows.csv")
