@@ -139,7 +139,7 @@ def save_results(tool_name, tool_cfg):
     with open(os.path.join(dest, "experiment_meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
 
-def run_tool(tool_name, tool_cfg, resume=False):
+def run_tool(tool_name, tool_cfg, resume=False, filter_atk=None):
     print(f"\n--- {tool_cfg['label']} ---")
     log_dir = os.path.join(RESULTS_BASE, tool_name, "logs")
     os.makedirs(log_dir, exist_ok=True)
@@ -189,8 +189,8 @@ def run_tool(tool_name, tool_cfg, resume=False):
         else:
              extraction_cmd = f"sudo python3 -u {tool_cfg['wrapper']} --output {os.path.join(BASE_DIR, tool_cfg['interim'])} --skip-labeling --max-events 2000000"
         
-        if args.filter:
-             extraction_cmd += f" --filter {args.filter}"
+        if filter_atk:
+             extraction_cmd += f" --filter {filter_atk}"
         
         extraction_ok = run(extraction_cmd, f"Extração — {tool_cfg['label']}", log_path=os.path.join(log_dir, "extraction.log"))
     
@@ -346,7 +346,7 @@ def main():
         if args.smoke_test:
             cfg["wrapper"] += " --smoke-test"
             
-        ok = run_tool(tool_name, cfg, resume=args.resume)
+        ok = run_tool(tool_name, cfg, resume=args.resume, filter_atk=args.filter)
         results[tool_name] = "OK" if ok else "FAIL"
         print(f"  [{tool_name}] {results[tool_name]} ({time.time()-t0:.0f}s)")
         if args.smoke_test and not ok:
