@@ -300,6 +300,9 @@ def get_relative_key(file_path, processed_dir):
     # e.g., 'LYNCEUS_FULL/PCAP/01-12/Syn' -> 'PCAP/01-12/Syn'
     parts = rel.split(os.sep)
     tool_folders = ['LYNCEUS_FULL', 'EBPF_PARITY_NTL', 'EBPF_PARITY_NFX', 'EBPF_PARITY_RUSTIFLOW', 'RUSTIFLOW', 'NFX', 'processed']
+    
+    # Normalization: If first part is a tool folder, skip it.
+    # Also handle the fact that some folders might be 'PCAP/01-12/...' directly
     if parts[0] in tool_folders:
         return os.path.join(*parts[1:])
     return rel
@@ -487,13 +490,20 @@ def _apply_parity_filter(df, mode):
         if len(final_keep) > 203: final_keep = final_keep[:203]
         
     elif mode == 'nfx':
-        # NetFeatureXtract Behavioral Set (approx 15 features)
-        # Mapped to Lynceus equivalents for Parity evaluation
-        keep = [
-            'PacketsCount', 'TotalBytes', 'duration', 'PacketsRate', 'BytesRate',
-            'Tot_Pay_Max', 'Tot_Pay_Min', 'Tot_Pay_Mean',
-            'FwdPacketsRate', 'BwdPacketsRate', 'FwdBytesRate', 'BwdBytesRate'
-        ]
+        # Behavioral Set (Simplified NFX Schema discovered via head)
+        # We try to find any variant of packets/bytes/duration
+        possible = {
+            'packets': ['packets', 'PacketsCount', 'IN_PKTS', 'total_packets'],
+            'bytes':   ['bytes', 'TotalBytes', 'IN_BYTES', 'total_bytes'],
+            'protocol':['protocol', 'PROTOCOL', 'proto'],
+            'duration':['duration', 'DURATION', 'flow_duration']
+        }
+        keep = []
+        for canonical, variants in possible.items():
+            for v in variants:
+                if v in cols:
+                    keep.append(v)
+                    break
         
     elif mode == 'ntl':
         # STRICT NTL (348) + AL (51) - Total 399 features requested
