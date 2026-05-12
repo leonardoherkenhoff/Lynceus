@@ -300,12 +300,12 @@ Tot\_Pay\_Mean (0.0347) & Bwd\_Pay\_Mean (0.0564) & BytesRate (0.0884) & Tot\_Pa
 \toprule
 \textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
 \midrule
-NetFlowLyzer (Base/495f) & 0.9969 & 0.9938 & 1.0000 & 0.9938 & 800000 & 800000 \\
-NetFlowLyzer (NetFlowLyzer Parity) & 0.9998 & 0.9995 & 0.9996 & 0.9999 & 541372 & 561587 \\
-RustiFlow (Original) & 0.9271 & 0.8644 & 0.9997 & 0.8644 & 1500000 & 1500000 \\
-NetFlowLyzer (NFX Parity) & 0.9992 & 0.9984 & 0.9987 & 0.9997 & 543644 & 542457 \\
-NetFlowLyzer (RustiFlow Parity) & 0.9998 & 0.9995 & 0.9997 & 0.9999 & 539683 & 561624 \\
-NetFeatureXtract (Original) & 0.9996 & 0.9991 & 0.9993 & 0.9998 & 492388 & 343993 \\
+NetFlowLyzer (Base/495f) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (NetFlowLyzer Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+RustiFlow (Original) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (NFX Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (RustiFlow Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFeatureXtract (Original) & N/A & N/A & N/A & N/A & N/A & N/A \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -322,14 +322,14 @@ NetFeatureXtract (Original) & 0.9996 & 0.9991 & 0.9993 & 0.9998 & 492388 & 34399
 \begin{threeparttable}
 \begin{tabular}{lccc}
 \toprule
-\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes/Eventos} & \textbf{Tempo (s)} & \textbf{Vazão (PPS/FPS)} \\
 \midrule
-NetFlowLyzer (Base/495f) & 6545143 & 71.17 & 91962.96 \\
-NetFlowLyzer (NetFlowLyzer Parity) & 2234058 & 22.72 & 98310.19 \\
-RustiFlow (Original) & 2010681 flows & 55.4 & 36293.88 \\
-NetFlowLyzer (NFX Parity) & 2089385 & 21.55 & 96939.36 \\
-NetFlowLyzer (RustiFlow Parity) & 2089385 & 22.06 & 94732.09 \\
-NetFeatureXtract (Original) & 1 file & 20.0 & 96939.36 \\
+NetFlowLyzer (Base/495f) & N/A & N/A & N/A \\
+NetFlowLyzer (NetFlowLyzer Parity) & N/A & N/A & N/A \\
+RustiFlow (Original) & N/A & N/A & N/A \\
+NetFlowLyzer (NFX Parity) & N/A & N/A & N/A \\
+NetFlowLyzer (RustiFlow Parity) & N/A & N/A & N/A \\
+NetFeatureXtract (Original) & N/A & N/A & N/A \\
 \bottomrule
 \end{tabular}
 \end{threeparttable}
@@ -342,13 +342,11 @@ NetFeatureXtract (Original) & 1 file & 20.0 & 96939.36 \\
 \resizebox{\textwidth}{!}{
 \begin{tabular}{l|l|l|l|l|l}
 \toprule
-\textbf{NFL (Base/495f)} & \textbf{NFL (NFL Parity)} & \textbf{NFL (NFX Parity)} & \textbf{NFL (RustiFlow Parity)} \\
+\textbf{Base(495f)} & \textbf{Parity(NTL)} & \textbf{Parity(NFX)} & \textbf{Parity(Rust)} & \textbf{Rust Original} & \textbf{NFX Original} \\
 \midrule
-Frag\_Min (0.1015) & ACK\_Cnt (0.1200) & BwdPacketsRate (0.1454) & ACK\_Cnt (0.0831) \\
-ACK\_Bwd\_Cnt (0.0999) & ACK\_Bwd\_Cnt (0.1129) & PacketsRate (0.1225) & FwdInitWinBytes (0.0674) \\
-Frag\_Mean (0.0924) & FwdInitWinBytes (0.1046) & Tot\_Pay\_Max (0.1113) & ACK\_Bwd\_Cnt (0.0568) \\
-Frag\_Median (0.0819) & RST\_Cnt (0.0365) & Tot\_Pay\_Min (0.1110) & Win\_Min (0.0525) \\
-Frag\_Max (0.0724) & PacketsRate (0.0357) & BytesRate (0.1003) & Win\_Mean (0.0457) \\
+- & - & - & - & - & - \\
+- & - & - & - & - & - \\
+- & - & - & - & - & - \\
 \bottomrule
 \end{tabular}}
 \caption{Principais atributos de correlação estocástica por limiar dimensional (LDAP).}
@@ -366,12 +364,12 @@ Frag\_Max (0.0724) & PacketsRate (0.0357) & BytesRate (0.1003) & Win\_Mean (0.04
 \toprule
 \textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
 \midrule
-NetFlowLyzer (Base/495f) & 0.9999 & 0.9997 & 0.9998 & 0.9999 & 800000 & 800000 \\
-NetFlowLyzer (NetFlowLyzer Parity) & 0.9992 & 0.9983 & 0.9998 & 0.9986 & 800000 & 800000 \\
-RustiFlow (Original) & 0.9999 & 0.9999 & 0.9999 & 1.0000 & 1500000 & 1500000 \\
-NetFlowLyzer (NFX Parity) & 0.9997 & 0.9993 & 0.9995 & 0.9999 & 800000 & 800000 \\
-NetFlowLyzer (RustiFlow Parity) & 0.9996 & 0.9993 & 0.9994 & 0.9999 & 800000 & 800000 \\
-NetFeatureXtract (Original) & 1.0000 & 0.9999 & 1.0000 & 1.0000 & 539281 & 231121 \\
+NetFlowLyzer (Base/495f) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (NetFlowLyzer Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+RustiFlow (Original) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (NFX Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (RustiFlow Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFeatureXtract (Original) & N/A & N/A & N/A & N/A & N/A & N/A \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -388,14 +386,14 @@ NetFeatureXtract (Original) & 1.0000 & 0.9999 & 1.0000 & 1.0000 & 539281 & 23112
 \begin{threeparttable}
 \begin{tabular}{lccc}
 \toprule
-\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes/Eventos} & \textbf{Tempo (s)} & \textbf{Vazão (PPS/FPS)} \\
 \midrule
-NetFlowLyzer (Base/495f) & 4618464 & 43.83 & 105362.45 \\
-NetFlowLyzer (NetFlowLyzer Parity) & 2357697 & 21.08 & 111860.89 \\
-RustiFlow (Original) & 31716588 & 58.20 & 544958.55 \\
-NetFlowLyzer (NFX Parity) & 2113761 & 21.04 & 100455.97 \\
-NetFlowLyzer (RustiFlow Parity) & 2113761 & 19.54 & 108175.64 \\
-NetFeatureXtract (Original) & 68740315 & 82.40 & 834227.12 \\
+NetFlowLyzer (Base/495f) & N/A & N/A & N/A \\
+NetFlowLyzer (NetFlowLyzer Parity) & N/A & N/A & N/A \\
+RustiFlow (Original) & N/A & N/A & N/A \\
+NetFlowLyzer (NFX Parity) & N/A & N/A & N/A \\
+NetFlowLyzer (RustiFlow Parity) & N/A & N/A & N/A \\
+NetFeatureXtract (Original) & N/A & N/A & N/A \\
 \bottomrule
 \end{tabular}
 \end{threeparttable}
@@ -408,13 +406,11 @@ NetFeatureXtract (Original) & 68740315 & 82.40 & 834227.12 \\
 \resizebox{\textwidth}{!}{
 \begin{tabular}{l|l|l|l|l|l}
 \toprule
-\textbf{NFL (Base/495f)} & \textbf{NFL (NFL Parity)} & \textbf{NFL (NFX Parity)} & \textbf{NFL (RustiFlow Parity)} \\
+\textbf{Base(495f)} & \textbf{Parity(NTL)} & \textbf{Parity(NFX)} & \textbf{Parity(Rust)} & \textbf{Rust Original} & \textbf{NFX Original} \\
 \midrule
-Bwd\_Pay\_Mean (0.0441) & Tot\_Pay\_Mean (0.0648) & Tot\_Pay\_Max (0.1456) & Tot\_Pay\_Min (0.0620) \\
-Bwd\_Pay\_Min (0.0436) & Tot\_Pay\_Min (0.0633) & Tot\_Pay\_Min (0.1403) & Tot\_Pay\_Median (0.0581) \\
-ACK\_Bwd\_Cnt (0.0436) & FwdInitWinBytes (0.0626) & TotalBytes (0.1391) & Bwd\_Pay\_Min (0.0578) \\
-Tot\_Pay\_Max (0.0393) & Bwd\_Pay\_Min (0.0611) & Tot\_Pay\_Mean (0.1133) & FwdInitWinBytes (0.0505) \\
-ACK\_Cnt (0.0386) & Bwd\_Pay\_Mean (0.0570) & BwdPacketsRate (0.0885) & BwdBytesRate (0.0502) \\
+- & - & - & - & - & - \\
+- & - & - & - & - & - \\
+- & - & - & - & - & - \\
 \bottomrule
 \end{tabular}}
 \caption{Principais atributos de correlação estocástica por limiar dimensional (MSSQL).}
@@ -432,12 +428,12 @@ ACK\_Cnt (0.0386) & Bwd\_Pay\_Mean (0.0570) & BwdPacketsRate (0.0885) & BwdBytes
 \toprule
 \textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
 \midrule
-NetFlowLyzer (Base/495f) & 1.0000 & 0.9999 & 1.0000 & 1.0000 & 800000 & 800000 \\
-NetFlowLyzer (NetFlowLyzer Parity) & 1.0000 & 0.9999 & 1.0000 & 0.9999 & 800000 & 800000 \\
-RustiFlow (Original) & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1500000 & 1500000 \\
-NetFlowLyzer (NFX Parity) & 0.9998 & 0.9996 & 1.0000 & 0.9997 & 800000 & 800000 \\
-NetFlowLyzer (RustiFlow Parity) & 1.0000 & 0.9999 & 1.0000 & 1.0000 & 800000 & 800000 \\
-NetFeatureXtract (Original) & 1.0000 & 0.9999 & 1.0000 & 1.0000 & 493211 & 211376 \\
+NetFlowLyzer (Base/495f) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (NetFlowLyzer Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+RustiFlow (Original) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (NFX Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (RustiFlow Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFeatureXtract (Original) & N/A & N/A & N/A & N/A & N/A & N/A \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -454,14 +450,14 @@ NetFeatureXtract (Original) & 1.0000 & 0.9999 & 1.0000 & 1.0000 & 493211 & 21137
 \begin{threeparttable}
 \begin{tabular}{lccc}
 \toprule
-\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes/Eventos} & \textbf{Tempo (s)} & \textbf{Vazão (PPS/FPS)} \\
 \midrule
-NetFlowLyzer (Base/495f) & 3528056 & 29.55 & 119384.49 \\
-NetFlowLyzer (NetFlowLyzer Parity) & 2050168 & 16.00 & 128127.99 \\
-RustiFlow (Original) & 31716588 & 42.10 & 753363.13 \\
-NetFlowLyzer (NFX Parity) & 2050168 & 16.53 & 124038.54 \\
-NetFlowLyzer (RustiFlow Parity) & 2805621 & 20.19 & 138968.89 \\
-NetFeatureXtract (Original) & 68740315 & 68.30 & 1006446.77 \\
+NetFlowLyzer (Base/495f) & N/A & N/A & N/A \\
+NetFlowLyzer (NetFlowLyzer Parity) & N/A & N/A & N/A \\
+RustiFlow (Original) & N/A & N/A & N/A \\
+NetFlowLyzer (NFX Parity) & N/A & N/A & N/A \\
+NetFlowLyzer (RustiFlow Parity) & N/A & N/A & N/A \\
+NetFeatureXtract (Original) & N/A & N/A & N/A \\
 \bottomrule
 \end{tabular}
 \end{threeparttable}
@@ -474,13 +470,11 @@ NetFeatureXtract (Original) & 68740315 & 68.30 & 1006446.77 \\
 \resizebox{\textwidth}{!}{
 \begin{tabular}{l|l|l|l|l|l}
 \toprule
-\textbf{NFL (Base/495f)} & \textbf{NFL (NFL Parity)} & \textbf{NFL (NFX Parity)} & \textbf{NFL (RustiFlow Parity)} \\
+\textbf{Base(495f)} & \textbf{Parity(NTL)} & \textbf{Parity(NFX)} & \textbf{Parity(Rust)} & \textbf{Rust Original} & \textbf{NFX Original} \\
 \midrule
-Tot\_Pay\_Max (0.0790) & Bwd\_Pay\_Min (0.0750) & Tot\_Pay\_Min (0.2424) & Tot\_Pay\_Min (0.0836) \\
-Bwd\_Pay\_Max (0.0644) & Bwd\_Pay\_Mean (0.0722) & Tot\_Pay\_Max (0.2023) & Bwd\_Pay\_Min (0.0704) \\
-Bwd\_Pay\_Mean (0.0624) & Tot\_Pay\_Mean (0.0689) & Tot\_Pay\_Mean (0.1872) & Tot\_Pay\_Mean (0.0606) \\
-Tot\_Pay\_Min (0.0618) & FwdInitWinBytes (0.0636) & TotalBytes (0.1459) & Bwd\_Pay\_Median (0.0592) \\
-Tot\_Pay\_Mean (0.0564) & Bwd\_Pay\_Median (0.0632) & BytesRate (0.0538) & Tot\_Pay\_Max (0.0579) \\
+- & - & - & - & - & - \\
+- & - & - & - & - & - \\
+- & - & - & - & - & - \\
 \bottomrule
 \end{tabular}}
 \caption{Principais atributos de correlação estocástica por limiar dimensional (NetBIOS).}
@@ -498,12 +492,12 @@ Tot\_Pay\_Mean (0.0564) & Bwd\_Pay\_Median (0.0632) & BytesRate (0.0538) & Tot\_
 \toprule
 \textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
 \midrule
-NetFlowLyzer (Base/495f) & 0.9998 & 0.9997 & 0.9998 & 0.9999 & 185488 & 79495 \\
-NetFlowLyzer (NetFlowLyzer Parity) & 0.9944 & 0.9892 & 0.9940 & 0.9949 & 10341 & 4432 \\
-RustiFlow (Original) & 0.7619 & 0.8809 & 0.7302 & 0.7959 & 644 & 277 \\
-NetFlowLyzer (NFX Parity) & 0.9931 & 0.9865 & 0.9940 & 0.9921 & 10034 & 4301 \\
-NetFlowLyzer (RustiFlow Parity) & 0.9940 & 0.9883 & 0.9948 & 0.9932 & 9256 & 3967 \\
-NetFeatureXtract (Original) & 0.9936 & 0.9882 & 0.9944 & 0.9928 & 8439 & 3617 \\
+NetFlowLyzer (Base/495f) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (NetFlowLyzer Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+RustiFlow (Original) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (NFX Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (RustiFlow Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFeatureXtract (Original) & N/A & N/A & N/A & N/A & N/A & N/A \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -520,14 +514,14 @@ NetFeatureXtract (Original) & 0.9936 & 0.9882 & 0.9944 & 0.9928 & 8439 & 3617 \\
 \begin{threeparttable}
 \begin{tabular}{lccc}
 \toprule
-\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes/Eventos} & \textbf{Tempo (s)} & \textbf{Vazão (PPS/FPS)} \\
 \midrule
-NetFlowLyzer (Base/495f) & 33547574 & 121.14 & 276926.30 \\
-NetFlowLyzer (NetFlowLyzer Parity) & 33547574 & 37.65 & 890939.63 \\
-RustiFlow (Original) & 921 flows & 19.6 & 47.00 \\
-NetFlowLyzer (NFX Parity) & 33547574 & 37.84 & 886608.55 \\
-NetFlowLyzer (RustiFlow Parity) & 33547574 & 37.92 & 884661.82 \\
-NetFeatureXtract (Original) & 1 file & 37.8 & 886608.55 \\
+NetFlowLyzer (Base/495f) & N/A & N/A & N/A \\
+NetFlowLyzer (NetFlowLyzer Parity) & N/A & N/A & N/A \\
+RustiFlow (Original) & N/A & N/A & N/A \\
+NetFlowLyzer (NFX Parity) & N/A & N/A & N/A \\
+NetFlowLyzer (RustiFlow Parity) & N/A & N/A & N/A \\
+NetFeatureXtract (Original) & N/A & N/A & N/A \\
 \bottomrule
 \end{tabular}
 \end{threeparttable}
@@ -540,13 +534,11 @@ NetFeatureXtract (Original) & 1 file & 37.8 & 886608.55 \\
 \resizebox{\textwidth}{!}{
 \begin{tabular}{l|l|l|l|l|l}
 \toprule
-\textbf{NFL (Base/495f)} & \textbf{NFL (NFL Parity)} & \textbf{NFL (NFX Parity)} & \textbf{NFL (RustiFlow Parity)} \\
+\textbf{Base(495f)} & \textbf{Parity(NTL)} & \textbf{Parity(NFX)} & \textbf{Parity(Rust)} & \textbf{Rust Original} & \textbf{NFX Original} \\
 \midrule
-PayloadEntropy (0.1737) & Tot\_Pay\_Mean (0.0933) & Tot\_Pay\_Max (0.2519) & Bwd\_Pay\_Max (0.1130) \\
-Bwd\_Pay\_Mean (0.0694) & Bwd\_Pay\_Mean (0.0754) & Tot\_Pay\_Mean (0.1778) & Tot\_Pay\_Max (0.0697) \\
-Bwd\_Pay\_Max (0.0672) & Tot\_Pay\_Median (0.0707) & Tot\_Pay\_Min (0.1413) & Tot\_Pay\_Mean (0.0688) \\
-Hist\_Tot\_3 (0.0660) & PacketsRate (0.0684) & BwdPacketsRate (0.0845) & BwdPacketsRate (0.0630) \\
-Bwd\_Pay\_Min (0.0646) & BwdBytesRate (0.0625) & TotalBytes (0.0816) & Tot\_Pay\_Median (0.0621) \\
+- & - & - & - & - & - \\
+- & - & - & - & - & - \\
+- & - & - & - & - & - \\
 \bottomrule
 \end{tabular}}
 \caption{Principais atributos de correlação estocástica por limiar dimensional (PCAPv6).}
@@ -564,12 +556,12 @@ Bwd\_Pay\_Min (0.0646) & BwdBytesRate (0.0625) & TotalBytes (0.0816) & Tot\_Pay\
 \toprule
 \textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
 \midrule
-NetFlowLyzer (Base/495f) & 0.9999 & 0.9998 & 1.0000 & 0.9998 & 123112 & 52762 \\
-NetFlowLyzer (NetFlowLyzer Parity) & 0.8000 & 0.9310 & 0.6667 & 1.0000 & 66 & 29 \\
-RustiFlow (Original) & 0.9999 & 0.9998 & 1.0000 & 0.9998 & 133616 & 57264 \\
-NetFlowLyzer (NFX Parity) & 0.9997 & 0.9994 & 0.9998 & 0.9996 & 112341 & 48147 \\
-NetFlowLyzer (RustiFlow Parity) & 0.9998 & 0.9996 & 0.9999 & 0.9997 & 115221 & 49382 \\
-NetFeatureXtract (Original) & 0.9991 & 0.9984 & 0.9988 & 0.9994 & 94321 & 40423 \\
+NetFlowLyzer (Base/495f) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (NetFlowLyzer Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+RustiFlow (Original) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (NFX Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (RustiFlow Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFeatureXtract (Original) & N/A & N/A & N/A & N/A & N/A & N/A \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -586,14 +578,14 @@ NetFeatureXtract (Original) & 0.9991 & 0.9984 & 0.9988 & 0.9994 & 94321 & 40423 
 \begin{threeparttable}
 \begin{tabular}{lccc}
 \toprule
-\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes/Eventos} & \textbf{Tempo (s)} & \textbf{Vazão (PPS/FPS)} \\
 \midrule
-NetFlowLyzer (Base/495f) & 647 & 0.50 & 1289.68 \\
-NetFlowLyzer (NetFlowLyzer Parity) & 647 & 0.50 & 1290.46 \\
-RustiFlow (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
-NetFlowLyzer (NFX Parity) & 647 & 0.50 & 1289.10 \\
-NetFlowLyzer (RustiFlow Parity) & 647 & 0.50 & 1290.09 \\
-NetFeatureXtract (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
+NetFlowLyzer (Base/495f) & N/A & N/A & N/A \\
+NetFlowLyzer (NetFlowLyzer Parity) & N/A & N/A & N/A \\
+RustiFlow (Original) & N/A & N/A & N/A \\
+NetFlowLyzer (NFX Parity) & N/A & N/A & N/A \\
+NetFlowLyzer (RustiFlow Parity) & N/A & N/A & N/A \\
+NetFeatureXtract (Original) & N/A & N/A & N/A \\
 \bottomrule
 \end{tabular}
 \end{threeparttable}
@@ -606,13 +598,11 @@ NetFeatureXtract (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
 \resizebox{\textwidth}{!}{
 \begin{tabular}{l|l|l|l|l|l}
 \toprule
-\textbf{NFL (NFL Parity)} & \textbf{RustiFlow (Original)} \\
+\textbf{Base(495f)} & \textbf{Parity(NTL)} & \textbf{Parity(NFX)} & \textbf{Parity(Rust)} & \textbf{Rust Original} & \textbf{NFX Original} \\
 \midrule
-FwdInitWinBytes (0.3987) & literal (0.0523) \\
-SYN\_Cnt (0.0502) & - \\
-SYN\_Bwd\_Cnt (0.0416) & - \\
-ACK\_Cnt (0.0381) & - \\
-ACK\_Bwd\_Cnt (0.0362) & - \\
+- & - & - & - & - & - \\
+- & - & - & - & - & - \\
+- & - & - & - & - & - \\
 \bottomrule
 \end{tabular}}
 \caption{Principais atributos de correlação estocástica por limiar dimensional (Portmap).}
@@ -630,12 +620,12 @@ ACK\_Bwd\_Cnt (0.0362) & - \\
 \toprule
 \textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
 \midrule
-NetFlowLyzer (Base/495f) & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 251858 & 400000 \\
-NetFlowLyzer (NetFlowLyzer Parity) & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 249894 & 800000 \\
-RustiFlow (Original) & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1500000 & 1500000 \\
-NetFlowLyzer (NFX Parity) & 0.9941 & 0.9936 & 0.9999 & 0.9885 & 7076 & 800000 \\
-NetFlowLyzer (RustiFlow Parity) & 1.0000 & 1.0000 & 0.9999 & 1.0000 & 246487 & 800000 \\
-NetFeatureXtract (Original) & 0.8737 & 0.7759 & 0.7758 & 1.0000 & 105341 & 45147 \\
+NetFlowLyzer (Base/495f) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (NetFlowLyzer Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+RustiFlow (Original) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (NFX Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (RustiFlow Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFeatureXtract (Original) & N/A & N/A & N/A & N/A & N/A & N/A \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -652,14 +642,14 @@ NetFeatureXtract (Original) & 0.8737 & 0.7759 & 0.7758 & 1.0000 & 105341 & 45147
 \begin{threeparttable}
 \begin{tabular}{lccc}
 \toprule
-\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes/Eventos} & \textbf{Tempo (s)} & \textbf{Vazão (PPS/FPS)} \\
 \midrule
-NetFlowLyzer (Base/495f) & 4285215 & 26.09 & 164270.11 \\
-NetFlowLyzer (NetFlowLyzer Parity) & 4285215 & 20.34 & 210698.48 \\
-RustiFlow (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
-NetFlowLyzer (NFX Parity) & 4285215 & 19.94 & 214860.68 \\
-NetFlowLyzer (RustiFlow Parity) & 4285215 & 17.45 & 245633.47 \\
-NetFeatureXtract (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
+NetFlowLyzer (Base/495f) & N/A & N/A & N/A \\
+NetFlowLyzer (NetFlowLyzer Parity) & N/A & N/A & N/A \\
+RustiFlow (Original) & N/A & N/A & N/A \\
+NetFlowLyzer (NFX Parity) & N/A & N/A & N/A \\
+NetFlowLyzer (RustiFlow Parity) & N/A & N/A & N/A \\
+NetFeatureXtract (Original) & N/A & N/A & N/A \\
 \bottomrule
 \end{tabular}
 \end{threeparttable}
@@ -672,13 +662,11 @@ NetFeatureXtract (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
 \resizebox{\textwidth}{!}{
 \begin{tabular}{l|l|l|l|l|l}
 \toprule
-\textbf{NFL (NFL Parity)} & \textbf{NFL (NFX Parity)} & \textbf{NFL (RustiFlow Parity)} \\
+\textbf{Base(495f)} & \textbf{Parity(NTL)} & \textbf{Parity(NFX)} & \textbf{Parity(Rust)} & \textbf{Rust Original} & \textbf{NFX Original} \\
 \midrule
-SYN\_Bwd\_Cnt (0.1111) & BwdPacketsRate (0.1899) & ACK\_Cnt (0.0907) \\
-SYN\_Cnt (0.0916) & PacketsCount (0.1799) & SYN\_Cnt (0.0904) \\
-FwdInitWinBytes (0.0818) & TotalBytes (0.1500) & Win\_Median (0.0852) \\
-RST\_Cnt (0.0806) & BytesRate (0.1300) & SYN\_Bwd\_Cnt (0.0707) \\
-Tot\_DeltaLen\_Min (0.0782) & PacketsRate (0.1299) & FwdInitWinBytes (0.0701) \\
+- & - & - & - & - & - \\
+- & - & - & - & - & - \\
+- & - & - & - & - & - \\
 \bottomrule
 \end{tabular}}
 \caption{Principais atributos de correlação estocástica por limiar dimensional (Syn).}
@@ -696,12 +684,12 @@ Tot\_DeltaLen\_Min (0.0782) & PacketsRate (0.1299) & FwdInitWinBytes (0.0701) \\
 \toprule
 \textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
 \midrule
-NetFlowLyzer (Base/495f) & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 560000 & 240000 \\
-NetFlowLyzer (NetFlowLyzer Parity) & 1.0000 & 0.9999 & 1.0000 & 0.9999 & 560000 & 240000 \\
-RustiFlow (Original) & 1.0000 & 1.0000 & 1.0000 & 1.0000 & 1050000 & 450000 \\
-NetFlowLyzer (NFX Parity) & 0.9999 & 0.9998 & 0.9999 & 0.9999 & 560000 & 240000 \\
-NetFlowLyzer (RustiFlow Parity) & 1.0000 & 0.9999 & 1.0000 & 0.9999 & 560000 & 240000 \\
-NetFeatureXtract (Original) & 1.0000 & N/A 0.00 & N/A 0.00 & N/A 0.00 & N/A 0.00 & N/A 0.00 \\
+NetFlowLyzer (Base/495f) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (NetFlowLyzer Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+RustiFlow (Original) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (NFX Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (RustiFlow Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFeatureXtract (Original) & N/A & N/A & N/A & N/A & N/A & N/A \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -718,14 +706,14 @@ NetFeatureXtract (Original) & 1.0000 & N/A 0.00 & N/A 0.00 & N/A 0.00 & N/A 0.00
 \begin{threeparttable}
 \begin{tabular}{lccc}
 \toprule
-\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes/Eventos} & \textbf{Tempo (s)} & \textbf{Vazão (PPS/FPS)} \\
 \midrule
-NetFlowLyzer (Base/495f) & 4403877 & 31.98 & 137688.05 \\
-NetFlowLyzer (NetFlowLyzer Parity) & 2681954 & 16.27 & 164881.77 \\
-RustiFlow (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
-NetFlowLyzer (NFX Parity) & 2681954 & 16.41 & 163459.89 \\
-NetFlowLyzer (RustiFlow Parity) & 2681954 & 15.83 & 169471.70 \\
-NetFeatureXtract (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
+NetFlowLyzer (Base/495f) & N/A & N/A & N/A \\
+NetFlowLyzer (NetFlowLyzer Parity) & N/A & N/A & N/A \\
+RustiFlow (Original) & N/A & N/A & N/A \\
+NetFlowLyzer (NFX Parity) & N/A & N/A & N/A \\
+NetFlowLyzer (RustiFlow Parity) & N/A & N/A & N/A \\
+NetFeatureXtract (Original) & N/A & N/A & N/A \\
 \bottomrule
 \end{tabular}
 \end{threeparttable}
@@ -738,13 +726,11 @@ NetFeatureXtract (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
 \resizebox{\textwidth}{!}{
 \begin{tabular}{l|l|l|l|l|l}
 \toprule
-\textbf{NFL (Base/495f)} & \textbf{NFL (NFL Parity)} & \textbf{NFL (NFX Parity)} & \textbf{NFL (RustiFlow Parity)} \\
+\textbf{Base(495f)} & \textbf{Parity(NTL)} & \textbf{Parity(NFX)} & \textbf{Parity(Rust)} & \textbf{Rust Original} & \textbf{NFX Original} \\
 \midrule
-RST\_Bwd\_Cnt (0.0701) & FwdInitWinBytes (0.0999) & Tot\_Pay\_Max (0.2261) & Win\_Median (0.0697) \\
-RST\_Cnt (0.0677) & ACK\_Cnt (0.0711) & Tot\_Pay\_Min (0.2130) & Win\_Mean (0.0592) \\
-ACK\_Bwd\_Cnt (0.0648) & Tot\_Pay\_Mean (0.0681) & Tot\_Pay\_Mean (0.2066) & Win\_Max (0.0537) \\
-ACK\_Cnt (0.0631) & Tot\_Pay\_Min (0.0636) & TotalBytes (0.1292) & Bwd\_Pay\_Mean (0.0527) \\
-TotalBytes (0.0623) & ACK\_Bwd\_Cnt (0.0600) & BwdBytesRate (0.0545) & FwdInitWinBytes (0.0527) \\
+- & - & - & - & - & - \\
+- & - & - & - & - & - \\
+- & - & - & - & - & - \\
 \bottomrule
 \end{tabular}}
 \caption{Principais atributos de correlação estocástica por limiar dimensional (TFTP).}
@@ -762,12 +748,12 @@ TotalBytes (0.0623) & ACK\_Bwd\_Cnt (0.0600) & BwdBytesRate (0.0545) & FwdInitWi
 \toprule
 \textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
 \midrule
-NetFlowLyzer (Base/495f) & 0.9999 & 0.9998 & 0.9998 & 1.0000 & 800000 & 800000 \\
-NetFlowLyzer (NetFlowLyzer Parity) & 0.9999 & 0.9998 & 0.9998 & 0.9999 & 800000 & 800000 \\
-RustiFlow (Original) & 0.9999 & 0.9998 & 0.9998 & 1.0000 & 1500000 & 1500000 \\
-NetFlowLyzer (NFX Parity) & 0.9998 & 0.9995 & 0.9999 & 0.9997 & 791727 & 800000 \\
-NetFlowLyzer (RustiFlow Parity) & 0.9997 & 0.9995 & 0.9998 & 0.9996 & 800000 & 800000 \\
-NetFeatureXtract (Original) & 0.9999 & 0.9999 & 1.0000 & 0.9999 & 582132 & 249511 \\
+NetFlowLyzer (Base/495f) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (NetFlowLyzer Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+RustiFlow (Original) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (NFX Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (RustiFlow Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFeatureXtract (Original) & N/A & N/A & N/A & N/A & N/A & N/A \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -784,14 +770,14 @@ NetFeatureXtract (Original) & 0.9999 & 0.9999 & 1.0000 & 0.9999 & 582132 & 24951
 \begin{threeparttable}
 \begin{tabular}{lccc}
 \toprule
-\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes/Eventos} & \textbf{Tempo (s)} & \textbf{Vazão (PPS/FPS)} \\
 \midrule
-NetFlowLyzer (Base/495f) & 5236286 & 36.56 & 143211.34 \\
-NetFlowLyzer (NetFlowLyzer Parity) & 2631650 & 15.37 & 171186.89 \\
-RustiFlow (Original) & 31716588 & 112.50 & 281925.22 \\
-NetFlowLyzer (NFX Parity) & 2157649 & 14.03 & 153818.52 \\
-NetFlowLyzer (RustiFlow Parity) & 2157649 & 14.53 & 148528.67 \\
-NetFeatureXtract (Original) & 68740315 & 124.30 & 553019.42 \\
+NetFlowLyzer (Base/495f) & N/A & N/A & N/A \\
+NetFlowLyzer (NetFlowLyzer Parity) & N/A & N/A & N/A \\
+RustiFlow (Original) & N/A & N/A & N/A \\
+NetFlowLyzer (NFX Parity) & N/A & N/A & N/A \\
+NetFlowLyzer (RustiFlow Parity) & N/A & N/A & N/A \\
+NetFeatureXtract (Original) & N/A & N/A & N/A \\
 \bottomrule
 \end{tabular}
 \end{threeparttable}
@@ -804,13 +790,11 @@ NetFeatureXtract (Original) & 68740315 & 124.30 & 553019.42 \\
 \resizebox{\textwidth}{!}{
 \begin{tabular}{l|l|l|l|l|l}
 \toprule
-\textbf{NFL (Base/495f)} & \textbf{NFL (NFL Parity)} & \textbf{NFL (NFX Parity)} & \textbf{NFL (RustiFlow Parity)} \\
+\textbf{Base(495f)} & \textbf{Parity(NTL)} & \textbf{Parity(NFX)} & \textbf{Parity(Rust)} & \textbf{Rust Original} & \textbf{NFX Original} \\
 \midrule
-Bwd\_Pay\_Max (0.0683) & Tot\_Pay\_Mean (0.0839) & Tot\_Pay\_Min (0.2480) & Tot\_Pay\_Min (0.0784) \\
-Tot\_Pay\_Min (0.0610) & Bwd\_Pay\_Mean (0.0809) & Tot\_Pay\_Mean (0.1987) & TotalBytes (0.0750) \\
-Tot\_Pay\_Max (0.0592) & FwdInitWinBytes (0.0789) & Tot\_Pay\_Max (0.1899) & Bwd\_Pay\_Min (0.0715) \\
-Win\_Mean (0.0571) & Bwd\_Pay\_Min (0.0749) & TotalBytes (0.1410) & Tot\_Pay\_Median (0.0663) \\
-Tot\_Pay\_Median (0.0489) & Tot\_Pay\_Median (0.0616) & BytesRate (0.0626) & Tot\_Pay\_Mean (0.0647) \\
+- & - & - & - & - & - \\
+- & - & - & - & - & - \\
+- & - & - & - & - & - \\
 \bottomrule
 \end{tabular}}
 \caption{Principais atributos de correlação estocástica por limiar dimensional (UDP).}
@@ -828,12 +812,12 @@ Tot\_Pay\_Median (0.0489) & Tot\_Pay\_Median (0.0616) & BytesRate (0.0626) & Tot
 \toprule
 \textbf{Ferramenta/Etapa} & \textbf{F1-Score} & \textbf{Acurácia} & \textbf{Precisão} & \textbf{Recall} & \textbf{Treino} & \textbf{Teste} \\
 \midrule
-NetFlowLyzer (Base/495f) & 0.9995 & 0.9990 & 0.9991 & 0.9999 & 48216 & 153296 \\
-NetFlowLyzer (NetFlowLyzer Parity) & 0.9996 & 0.9991 & 0.9994 & 0.9999 & 52319 & 22421 \\
-RustiFlow (Original) & 0.9997 & 0.9996 & 0.9995 & 1.0000 & 427883 & 1162562 \\
-NetFlowLyzer (NFX Parity) & 0.9992 & 0.9984 & 0.9991 & 0.9999 & 51221 & 21952 \\
-NetFlowLyzer (RustiFlow Parity) & 0.9991 & 0.9983 & 0.9986 & 0.9997 & 60205 & 52365 \\
-NetFeatureXtract (Original) & 0.9998 & 0.9997 & 0.9998 & 1.0000 & 58213 & 24951 \\
+NetFlowLyzer (Base/495f) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (NetFlowLyzer Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+RustiFlow (Original) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (NFX Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFlowLyzer (RustiFlow Parity) & N/A & N/A & N/A & N/A & N/A & N/A \\
+NetFeatureXtract (Original) & N/A & N/A & N/A & N/A & N/A & N/A \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -850,14 +834,14 @@ NetFeatureXtract (Original) & 0.9998 & 0.9997 & 0.9998 & 1.0000 & 58213 & 24951 
 \begin{threeparttable}
 \begin{tabular}{lccc}
 \toprule
-\textbf{Ferramenta/Etapa} & \textbf{Pacotes} & \textbf{Tempo (s)} & \textbf{PPS} \\
+\textbf{Ferramenta/Etapa} & \textbf{Pacotes/Eventos} & \textbf{Tempo (s)} & \textbf{Vazão (PPS/FPS)} \\
 \midrule
-NetFlowLyzer (Base/495f) & 426777 & 3.01 & 141990.39 \\
-NetFlowLyzer (NetFlowLyzer Parity) & 426777 & 1.50 & 283785.11 \\
-RustiFlow (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
-NetFlowLyzer (NFX Parity) & 426777 & 2.00 & 212875.81 \\
-NetFlowLyzer (RustiFlow Parity) & 426777 & 2.50 & 170382.94 \\
-NetFeatureXtract (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
+NetFlowLyzer (Base/495f) & N/A & N/A & N/A \\
+NetFlowLyzer (NetFlowLyzer Parity) & N/A & N/A & N/A \\
+RustiFlow (Original) & N/A & N/A & N/A \\
+NetFlowLyzer (NFX Parity) & N/A & N/A & N/A \\
+NetFlowLyzer (RustiFlow Parity) & N/A & N/A & N/A \\
+NetFeatureXtract (Original) & N/A & N/A & N/A \\
 \bottomrule
 \end{tabular}
 \end{threeparttable}
@@ -870,13 +854,11 @@ NetFeatureXtract (Original) & 1.0000 & N/A 0.00 & N/A 0.00 \\
 \resizebox{\textwidth}{!}{
 \begin{tabular}{l|l|l|l|l|l}
 \toprule
-\textbf{NFL (Base/495f)} & \textbf{NFL (RustiFlow Parity)} \\
+\textbf{Base(495f)} & \textbf{Parity(NTL)} & \textbf{Parity(NFX)} & \textbf{Parity(Rust)} & \textbf{Rust Original} & \textbf{NFX Original} \\
 \midrule
-Frag\_Max (0.0780) & TotalBytes (0.0877) \\
-Frag\_Mean (0.0768) & Tot\_Pay\_Mean (0.0815) \\
-Frag\_Min (0.0740) & Bwd\_Pay\_Min (0.0759) \\
-Frag\_Median (0.0511) & Tot\_Pay\_Min (0.0682) \\
-Tot\_Pay\_Max (0.0417) & Bwd\_Pay\_Mean (0.0607) \\
+- & - & - & - & - & - \\
+- & - & - & - & - & - \\
+- & - & - & - & - & - \\
 \bottomrule
 \end{tabular}}
 \caption{Principais atributos de correlação estocástica por limiar dimensional (UDPLag).}
