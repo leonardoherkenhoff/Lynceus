@@ -96,6 +96,15 @@ EXTRACTOR_SCHEMA_MAP = {
     'NFX':                     'NFX',
 }
 
+# Map EBPF_PARITY_* directory names to their parity filter mode.
+# These datasets contain ALL Lynceus columns, but the benchmark must
+# restrict to only features with semantic equivalents in the target extractor.
+PARITY_MODE_MAP = {
+    'EBPF_PARITY_NFX':        'nfx',
+    'EBPF_PARITY_NTL':        'ntl',
+    'EBPF_PARITY_RUSTIFLOW':  'rustiflow',
+}
+
 # Residual safety net: any column containing these substrings is also purged
 LEAKAGE_SUBSTRINGS = ['unnamed', 'mac', 'vlan']
 
@@ -103,6 +112,112 @@ LEAKAGE_SUBSTRINGS = ['unnamed', 'mac', 'vlan']
 SAFE_THRESHOLD = 500 * 1024 * 1024  # 500 MB
 CHUNK_SIZE = 200_000
 MAX_ROWS_PER_FILE = 2_500_000
+
+# =============================================================================
+# [Parity Filter: Restrict features to target extractor's semantic equivalents]
+# =============================================================================
+
+def apply_parity_filter(df, mode):
+    """Filter Lynceus features to match the logical set of another extractor.
+
+    This ensures a fair comparison: EBPF_PARITY_* datasets contain ALL Lynceus
+    columns (many zeroed out), but the benchmark must use only the features
+    that have a semantic equivalent in the target extractor's schema.
+
+    Adapted from ebpf_run_benchmark.py _apply_parity_filter().
+    """
+    cols = df.columns.tolist()
+
+    if mode == 'rustiflow':
+        # RustiFlow Parity: Timing, IAT, PktLen, HdrLen, Bulk, ActiveIdle,
+        # Window, ICMP, Flags, basic counters, rates.
+        metrics = [
+            'Tot_Pay', 'Fwd_Pay', 'Bwd_Pay',
+            'Tot_Hdr', 'Fwd_Hdr', 'Bwd_Hdr',
+            'Tot_IAT', 'Fwd_IAT', 'Bwd_IAT',
+            'Active', 'Idle', 'Win',
+        ]
+        stats = ['Max', 'Min', 'Mean', 'Std', 'Var', 'Median', 'Skew', 'CoV', 'Mode']
+
+        keep = []
+        for m in metrics:
+            for s in stats:
+                keep.append(f"{m}_{s}")
+
+        flags = ['FIN', 'SYN', 'RST', 'PSH', 'ACK', 'URG', 'ECE', 'CWR']
+        for f in flags:
+            keep.extend([f"{f}_Cnt", f"{f}_Fwd_Cnt", f"{f}_Bwd_Cnt"])
+
+        keep.extend([
+            'duration', 'PacketsCount', 'FwdPacketsCount', 'BwdPacketsCount',
+            'TotalBytes', 'FwdBytes', 'BwdBytes', 'FwdBwdPktRatio', 'FwdBwdByteRatio',
+            'FwdInitWinBytes', 'BwdInitWinBytes', 'IcmpType', 'IcmpCode', 'IcmpEchoId',
+            'BytesRate', 'FwdBytesRate', 'BwdBytesRate',
+            'PacketsRate', 'FwdPacketsRate', 'BwdPacketsRate', 'DownUpRatio',
+            'FwdBulkBytes', 'FwdBulkPkts', 'FwdBulkCnt',
+            'BwdBulkBytes', 'BwdBulkPkts', 'BwdBulkCnt',
+            'PayloadEntropy',
+        ])
+
+    elif mode == 'nfx':
+        # NFX Parity: extremely minimal — packets, bytes, duration, rates.
+        # NFX natively exports only (packets, bytes) after leakage purge.
+        # For parity we keep all Lynceus equivalents of basic volume/rate.
+        keep = [
+            'PacketsCount', 'FwdPacketsCount', 'BwdPacketsCount',
+            'TotalBytes', 'FwdBytes', 'BwdBytes',
+            'duration',
+            'BytesRate', 'FwdBytesRate', 'BwdBytesRate',
+            'PacketsRate', 'FwdPacketsRate', 'BwdPacketsRate',
+            'DownUpRatio', 'FwdBwdPktRatio', 'FwdBwdByteRatio',
+        ]
+
+    elif mode == 'ntl':
+        # NTL+AL Parity: Statistical blocks + DeltaLen + Flags + DNS + TTL_Var.
+        # NO histograms, NO IpId, NO Frag (Lynceus-exclusive features).
+        metrics = [
+            'Tot_Pay', 'Fwd_Pay', 'Bwd_Pay',
+            'Tot_Hdr', 'Fwd_Hdr', 'Bwd_Hdr',
+            'Tot_IAT', 'Fwd_IAT', 'Bwd_IAT',
+            'Tot_DeltaLen', 'Fwd_DeltaLen', 'Bwd_DeltaLen',
+            'Active', 'Idle',
+        ]
+        stats = ['Max', 'Min', 'Mean', 'Std', 'Var', 'Median', 'Skew', 'CoV', 'Mode']
+
+        keep = []
+        for m in metrics:
+            for s in stats:
+                keep.append(f"{m}_{s}")
+
+        flags = ['FIN', 'SYN', 'RST', 'PSH', 'ACK', 'URG', 'ECE', 'CWR']
+        for f in flags:
+            keep.extend([f"{f}_Cnt", f"{f}_Fwd_Cnt", f"{f}_Bwd_Cnt"])
+
+        keep.extend([
+            'duration', 'PacketsCount', 'FwdPacketsCount', 'BwdPacketsCount',
+            'TotalBytes', 'FwdBytes', 'BwdBytes',
+            'FwdInitWinBytes', 'BwdInitWinBytes',
+            'BytesRate', 'FwdBytesRate', 'BwdBytesRate',
+            'PacketsRate', 'FwdPacketsRate', 'BwdPacketsRate', 'DownUpRatio',
+            'FwdBulkBytes', 'FwdBulkPkts', 'FwdBulkCnt',
+            'BwdBulkBytes', 'BwdBulkPkts', 'BwdBulkCnt',
+            # AL (DNS layer)
+            'DNSAnswerCount', 'DNSQueryType', 'DNSQueryClass',
+            # TTL variance suite (NTL captures via packet-level TTL)
+            'TTL_Var_Max', 'TTL_Var_Min', 'TTL_Var_Mean', 'TTL_Var_Std',
+            'TTL_Var_Var', 'TTL_Var_Median', 'TTL_Var_Skew',
+            'TTL_Var_CoV', 'TTL_Var_Mode',
+            'PayloadEntropy',
+        ])
+
+    else:
+        return df  # No filter — return as-is
+
+    # Intersect with what actually exists in the DataFrame
+    final_keep = [c for c in keep if c in cols]
+    print(f"    🔬 Parity Filter [{mode}]: Kept {len(final_keep)}/{len(cols)} features.")
+    return df[final_keep]
+
 
 # =============================================================================
 # [Data Processing Functions]
@@ -142,8 +257,8 @@ def purge_leakage_columns(df, schema_name):
     return df_clean, cols_to_drop
 
 
-def process_chunk(df_chunk, schema_name):
-    """Sanitize chunk: remove leakage, encode categoricals, handle NaN/Inf."""
+def process_chunk(df_chunk, schema_name, parity_mode=None):
+    """Sanitize chunk: remove leakage, apply parity filter, encode categoricals."""
     # Identify label column
     possible_labels = [c for c in df_chunk.columns if c.lower() in ('label', 'class')]
     if not possible_labels:
@@ -169,6 +284,10 @@ def process_chunk(df_chunk, schema_name):
     # Anti-leakage purge
     X, dropped = purge_leakage_columns(df_chunk, schema_name)
 
+    # Parity filter: restrict to target extractor's semantic equivalents
+    if parity_mode:
+        X = apply_parity_filter(X, parity_mode)
+
     # Label-encode any remaining string columns
     # (e.g., DNSQueryType, NTP_Mode, SNMP_PDU_Type, SSDP_Method — legitimate L7 features)
     for col in X.columns:
@@ -190,16 +309,31 @@ def process_chunk(df_chunk, schema_name):
     return X, y_bin
 
 
-def load_dataset(filepath, schema_name):
-    """Load CSV entirely or via reservoir sampling if above SAFE_THRESHOLD."""
+def load_dataset(filepath, schema_name, parity_mode=None):
+    """Load CSV entirely or via reservoir sampling if above SAFE_THRESHOLD.
+
+    Args:
+        filepath: Path to labeled CSV.
+        schema_name: Leakage schema key (LYNCEUS, RUSTIFLOW, NFX).
+        parity_mode: If set, restrict features to target extractor equivalents.
+    """
     if not os.path.exists(filepath):
         return None, None
     fsize = os.path.getsize(filepath)
 
+    # For parity modes, only print the filter message once (first chunk)
+    parity_printed = [False]
+    def _parity_for_chunk(pm):
+        """Return parity_mode only for the first chunk to avoid repeated prints."""
+        if parity_printed[0]:
+            return pm  # still filter, but apply_parity_filter won't re-print
+        parity_printed[0] = True
+        return pm
+
     if fsize < SAFE_THRESHOLD:
         try:
             df = pd.read_csv(filepath, low_memory=False)
-            return process_chunk(df, schema_name)
+            return process_chunk(df, schema_name, parity_mode)
         except Exception as e:
             print(f"      ⚠️  Load error: {e}")
             return None, None
@@ -213,7 +347,7 @@ def load_dataset(filepath, schema_name):
             rng = np.random.RandomState(42)
 
             for chunk in pd.read_csv(filepath, chunksize=CHUNK_SIZE, low_memory=False):
-                X_c, y_c = process_chunk(chunk, schema_name)
+                X_c, y_c = process_chunk(chunk, schema_name, _parity_for_chunk(parity_mode))
                 if X_c is None:
                     continue
                 if sample_rate < 1.0:
@@ -355,6 +489,7 @@ def run_balanced_benchmark():
     for ext_name in available:
         ext_dir = os.path.join(processed_root, ext_name)
         schema = detect_extractor_schema(ext_name)
+        parity_mode = PARITY_MODE_MAP.get(ext_name, None)
 
         print(f"\n{'#' * 60}")
         print(f"  EXTRACTOR: {ext_name} (schema: {schema})")
@@ -383,17 +518,17 @@ def run_balanced_benchmark():
 
                 if train_path and test_path:
                     result = _run_temporal_validation(
-                        train_path, test_path, ext_name, schema, attack
+                        train_path, test_path, ext_name, schema, attack, parity_mode
                     )
                 elif train_path:
                     print(f"    ⚠️  Apenas Dia 1 encontrado. Fallback para Split 70/30.")
                     result = _run_split_validation(
-                        train_path, ext_name, schema, attack
+                        train_path, ext_name, schema, attack, parity_mode
                     )
                 elif test_path:
                     print(f"    ⚠️  Apenas Dia 2 encontrado. Fallback para Split 70/30.")
                     result = _run_split_validation(
-                        test_path, ext_name, schema, attack
+                        test_path, ext_name, schema, attack, parity_mode
                     )
                 else:
                     print(f"    ❌ Nenhum CSV encontrado para {attack}.")
@@ -413,7 +548,7 @@ def run_balanced_benchmark():
                     continue
 
                 result = _run_split_validation(
-                    file_path, ext_name, schema, attack
+                    file_path, ext_name, schema, attack, parity_mode
                 )
 
             if result:
@@ -434,7 +569,7 @@ def run_balanced_benchmark():
         print("\n❌ Nenhum resultado gerado.")
 
 
-def _run_temporal_validation(train_path, test_path, ext_name, schema, attack):
+def _run_temporal_validation(train_path, test_path, ext_name, schema, attack, parity_mode=None):
     """Cross-Day Temporal Validation: Train on Day 1, Test on Day 2."""
     strategy = 'Temporal'
     print(f"    Validação TEMPORAL (Treino Dia 1 → Teste Dia 2)...")
@@ -442,7 +577,7 @@ def _run_temporal_validation(train_path, test_path, ext_name, schema, attack):
     print(f"    Test:  {os.path.relpath(test_path)}")
 
     try:
-        X_train, y_train = load_dataset(train_path, schema)
+        X_train, y_train = load_dataset(train_path, schema, parity_mode)
         if X_train is None or len(y_train.unique()) < 2:
             print(f"    ❌ Dados de treino inválidos ou < 2 classes.")
             return None
@@ -478,7 +613,7 @@ def _run_temporal_validation(train_path, test_path, ext_name, schema, attack):
         gc.collect()
 
         # Load and balance test set
-        X_test, y_test = load_dataset(test_path, schema)
+        X_test, y_test = load_dataset(test_path, schema, parity_mode)
         if X_test is None or len(y_test.unique()) < 2:
             print(f"    ❌ Dados de teste inválidos ou < 2 classes.")
             return None
@@ -511,14 +646,14 @@ def _run_temporal_validation(train_path, test_path, ext_name, schema, attack):
         return None
 
 
-def _run_split_validation(file_path, ext_name, schema, attack):
+def _run_split_validation(file_path, ext_name, schema, attack, parity_mode=None):
     """Split Validation (70/30 Stratified)."""
     strategy = 'Split'
     print(f"    Validação SPLIT (70/30)...")
     print(f"    File: {os.path.relpath(file_path)}")
 
     try:
-        X, y = load_dataset(file_path, schema)
+        X, y = load_dataset(file_path, schema, parity_mode)
         if X is None or len(y.unique()) < 2:
             print(f"    ❌ Dados inválidos ou < 2 classes.")
             return None
