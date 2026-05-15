@@ -190,7 +190,8 @@ def apply_parity_filter(df, mode):
             'TotalBytes', 'FwdBytes', 'BwdBytes',
             'FwdInitWinBytes', 'BwdInitWinBytes',
             'BytesRate', 'FwdBytesRate', 'BwdBytesRate',
-            'PacketsRate', 'FwdPacketsRate', 'BwdPacketsRate', 'DownUpRatio',
+            'PacketsRate', 'FwdPacketsRate', 'BwdPacketsRate',
+            'DownUpRatio', 'FwdBwdPktRatio', 'FwdBwdByteRatio',
             'FwdBulkBytes', 'FwdBulkPkts', 'FwdBulkCnt',
             'BwdBulkBytes', 'BwdBulkPkts', 'BwdBulkCnt',
             # AL (DNS layer)
