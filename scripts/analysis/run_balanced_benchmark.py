@@ -160,17 +160,9 @@ def apply_parity_filter(df, mode):
         ])
 
     elif mode == 'nfx':
-        # NFX Parity: extremely minimal — packets, bytes, duration, rates.
-        # NFX natively exports only (packets, bytes) after leakage purge.
-        # For parity we keep all Lynceus equivalents of basic volume/rate.
-        keep = [
-            'PacketsCount', 'FwdPacketsCount', 'BwdPacketsCount',
-            'TotalBytes', 'FwdBytes', 'BwdBytes',
-            'duration',
-            'BytesRate', 'FwdBytesRate', 'BwdBytesRate',
-            'PacketsRate', 'FwdPacketsRate', 'BwdPacketsRate',
-            'DownUpRatio', 'FwdBwdPktRatio', 'FwdBwdByteRatio',
-        ]
+        # NFX Parity: STRICT (2 features only)
+        # Matching NFX schema: [packets, bytes]
+        keep = ['PacketsCount', 'TotalBytes']
 
     elif mode == 'ntl':
         # NTL+AL Parity: Statistical blocks + DeltaLen + Flags + DNS + TTL_Var.
