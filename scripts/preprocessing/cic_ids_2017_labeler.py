@@ -23,11 +23,11 @@ import multiprocessing
 import numpy as np
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
+import pandas as pd
 try:
     import polars as pl
     USE_POLARS = True
 except ImportError:
-    import pandas as pd
     USE_POLARS = False
 
 # --- Topological Configuration ---
