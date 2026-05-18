@@ -77,16 +77,19 @@ def main():
     for f in csv_files:
         print(f"    -> Loading & Preprocessing (Polars Streaming): {os.path.basename(f)}...", flush=True)
         
-        # Use Polars Lazy Engine with column projection and streaming collect.
-        # This completely avoids parsing the unused string/identity columns and streaming peaks.
+        # Use Polars Lazy Engine with column projection, static float32 casting, and streaming collect.
+        # This completely avoids parsing the unused columns and prevents double allocation of Float64 in numpy.
         df = pl.scan_csv(f, infer_schema_length=10000) \
                .select(feature_cols + ["Label"]) \
-               .collect(streaming=True)
+               .with_columns([
+                   pl.col(c).cast(pl.Float32) for c in feature_cols
+               ]) \
+               .collect(engine="streaming")
                
         chunk_len = len(df)
         
-        # Inline cleaning and extraction
-        chunk_features = df.select(feature_cols).to_numpy().astype(np.float32)
+        # Inline extraction (features are already float32 in Polars, zero copy array view)
+        chunk_features = df.select(feature_cols).to_numpy()
         np.nan_to_num(chunk_features, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
         
         # Write to target matrix slice
