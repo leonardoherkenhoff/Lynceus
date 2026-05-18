@@ -60,7 +60,7 @@ for PCAP in $FILES; do
     # O motor eBPF anexa ao hook XDP da interface receptora (veth1)
     # Salvamos o stderr para diagnóstico científico preciso de falhas de carregamento BPF
     ERR_FILE="$OUT_DIR/${CSV_NAME}.err"
-    ./build/loader veth1 > "$OUT_DIR/$CSV_NAME" 2> "$ERR_FILE" &
+    ./build/loader veth1 skb > "$OUT_DIR/$CSV_NAME" 2> "$ERR_FILE" &
     LOADER_PID=$!
     
     echo "    -> Aguardando estabilização dos mapas BPF..."
@@ -73,7 +73,7 @@ for PCAP in $FILES; do
     fi
     
     echo "    -> Disparando tcpreplay em TOPSPEED (Limites de Hardware) via veth0..."
-    tcpreplay --topspeed -i veth0 "$PCAP"
+    tcpreplay-edit --topspeed --mtu-trunc -i veth0 "$PCAP"
     
     echo "    -> Finalizando coleta e gravando CSV..."
     kill -SIGINT $LOADER_PID

@@ -41,7 +41,7 @@ make
 
 echo "[*] Iniciando o Daemon do Lynceus (XDP) em background..."
 # Roda o Lynceus na interface de loopback
-./build/loader $IFACE > loader_audit.log 2>&1 &
+./build/loader $IFACE skb > loader_audit.log 2>&1 &
 LYNCEUS_PID=$!
 
 echo "[*] Aguardando estabilizacao dos mapas BPF (3s)..."
@@ -56,7 +56,7 @@ echo "[*] Iniciando a injeção massiva (TOPSPEED) via tcpreplay..."
 echo "[*] Monitorando relogio global..."
 
 # Executa e cronometra o tcpreplay na veth0
-/usr/bin/time -v tcpreplay -i $TC_IFACE --topspeed "$PCAP_FILE"
+/usr/bin/time -v tcpreplay-edit -i $TC_IFACE --topspeed --mtu-trunc "$PCAP_FILE"
 
 echo "[*] Injeção concluida! Enviando sinal de encerramento para o Daemon..."
 kill -SIGINT $LYNCEUS_PID
