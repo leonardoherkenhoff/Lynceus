@@ -43,7 +43,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dir", type=str, default=PROCESSED_DIR, help="Directory containing labeled CSVs")
     parser.add_argument("--binary", action="store_true", help="Perform Binary (Attack vs Benign) classification")
-    parser.add_argument("--max-samples", type=int, default=800000, help="Maximum sample count to load (anti-OOM cap, set <= 0 to disable)")
+    parser.add_argument("--max-samples", type=int, default=0, help="Maximum sample count to load (anti-OOM cap, set <= 0 to disable)")
+    parser.add_argument("--max-depth", type=int, default=None, help="Maximum depth of trees (set to prevent OOM on full dataset, e.g. 15)")
     args = parser.parse_args()
 
     print("=== LYNCEUS DATASET VALIDATION PROTOCOL (CIC-IDS-2017) ===", flush=True)
@@ -146,8 +147,8 @@ def main():
     gc.collect()
 
     print("\n[MODEL] Initializing Random Forest estimator (n_estimators=100)...", flush=True)
-    # Applied scientific parity parameters: 100 estimators, fully grown trees (max_depth=None)
-    clf = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
+    # Applied scientific parity parameters: 100 estimators, fully grown trees (unless max_depth is set)
+    clf = RandomForestClassifier(n_estimators=100, n_jobs=-1, max_depth=args.max_depth, random_state=42)
     
     # Force the threading backend to avoid Loky IPC/process-based memory duplication (OOM) 
     # on high-core-count Xeon processors while still releasing the GIL in Cython.
