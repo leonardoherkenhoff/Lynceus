@@ -86,6 +86,13 @@ def load_and_clean_dataset_polars(target_dir, binary=False):
     del pl_dfs
     gc.collect()
     
+    # Apply Stratified Sampling (35%) to prevent OOM during RF fit and match literature density (2.8M rows)
+    print("[*] Applying 35% Stratified Sampling (Volumetric Parity with CIC-IDS-2017 baseline)...", flush=True)
+    # We group by Label to ensure the exact imbalanced class distribution is preserved
+    merged = merged.filter(pl.col("Label").is_not_null())
+    # Polars sample by group is very efficient
+    merged = merged.select(pl.all().sample(fraction=0.35, seed=42).over("Label"))
+    
     print("[*] Transforming labels to target formats...", flush=True)
     if binary:
         merged = merged.with_columns(
