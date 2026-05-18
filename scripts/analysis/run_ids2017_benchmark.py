@@ -24,6 +24,7 @@ import polars as pl
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, f1_score
+from joblib import parallel_backend
 
 # --- Configuration ---
 BASE_DIR = "/opt/eBPFNetFlowLyzer"
@@ -130,8 +131,13 @@ def main():
     gc.collect()
 
     print("\n[*] Training Random Forest Classifier on Xeon Silver...", flush=True)
-    clf = RandomForestClassifier(n_estimators=50, n_jobs=-1, max_depth=15, random_state=42)
-    clf.fit(X_train, y_train)
+    # Applied scientific parity parameters: 100 estimators, fully grown trees (max_depth=None)
+    clf = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
+    
+    # Force the threading backend to avoid Loky IPC/process-based memory duplication (OOM) 
+    # on high-core-count Xeon processors while still releasing the GIL in Cython.
+    with parallel_backend('threading', n_jobs=-1):
+        clf.fit(X_train, y_train)
 
     print("[*] Evaluating Model...", flush=True)
     y_pred = clf.predict(X_test)
