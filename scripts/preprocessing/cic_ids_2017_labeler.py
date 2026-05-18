@@ -168,7 +168,10 @@ def _process_polars(file_path, category, day, output_file):
                          
             # 3. Thursday (Web Attacks / Infiltration)
             elif day == "thursday":
-                is_infil = is_attacker & ((pl.col(ip_col) == "192.168.10.8") | (pl.col(dst_col) == "192.168.10.8")) & (epochs >= 1499365140) & (epochs <= 1499370300)
+                is_infil = is_attacker & (
+                    (pl.col(ip_col) == "192.168.10.8") | (pl.col(dst_col) == "192.168.10.8") |
+                    (pl.col(ip_col) == "192.168.10.25") | (pl.col(dst_col) == "192.168.10.25")
+                ) & (epochs >= 1499365140) & (epochs <= 1499370300)
                 
                 is_web_bf = is_attacker & (epochs >= 1499347200) & (epochs <= 1499349600) & ~is_infil
                 is_web_xss = is_attacker & (epochs >= 1499350500) & (epochs <= 1499351700) & ~is_infil
