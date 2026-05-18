@@ -37,73 +37,6 @@ IDENTITY_DROP = [
 
 
 
-def load_and_clean_dataset_polars(target_dir, binary=False):
-    """
-    Loads and processes all CSV files using Polars streaming to minimize RAM footprint.
-    Performs column purging and Float32 downcasting inline before concatenation.
-    """
-    csv_files = glob.glob(os.path.join(target_dir, "**", "labeled_*.csv"), recursive=True)
-    # Ignore ghost legacy file
-    csv_files = [f for f in csv_files if os.path.basename(f) != "labeled_EBPF_RAW.csv"]
-    
-    if not csv_files:
-        raise FileNotFoundError(f"No labeled CSVs found in {target_dir}")
-        
-    print(f"[*] Found {len(csv_files)} labeled CSV files to merge.", flush=True)
-    pl_dfs = []
-    
-    for f in csv_files:
-        print(f"    -> Ingestion & Inline Cleaning: {os.path.basename(f)}...", flush=True)
-        # Probe schema first to drop identity columns immediately at read time
-        schema = pl.read_csv(f, n_rows=0).schema
-        drop_cols = [c for c in IDENTITY_DROP if c in schema]
-        
-        # Load file using Polars streaming engine
-        df = pl.read_csv(f, ignore_errors=True)
-        
-        # Drop columns
-        if drop_cols:
-            df = df.drop(drop_cols)
-            
-        # Treat Infinite values, Nulls and downcast numericals to float32
-        numeric_cols = [col for col, dtype in df.schema.items() if dtype in [pl.Float64, pl.Int64] and col != "Label"]
-        
-        # Replace Inf with NaN/0 and cast
-        df = df.with_columns([
-            pl.when(pl.col(c).is_infinite() | pl.col(c).is_nan() | pl.col(c).is_null())
-              .then(pl.lit(0.0, dtype=pl.Float32))
-              .otherwise(pl.col(c).cast(pl.Float32))
-              .alias(c)
-            for c in numeric_cols
-        ])
-        
-        pl_dfs.append(df)
-        
-    print("[*] Executing zero-copy Polars concatenation...", flush=True)
-    merged = pl.concat(pl_dfs)
-    
-    # Free partial elements
-    del pl_dfs
-    gc.collect()
-    
-    # Apply Stratified Sampling (35%) to prevent OOM during RF fit and match literature density (2.8M rows)
-    print("[*] Applying 35% Stratified Sampling (Volumetric Parity with CIC-IDS-2017 baseline)...", flush=True)
-    # We group by Label to ensure the exact imbalanced class distribution is preserved
-    merged = merged.filter(pl.col("Label").is_not_null())
-    # Polars sample by group is very efficient
-    merged = merged.select(pl.all().sample(fraction=0.35, seed=42).over("Label"))
-    
-    print("[*] Transforming labels to target formats...", flush=True)
-    if binary:
-        merged = merged.with_columns(
-            pl.when(pl.col("Label") == "BENIGN")
-              .then(pl.lit("BENIGN"))
-              .otherwise(pl.lit("ATTACK"))
-              .alias("Label")
-        )
-        
-    return merged
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dir", type=str, default=PROCESSED_DIR, help="Directory containing labeled CSVs")
@@ -112,25 +45,72 @@ def main():
 
     print("=== Lynceus CIC-IDS-2017 Validation (Sprint 1) ===", flush=True)
     
-    try:
-        merged = load_and_clean_dataset_polars(args.dir, binary=args.binary)
-    except FileNotFoundError as e:
-        print(f"⚠️ {e}", flush=True)
+    csv_files = glob.glob(os.path.join(args.dir, "**", "labeled_*.csv"), recursive=True)
+    csv_files = [f for f in csv_files if os.path.basename(f) != "labeled_EBPF_RAW.csv"]
+    
+    if not csv_files:
+        print(f"⚠️ No labeled CSVs found in {args.dir}", flush=True)
         return
 
-    print(f"[*] Dataset size formalized: {merged.shape}", flush=True)
-    print("[*] Class Distribution:", flush=True)
-    print(merged["Label"].value_counts(), flush=True)
-
-    print("[*] Extracting contiguous NumPy structures...", flush=True)
-    y = merged["Label"].to_numpy()
+    print(f"[*] Found {len(csv_files)} labeled CSV files.", flush=True)
     
-    # Extract features, drop Label column and convert to numpy
-    X = merged.drop("Label").to_numpy()
+    # 1. Probe total rows and feature schema using Polars Lazy frames (0 MB RAM overhead)
+    total_rows = 0
+    for f in csv_files:
+        total_rows += pl.scan_csv(f).select(pl.len()).collect().item()
+        
+    print(f"[*] Total Rows to Process: {total_rows}", flush=True)
     
-    # Force RAM clean of polars structures
-    del merged
-    gc.collect()
+    schema = pl.read_csv(csv_files[0], n_rows=0).schema
+    feature_cols = [c for c in schema.keys() if c not in IDENTITY_DROP and c != "Label"]
+    num_features = len(feature_cols)
+    
+    # 2. Pre-allocate NumPy arrays in memory (Float32 to fit exactly in RAM)
+    print(f"[*] Pre-allocating NumPy structures: {total_rows}x{num_features} (float32)...", flush=True)
+    X = np.empty((total_rows, num_features), dtype=np.float32)
+    y = np.empty(total_rows, dtype=np.uint8)
+    
+    label_map = {}
+    label_list = []
+    
+    # 3. Stream each file sequentially into the pre-allocated NumPy array
+    current_idx = 0
+    for f in csv_files:
+        print(f"    -> Loading & Preprocessing: {os.path.basename(f)}...", flush=True)
+        df = pl.read_csv(f, ignore_errors=True)
+        chunk_len = len(df)
+        
+        # Inline cleaning and extraction
+        chunk_features = df.select(feature_cols).to_numpy().astype(np.float32)
+        np.nan_to_num(chunk_features, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+        
+        # Write to target matrix slice
+        X[current_idx : current_idx + chunk_len, :] = chunk_features
+        
+        # Process and encode labels dynamically to save RAM
+        chunk_labels = df["Label"].to_numpy()
+        chunk_labels_encoded = np.empty(chunk_len, dtype=np.uint8)
+        
+        for j, lbl in enumerate(chunk_labels):
+            if args.binary:
+                lbl = "BENIGN" if lbl == "BENIGN" else "ATTACK"
+                
+            if lbl not in label_map:
+                label_map[lbl] = len(label_map)
+                label_list.append(lbl)
+            chunk_labels_encoded[j] = label_map[lbl]
+            
+        y[current_idx : current_idx + chunk_len] = chunk_labels_encoded
+        current_idx += chunk_len
+        
+        # Immediate garbage collection of the temporary Polars structures
+        del df, chunk_features, chunk_labels, chunk_labels_encoded
+        gc.collect()
+        
+    print("[*] Ingestion Complete. Class Distribution:", flush=True)
+    for lbl, idx in label_map.items():
+        count = np.sum(y == idx)
+        print(f"    {lbl}: {count}", flush=True)
 
     print("\n[*] Splitting Data (70/30) in NumPy space...", flush=True)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
@@ -149,7 +129,9 @@ def main():
     print("\n" + "="*50, flush=True)
     print("                 FINAL RESULTS", flush=True)
     print("="*50, flush=True)
-    print(classification_report(y_test, y_pred, digits=4), flush=True)
+    
+    target_names = [label_list[i] for i in range(len(label_list))]
+    print(classification_report(y_test, y_pred, target_names=target_names, digits=4), flush=True)
     
     f1_macro = f1_score(y_test, y_pred, average='macro')
     print(f"-> MACRO F1-SCORE: {f1_macro:.4f}", flush=True)
