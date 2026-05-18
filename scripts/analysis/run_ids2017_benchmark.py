@@ -15,13 +15,14 @@ Methodology:
 
 import os
 import glob
+import gc
 import argparse
 import pandas as pd
 import numpy as np
+import polars as pl
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, f1_score
-from imblearn.under_sampling import RandomUnderSampler
 
 # --- Configuration ---
 BASE_DIR = "/opt/eBPFNetFlowLyzer"
@@ -36,44 +37,65 @@ IDENTITY_DROP = [
 
 
 
-def load_and_merge_datasets(target_dir):
+def load_and_clean_dataset_polars(target_dir, binary=False):
+    """
+    Loads and processes all CSV files using Polars streaming to minimize RAM footprint.
+    Performs column purging and Float32 downcasting inline before concatenation.
+    """
     csv_files = glob.glob(os.path.join(target_dir, "**", "labeled_*.csv"), recursive=True)
-    # Ignore the ghost legacy file from previous bugs without deleting it
+    # Ignore ghost legacy file
     csv_files = [f for f in csv_files if os.path.basename(f) != "labeled_EBPF_RAW.csv"]
     
     if not csv_files:
         raise FileNotFoundError(f"No labeled CSVs found in {target_dir}")
         
-    print(f"[*] Found {len(csv_files)} labeled CSV files.", flush=True)
-    df_list = []
+    print(f"[*] Found {len(csv_files)} labeled CSV files to merge.", flush=True)
+    pl_dfs = []
     
     for f in csv_files:
-        print(f"    -> Loading {os.path.basename(f)}...", flush=True)
-        # Load directly in chunks and cast to float32 immediately to fit 100% in 32GB RAM
-        chunk_iter = pd.read_csv(f, chunksize=250000, low_memory=False)
-        for chunk in chunk_iter:
-            # Cast all numerical columns to float32
-            num_cols = chunk.select_dtypes(include=['float64', 'int64']).columns
-            chunk[num_cols] = chunk[num_cols].astype(np.float32)
-            df_list.append(chunk)
-            
-    merged_df = pd.concat(df_list, ignore_index=True)
-    return merged_df
-
-def clean_dataset(df):
-    """Drop identity columns, handle NaNs and infinities."""
-    drop_cols = [c for c in IDENTITY_DROP if c in df.columns]
-    df.drop(columns=drop_cols, inplace=True, errors='ignore')
-    
-    df.replace([np.inf, -np.inf], np.nan, inplace=True)
-    df.fillna(0, inplace=True)
-    
-    # Final downcast check
-    num_cols = df.select_dtypes(include=['float64']).columns
-    if len(num_cols) > 0:
-        df[num_cols] = df[num_cols].astype(np.float32)
+        print(f"    -> Ingestion & Inline Cleaning: {os.path.basename(f)}...", flush=True)
+        # Probe schema first to drop identity columns immediately at read time
+        schema = pl.read_csv(f, n_rows=0).schema
+        drop_cols = [c for c in IDENTITY_DROP if c in schema]
         
-    return df
+        # Load file using Polars streaming engine
+        df = pl.read_csv(f, ignore_errors=True)
+        
+        # Drop columns
+        if drop_cols:
+            df = df.drop(drop_cols)
+            
+        # Treat Infinite values, Nulls and downcast numericals to float32
+        numeric_cols = [col for col, dtype in df.schema.items() if dtype in [pl.Float64, pl.Int64] and col != "Label"]
+        
+        # Replace Inf with NaN/0 and cast
+        df = df.with_columns([
+            pl.when(pl.col(c).is_infinite() | pl.col(c).is_nan() | pl.col(c).is_null())
+              .then(pl.lit(0.0, dtype=pl.Float32))
+              .otherwise(pl.col(c).cast(pl.Float32))
+              .alias(c)
+            for c in numeric_cols
+        ])
+        
+        pl_dfs.append(df)
+        
+    print("[*] Executing zero-copy Polars concatenation...", flush=True)
+    merged = pl.concat(pl_dfs)
+    
+    # Free partial elements
+    del pl_dfs
+    gc.collect()
+    
+    print("[*] Transforming labels to target formats...", flush=True)
+    if binary:
+        merged = merged.with_columns(
+            pl.when(pl.col("Label") == "BENIGN")
+              .then(pl.lit("BENIGN"))
+              .otherwise(pl.lit("ATTACK"))
+              .alias("Label")
+        )
+        
+    return merged
 
 def main():
     parser = argparse.ArgumentParser()
@@ -84,40 +106,34 @@ def main():
     print("=== Lynceus CIC-IDS-2017 Validation (Sprint 1) ===", flush=True)
     
     try:
-        df = load_and_merge_datasets(args.dir)
+        merged = load_and_clean_dataset_polars(args.dir, binary=args.binary)
     except FileNotFoundError as e:
         print(f"⚠️ {e}", flush=True)
         return
 
-    print(f"[*] Original Dataset Shape: {df.shape}", flush=True)
-    
-    if args.binary:
-        print("[*] Converting to Binary Classification...", flush=True)
-        df['Label'] = np.where(df['Label'] == 'BENIGN', 'BENIGN', 'ATTACK')
-
-    print("[*] Utilizando a base de atributos completa do Lynceus (Full Mode)", flush=True)
-    print("[*] Purging Identity / Leakage Features...", flush=True)
-    df = clean_dataset(df)
-    
-    print(f"[*] Final Feature Shape: {df.shape}", flush=True)
+    print(f"[*] Dataset size formalized: {merged.shape}", flush=True)
     print("[*] Class Distribution:", flush=True)
-    print(df['Label'].value_counts(), flush=True)
+    print(merged["Label"].value_counts(), flush=True)
 
-    y = df['Label'].copy()
-    df.drop(columns=['Label'], inplace=True)
-    X = df
+    print("[*] Extracting contiguous NumPy structures...", flush=True)
+    y = merged["Label"].to_numpy()
+    
+    # Extract features, drop Label column and convert to numpy
+    X = merged.drop("Label").to_numpy()
+    
+    # Force RAM clean of polars structures
+    del merged
+    gc.collect()
 
-    # No Random Undersampling applied to maintain literature parity
-    print("\n[*] Splitting Data (70/30)...", flush=True)
+    print("\n[*] Splitting Data (70/30) in NumPy space...", flush=True)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
     
-    import gc
     del X
     del y
     gc.collect()
 
-    print("\n[*] Training Random Forest Classifier...", flush=True)
-    clf = RandomForestClassifier(n_estimators=20, n_jobs=-1, max_depth=15, random_state=42)
+    print("\n[*] Training Random Forest Classifier on Xeon Silver...", flush=True)
+    clf = RandomForestClassifier(n_estimators=50, n_jobs=-1, max_depth=15, random_state=42)
     clf.fit(X_train, y_train)
 
     print("[*] Evaluating Model...", flush=True)
