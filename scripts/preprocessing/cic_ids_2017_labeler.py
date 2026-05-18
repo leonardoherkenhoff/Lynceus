@@ -75,10 +75,19 @@ def _get_attack_category_and_day(file_path):
 
 def label_series(pdf, day, t_min, t_max):
     """
-    Vectorized labeling engine using ratio-based temporal windowing and ports.
+    Vectorized labeling engine using official 2017 Unix Epoch timestamps.
+    Automatically handles 2026 replay time-distortion by mapping/scaling.
     """
     import pandas as pd
     labels = np.full(len(pdf), "BENIGN", dtype=object)
+    
+    # Official 2017 PCAP schedules (EDT / UTC-4)
+    DAY_SCHEDULES = {
+        "tuesday": {"start": 1499173200, "end": 1499202000},
+        "wednesday": {"start": 1499259600, "end": 1499288400},
+        "thursday": {"start": 1499346000, "end": 1499374800},
+        "friday": {"start": 1499432400, "end": 1499461200},
+    }
     
     ip_col = _detect_ip_column(pdf.columns)
     dst_col = next((c for c in ['dst_ip', 'Dst IP', 'destination_ip', 'dst'] if c in pdf.columns), None)
@@ -98,28 +107,52 @@ def label_series(pdf, day, t_min, t_max):
         return labels
         
     epochs = pd.to_numeric(pdf[ts_col], errors='coerce').values
-    duration = t_max - t_min
-    ratios = (epochs - t_min) / duration if duration > 0 else np.zeros(len(pdf))
     
+    # Check if the timestamps are in 2026 (replayed time)
+    if len(epochs) > 0 and np.nanmax(epochs) > 1700000000:
+        # Scale/Shift 2026 timestamps back to 2017 historical epochs!
+        hist_start = DAY_SCHEDULES[day]["start"]
+        hist_end = DAY_SCHEDULES[day]["end"]
+        hist_duration = hist_end - hist_start
+        duration = t_max - t_min
+        if duration > 0:
+            epochs = hist_start + ((epochs - t_min) / duration) * hist_duration
+        else:
+            epochs = np.full_like(epochs, hist_start)
+            
     dst_ports = pd.to_numeric(pdf[dst_port_col], errors='coerce').values if dst_port_col else np.nan
     src_ports = pd.to_numeric(pdf[src_port_col], errors='coerce').values if src_port_col else np.nan
     
     # 1. Tuesday (Brute Force)
     if day == "tuesday":
-        is_ftp = is_attacker & ((dst_ports == 21) | (src_ports == 21))
-        is_ssh = is_attacker & ((dst_ports == 22) | (src_ports == 22))
+        # Tuesday: FTP-Patator (9:20 - 10:20 EDT), SSH-Patator (14:00 - 15:00 EDT)
+        is_ftp = is_attacker & ((dst_ports == 21) | (src_ports == 21)) & (epochs >= 1499174400) & (epochs <= 1499178000)
+        is_ssh = is_attacker & ((dst_ports == 22) | (src_ports == 22)) & (epochs >= 1499191200) & (epochs <= 1499194800)
+        
+        # Fallback to pure port-based if no matches due to topspeed time skew
+        if np.sum(is_ftp) == 0:
+            is_ftp = is_attacker & ((dst_ports == 21) | (src_ports == 21))
+        if np.sum(is_ssh) == 0:
+            is_ssh = is_attacker & ((dst_ports == 22) | (src_ports == 22))
+            
         labels[is_ftp] = "FTP-Patator"
         labels[is_ssh] = "SSH-Patator"
         
     # 2. Wednesday (DoS)
     elif day == "wednesday":
-        is_hb = is_attacker & ((dst_ports == 444) | (src_ports == 444))
+        is_hb = is_attacker & ((dst_ports == 444) | (src_ports == 444)) & (epochs >= 1499281920) & (epochs <= 1499283120)
+        if np.sum(is_hb) == 0:
+            is_hb = is_attacker & ((dst_ports == 444) | (src_ports == 444))
         labels[is_hb] = "Heartbleed"
         
-        is_slowloris = is_attacker & (ratios >= 0.090) & (ratios <= 0.150) & ~is_hb
-        is_slowhttp = is_attacker & (ratios >= 0.150) & (ratios <= 0.205) & ~is_hb
-        is_hulk = is_attacker & (ratios >= 0.205) & (ratios <= 0.260) & ~is_hb
-        is_goldeneye = is_attacker & (ratios >= 0.260) & (ratios <= 0.310) & ~is_hb
+        # slowloris (9:47 - 10:10 EDT): 1499262420 to 1499263800
+        is_slowloris = is_attacker & (epochs >= 1499262420) & (epochs <= 1499263800) & ~is_hb
+        # Slowhttptest (10:14 - 10:35 EDT): 1499264040 to 1499265300
+        is_slowhttp = is_attacker & (epochs >= 1499264040) & (epochs <= 1499265300) & ~is_hb
+        # Hulk (10:43 - 11:00 EDT): 1499265780 to 1499266800
+        is_hulk = is_attacker & (epochs >= 1499265780) & (epochs <= 1499266800) & ~is_hb
+        # GoldenEye (11:10 - 11:23 EDT): 1499267400 to 1499268180
+        is_goldeneye = is_attacker & (epochs >= 1499267400) & (epochs <= 1499268180) & ~is_hb
         
         labels[is_slowloris] = "DoS slowloris"
         labels[is_slowhttp] = "DoS Slowhttptest"
@@ -130,9 +163,12 @@ def label_series(pdf, day, t_min, t_max):
     elif day == "thursday":
         is_infil = is_attacker & ((pdf[ip_col].astype(str) == "192.168.10.8") | (pdf[dst_col].astype(str) == "192.168.10.8"))
         
-        is_web_bf = is_attacker & (ratios >= 0.035) & (ratios <= 0.135) & ~is_infil
-        is_web_xss = is_attacker & (ratios >= 0.145) & (ratios <= 0.235) & ~is_infil
-        is_web_sql = is_attacker & (ratios >= 0.240) & (ratios <= 0.285) & ~is_infil
+        # Web Brute Force (9:20 - 10:00 EDT): 1499347200 to 1499349600
+        is_web_bf = is_attacker & (epochs >= 1499347200) & (epochs <= 1499349600) & ~is_infil
+        # Web XSS (10:15 - 10:50 EDT): 1499350500 to 1499352600
+        is_web_xss = is_attacker & (epochs >= 1499350500) & (epochs <= 1499352600) & ~is_infil
+        # Web SQL Injection (11:00 - 11:12 EDT): 1499353200 to 1499353920
+        is_web_sql = is_attacker & (epochs >= 1499353200) & (epochs <= 1499353920) & ~is_infil
         
         labels[is_infil] = "Infiltration"
         labels[is_web_bf] = "Web Attack - Brute Force"
@@ -141,9 +177,12 @@ def label_series(pdf, day, t_min, t_max):
         
     # 4. Friday (Botnet / PortScan / DDoS)
     elif day == "friday":
-        is_botnet = is_attacker & (ratios >= 0.115) & (ratios <= 0.265)
-        is_portscan = is_attacker & (ratios >= 0.600) & (ratios <= 0.710)
-        is_ddos = is_attacker & (ratios >= 0.850) & (ratios <= 0.920)
+        # Botnet (10:02 - 11:02 EDT): 1499436120 to 1499439720
+        is_botnet = is_attacker & (epochs >= 1499436120) & (epochs <= 1499439720)
+        # PortScan (13:55 - 14:35 EDT): 1499450100 to 1499452500
+        is_portscan = is_attacker & (epochs >= 1499450100) & (epochs <= 1499452500)
+        # DDoS (15:56 - 16:16 EDT): 1499457360 to 1499458560
+        is_ddos = is_attacker & (epochs >= 1499457360) & (epochs <= 1499458560)
         
         labels[is_botnet] = "Botnet"
         labels[is_portscan] = "PortScan"
