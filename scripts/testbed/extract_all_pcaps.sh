@@ -14,8 +14,8 @@ echo "=== Lynceus Batch Extractor (L3/L4/L7) ==="
 echo "========================================================="
 
 echo "[*] Compilando motor eBPF (Zero-Libc)..."
-make clean > /dev/null 2>&1
-make > /dev/null 2>&1
+make clean
+make
 
 FILES=$(ls "$PCAP_DIR"/*.pcap 2>/dev/null)
 
@@ -35,7 +35,7 @@ for PCAP in $FILES; do
     echo "[*] Injetando no XDP/eBPF: $(basename "$PCAP")"
     
     # O motor Lynceus processa PCAPs localmente via SKB mode
-    ./build/lynceus -i "$PCAP"
+    ./build/loader -i "$PCAP"
     
     if [ $? -ne 0 ]; then
         echo "[!] Aviso: Falha na extração de $PCAP. Verifique os logs."

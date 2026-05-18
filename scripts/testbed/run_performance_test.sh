@@ -18,12 +18,12 @@ echo "[*] Arquivo PCAP: $PCAP_FILE"
 echo "[*] Interface Alvo: $IFACE"
 
 echo "[*] Compilando motor Lynceus com otimizacoes maximas..."
-make clean > /dev/null 2>&1
-make > /dev/null 2>&1
+make clean
+make
 
 echo "[*] Iniciando o Daemon do Lynceus (XDP) em background..."
 # Roda o Lynceus na interface de loopback
-./build/lynceus -i $IFACE > loader_audit.log 2>&1 &
+./build/loader -i $IFACE > loader_audit.log 2>&1 &
 LYNCEUS_PID=$!
 
 echo "[*] Aguardando estabilizacao dos mapas BPF (3s)..."
