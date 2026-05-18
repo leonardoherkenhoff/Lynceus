@@ -7,6 +7,7 @@ Standard: Scientific Parity & Peer-Review Standard
 import os
 import glob
 import gc
+import json
 import argparse
 import warnings
 warnings.filterwarnings("ignore")
@@ -91,7 +92,7 @@ def run_split_validation(file_path, args):
     with parallel_backend('threading', n_jobs=-1):
         clf.fit(X_train, y_train)
         
-    # 7. Model Evaluation
+    # 7. Model Evaluation & Persistent Export
     print("[EVAL] Generating peer-to-peer classification matrix...", flush=True)
     y_pred = clf.predict(X_test)
     
@@ -99,11 +100,33 @@ def run_split_validation(file_path, args):
     print(f"       EXPERIMENTAL METRICS REPORT: {file_name}", flush=True)
     print("="*60, flush=True)
     
-    print(classification_report(y_test, y_pred, target_names=unique_labels, digits=4), flush=True)
+    report_str = classification_report(y_test, y_pred, target_names=unique_labels, digits=4)
+    print(report_str, flush=True)
     
     f1_macro = f1_score(y_test, y_pred, average='macro')
     print(f"-> MACRO F1-SCORE: {f1_macro:.4f}", flush=True)
     print("="*60, flush=True)
+    
+    # Export metrics to structured JSON and formatted raw Text files
+    report_dict = classification_report(y_test, y_pred, target_names=unique_labels, output_dict=True)
+    export_data = {
+        "partition": file_name,
+        "n_samples": total_rows,
+        "n_features": num_features,
+        "macro_f1": f1_macro,
+        "metrics": report_dict
+    }
+    
+    base_output_path = file_path.replace(".csv", "")
+    json_path = f"{base_output_path}_results.json"
+    txt_path = f"{base_output_path}_report.txt"
+    
+    with open(json_path, "w") as jf:
+        json.dump(export_data, jf, indent=4)
+    with open(txt_path, "w") as tf:
+        tf.write(report_str + f"\n-> MACRO F1-SCORE: {f1_macro:.4f}\n")
+        
+    print(f"[EXPORT] Results persisted to:\n    -> {json_path}\n    -> {txt_path}", flush=True)
     
     # Clean up estimator structures
     del X_train, X_test, y_train, y_test, clf
