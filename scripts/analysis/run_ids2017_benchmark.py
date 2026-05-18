@@ -96,10 +96,8 @@ def main():
     # Free memory
     del df
 
-    print("\n[*] Applying Random Undersampling (RUS)...")
-    rus = RandomUnderSampler(random_state=42)
-    X_res, y_res = rus.fit_resample(X, y)
-    print(f"[*] Balanced Dataset Shape: {X_res.shape}")
+    # No Random Undersampling applied to maintain literature parity
+    X_res, y_res = X, y
 
     print("\n[*] Splitting Data (70/30)...")
     X_train, X_test, y_train, y_test = train_test_split(X_res, y_res, test_size=0.3, random_state=42, stratify=y_res)

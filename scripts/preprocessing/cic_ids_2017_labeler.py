@@ -41,6 +41,8 @@ ATTACKER_IPS = [
     "205.174.165.69",
     "205.174.165.70",
     "205.174.165.71",
+    "205.174.165.80",
+    "172.16.0.1"
 ]
 ATTACKER_IPS_SET = frozenset(ATTACKER_IPS)
 CHUNK_SIZE = 1_000_000
@@ -87,13 +89,19 @@ def _process_polars(file_path, category, output_file):
         q = pl.scan_csv(file_path, schema_overrides=overrides, ignore_errors=True)
         
         ip_col = _detect_ip_column(all_cols)
+        dst_col = "dst_ip" if "dst_ip" in all_cols else ("Dst IP" if "Dst IP" in all_cols else "destination_ip")
+        
         if ip_col:
             # For Monday, everything is benign regardless of IP
             if category == "BENIGN":
                 q = q.with_columns(pl.lit("BENIGN").alias("Label"))
             else:
+                condition = pl.col(ip_col).is_in(ATTACKER_IPS)
+                if dst_col in all_cols:
+                    condition = condition | pl.col(dst_col).is_in(ATTACKER_IPS)
+                
                 q = q.with_columns(
-                    pl.when(pl.col(ip_col).is_in(ATTACKER_IPS))
+                    pl.when(condition)
                       .then(pl.lit(category))
                       .otherwise(pl.lit("BENIGN"))
                       .alias("Label")
@@ -111,6 +119,7 @@ def _process_pandas(file_path, category, output_file):
 
     header = pd.read_csv(file_path, nrows=0)
     ip_col = _detect_ip_column(header.columns.tolist())
+    dst_col = "dst_ip" if "dst_ip" in header.columns else ("Dst IP" if "Dst IP" in header.columns else "destination_ip")
 
     total_rows = 0
     first_chunk = True
@@ -120,10 +129,11 @@ def _process_pandas(file_path, category, output_file):
             if category == "BENIGN":
                 chunk['Label'] = 'BENIGN'
             else:
-                chunk['Label'] = np.where(
-                    chunk[ip_col].astype(str).isin(ATTACKER_IPS_SET),
-                    category, 'BENIGN'
-                )
+                is_attacker = chunk[ip_col].astype(str).isin(ATTACKER_IPS_SET)
+                if dst_col in chunk.columns:
+                    is_attacker = is_attacker | chunk[dst_col].astype(str).isin(ATTACKER_IPS_SET)
+                
+                chunk['Label'] = np.where(is_attacker, category, 'BENIGN')
         chunk.to_csv(output_file, mode='a', header=first_chunk, index=False)
         first_chunk = False
         total_rows += len(chunk)
@@ -137,7 +147,7 @@ def process_file_auto(file_path):
         output_folder = os.path.join(OUTPUT_DIR, rel_path)
         os.makedirs(output_folder, exist_ok=True)
 
-        output_file_name = os.path.basename(os.path.dirname(file_path))
+        output_file_name = os.path.splitext(os.path.basename(file_path))[0]
         output_file = os.path.join(output_folder, f"labeled_{output_file_name}.csv")
 
         if USE_POLARS:
