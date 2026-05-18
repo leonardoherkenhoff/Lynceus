@@ -56,11 +56,19 @@ for PCAP in $FILES; do
     CSV_NAME=$(basename "$PCAP" .pcap).csv
     
     # O motor eBPF anexa ao hook XDP da interface receptora (veth1)
-    ./build/loader skb veth1 > "$OUT_DIR/$CSV_NAME" 2>/dev/null &
+    # Salvamos o stderr para diagnóstico científico preciso de falhas de carregamento BPF
+    ERR_FILE="$OUT_DIR/${CSV_NAME}.err"
+    ./build/loader skb veth1 > "$OUT_DIR/$CSV_NAME" 2> "$ERR_FILE" &
     LOADER_PID=$!
     
     echo "    -> Aguardando estabilização dos mapas BPF..."
     sleep 2
+    
+    if ! kill -0 $LOADER_PID 2>/dev/null; then
+        echo "    [X] ERRO CRÍTICO: O loader eBPF morreu imediatamente antes do replay!"
+        echo "    ---> Causa provável (stderr):"
+        cat "$ERR_FILE"
+    fi
     
     echo "    -> Disparando tcpreplay em TOPSPEED (Limites de Hardware) via veth0..."
     tcpreplay --topspeed -i veth0 "$PCAP"
@@ -68,6 +76,23 @@ for PCAP in $FILES; do
     echo "    -> Finalizando coleta e gravando CSV..."
     kill -SIGINT $LOADER_PID
     wait $LOADER_PID 2>/dev/null
+    
+    # Telemetria de tamanho do CSV para auditoria imediata
+    if [ -f "$OUT_DIR/$CSV_NAME" ]; then
+        LINES=$(wc -l < "$OUT_DIR/$CSV_NAME")
+        SIZE=$(du -sh "$OUT_DIR/$CSV_NAME" | cut -f1)
+        echo "    -> [Auditoria] CSV gerado: $LINES linhas ($SIZE)"
+        if [ "$LINES" -le 1 ]; then
+            echo "    [!] ALERTA: CSV contém apenas cabeçalhos (0 fluxos capturados)!"
+            if [ -s "$ERR_FILE" ]; then
+                echo "    ---> Erros relatados pelo Daemon:"
+                cat "$ERR_FILE"
+            fi
+        fi
+    else
+        echo "    [X] ERRO: Arquivo CSV não foi criado fisicamente!"
+    fi
+    rm -f "$ERR_FILE"
     echo "[V] Extração concluida."
 done
 
