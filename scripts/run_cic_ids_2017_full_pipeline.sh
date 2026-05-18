@@ -24,16 +24,19 @@ else
     echo "    -> PCAPs detectados em $PCAP_DIR. Pulando download."
 fi
 
+# 1.5. Fatiamento Granular (Novo)
+echo ""
+echo "[Fase 1.5/6] Fatiamento Granular de Alta Precisão"
+echo "    -> Isolando vetores de ataque para máxima fidelidade temporal..."
+./scripts/testbed/slice_pcaps.sh | tee "$LOG_DIR/1.5_slicing.log"
+if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "[X] Falha no Fatiamento"; exit 1; fi
+
 # 2. Extração
 echo ""
 echo "[Fase 2/6] Extração de Features In-Kernel (eBPF)"
-if [ -d "data/interim/EBPF_RAW" ] && [ "$(ls -A data/interim/EBPF_RAW/*.csv 2>/dev/null | wc -l)" -gt 0 ]; then
-    echo "    -> CSVs brutos já detectados em data/interim/EBPF_RAW. Pulando a extração."
-else
-    echo "    -> Convertendo pacotes L2-L7 para CSV..."
-    ./scripts/testbed/extract_all_pcaps.sh | tee "$LOG_DIR/2_extraction.log"
-    if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "[X] Falha na Extração"; exit 1; fi
-fi
+echo "    -> Convertendo pacotes fatiados para CSV em TOPSPEED..."
+./scripts/testbed/extract_all_pcaps.sh | tee "$LOG_DIR/2_extraction.log"
+if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "[X] Falha na Extração"; exit 1; fi
 
 # 2.5. Correção de Dependências Python (NumPy 2.x Breakage)
 echo ""
@@ -46,7 +49,7 @@ if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "[!] Aviso: pip install encontrou erros
 echo ""
 echo "[Fase 3/6] Rotulagem Topológica Livre de Leakage"
 echo "    -> Injetando classes de ataque (BruteForce, DoS, Botnet, etc)..."
-./scripts/preprocessing/cic_ids_2017_labeler.py | tee "$LOG_DIR/3_labeling.log"
+./scripts/preprocessing/cic_ids_2017_labeler.py --cleanup | tee "$LOG_DIR/3_labeling.log"
 if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "[X] Falha no Labeling"; exit 1; fi
 
 # 4. Avaliação de Machine Learning
