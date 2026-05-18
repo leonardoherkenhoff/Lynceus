@@ -34,8 +34,8 @@ ip link delete veth1 2>/dev/null || true
 ip link add veth0 type veth peer name veth1
 ip link set veth0 up
 ip link set veth1 up
-ip link set dev veth0 mtu 3000
-ip link set dev veth1 mtu 3000
+ip link set dev veth0 mtu 3400
+ip link set dev veth1 mtu 3400
 
 FILES=$(ls "$PCAP_DIR"/*.pcap 2>/dev/null)
 
