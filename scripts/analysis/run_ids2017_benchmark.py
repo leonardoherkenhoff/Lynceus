@@ -17,7 +17,6 @@ import os
 import glob
 import gc
 import argparse
-import pandas as pd
 import numpy as np
 import polars as pl
 from sklearn.ensemble import RandomForestClassifier
