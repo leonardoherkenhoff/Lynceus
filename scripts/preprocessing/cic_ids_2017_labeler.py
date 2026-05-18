@@ -201,7 +201,12 @@ def _process_polars(file_path, category, day, output_file):
         struct_cols = [c for c in [ip_col, dst_col, dst_port_col, src_port_col, ts_col] if c is not None]
         
         def pl_label_batch(struct_series):
-            df = struct_series.struct.to_frame()
+            import pandas as pd
+            series_dict = {
+                field: struct_series.struct.field(field).to_pandas()
+                for field in struct_series.struct.fields
+            }
+            df = pd.DataFrame(series_dict)
             labels = label_series(df, day, t_min, t_max)
             return pl.Series("Label", labels)
 
