@@ -38,6 +38,9 @@ IDENTITY_DROP = [
 
 def load_and_merge_datasets(target_dir):
     csv_files = glob.glob(os.path.join(target_dir, "**", "labeled_*.csv"), recursive=True)
+    # Ignore the ghost legacy file from previous bugs without deleting it
+    csv_files = [f for f in csv_files if os.path.basename(f) != "labeled_EBPF_RAW.csv"]
+    
     if not csv_files:
         raise FileNotFoundError(f"No labeled CSVs found in {target_dir}")
         
