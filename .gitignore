@@ -33,3 +33,33 @@ logo.png
 # Note: scripts/ directory is maintained in develop but excluded from master merges.
 docs/
 data/
+
+# Dossiês Científicos e LaTeX
+*.tex
+*.pdf
+*.aux
+*.bbl
+*.blg
+*.out
+*.toc
+*.nav
+*.snm
+*.sty
+*.bib
+
+# Scripts de Auditoria e Plotagem
+*audit*.py
+verify_integrity.py
+update_report.py
+inject_report.py
+generate_plots.py
+generate_latex_report.py
+export_results.py
+extract_db.py
+test_parse.py
+run_parity_experiment.py
+
+# Bancos de Dados e Resultados JSON/TXT/Tar
+*.json
+full_audit_dump*.txt
+*.tar.gz
