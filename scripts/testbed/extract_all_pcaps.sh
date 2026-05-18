@@ -34,6 +34,8 @@ ip link delete veth1 2>/dev/null || true
 ip link add veth0 type veth peer name veth1
 ip link set veth0 up
 ip link set veth1 up
+ip link set veth0 promisc on
+ip link set veth1 promisc on
 sysctl -w net.ipv6.conf.veth0.disable_ipv6=0 >/dev/null 2>&1 || true
 sysctl -w net.ipv6.conf.veth1.disable_ipv6=0 >/dev/null 2>&1 || true
 sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null 2>&1 || true
@@ -74,6 +76,9 @@ for PCAP in $FILES; do
     
     echo "    -> Disparando tcpreplay em TOPSPEED (Limites de Hardware) via veth0..."
     tcpreplay-edit --topspeed --mtu-trunc -i veth0 "$PCAP"
+    
+    echo "    -> Aguardando escoamento dos buffers (flush)..."
+    sleep 3
     
     echo "    -> Finalizando coleta e gravando CSV..."
     kill -SIGINT $LOADER_PID

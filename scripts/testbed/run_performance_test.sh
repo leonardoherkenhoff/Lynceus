@@ -26,6 +26,8 @@ ip link delete veth1 2>/dev/null || true
 ip link add veth0 type veth peer name veth1
 ip link set veth0 up
 ip link set veth1 up
+ip link set veth0 promisc on
+ip link set veth1 promisc on
 sysctl -w net.ipv6.conf.veth0.disable_ipv6=0 >/dev/null 2>&1 || true
 sysctl -w net.ipv6.conf.veth1.disable_ipv6=0 >/dev/null 2>&1 || true
 sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null 2>&1 || true
@@ -58,7 +60,10 @@ echo "[*] Monitorando relogio global..."
 # Executa e cronometra o tcpreplay na veth0
 /usr/bin/time -v tcpreplay-edit -i $TC_IFACE --topspeed --mtu-trunc "$PCAP_FILE"
 
-echo "[*] Injeção concluida! Enviando sinal de encerramento para o Daemon..."
+echo "[*] Injeção concluida! Aguardando escoamento dos buffers (3s)..."
+sleep 3
+
+echo "[*] Enviando sinal de encerramento para o Daemon..."
 kill -SIGINT $LYNCEUS_PID
 kill $TOP_PID 2>/dev/null
 
