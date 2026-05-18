@@ -46,9 +46,12 @@ def load_and_merge_datasets(target_dir):
     
     for f in csv_files:
         print(f"    -> Loading {os.path.basename(f)}...", flush=True)
-        # Load directly in chunks and cast to float32 to survive the 13GB RAM limit
-        chunk_iter = pd.read_csv(f, chunksize=500000, low_memory=False)
+        # Load directly in chunks, apply stochastic sampling (25%) and cast to float32
+        chunk_iter = pd.read_csv(f, chunksize=250000, low_memory=False)
         for chunk in chunk_iter:
+            # Sample 25% to prevent OOM on 13GB RAM servers
+            chunk = chunk.sample(frac=0.25, random_state=42)
+            
             # Cast all numerical columns to float32
             num_cols = chunk.select_dtypes(include=['float64', 'int64']).columns
             chunk[num_cols] = chunk[num_cols].astype(np.float32)
