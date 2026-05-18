@@ -105,12 +105,28 @@ def _process_polars(file_path, category, day, output_file):
         if t_min is None or t_max is None:
             t_min, t_max = 0.0, 1.0
 
-        # Official 2017 PCAP schedules (EDT / UTC-4)
-        DAY_SCHEDULES = {
+        # Official 2017 PCAP schedules (EDT / UTC-4) for individual attacks
+        FILE_SCHEDULES = {
+            "ftp-patator": {"start": 1499174400, "end": 1499178000},
+            "ssh-patator": {"start": 1499191200, "end": 1499194800},
+            "dos-slowloris": {"start": 1499262420, "end": 1499263800},
+            "dos-slowhttptest": {"start": 1499264040, "end": 1499265300},
+            "dos-hulk": {"start": 1499265780, "end": 1499266800},
+            "dos-goldeneye": {"start": 1499267400, "end": 1499268180},
+            "heartbleed": {"start": 1499281920, "end": 1499283120},
+            "web-attack-brute-force": {"start": 1499347200, "end": 1499349600},
+            "web-attack-xss": {"start": 1499350500, "end": 1499351700},
+            "web-attack-sql-injection": {"start": 1499352000, "end": 1499352120},
+            "infiltration": {"start": 1499365140, "end": 1499370300},
+            "botnet": {"start": 1499436120, "end": 1499439720},
+            "portscan": {"start": 1499450100, "end": 1499455740},
+            "ddos": {"start": 1499457360, "end": 1499458320},
+            # Whole-day fallbacks
             "tuesday": {"start": 1499173200, "end": 1499202000},
             "wednesday": {"start": 1499259600, "end": 1499288400},
             "thursday": {"start": 1499346000, "end": 1499374800},
             "friday": {"start": 1499432400, "end": 1499461200},
+            "monday": {"start": 1499082000, "end": 1499110800},
         }
 
         # Build lazy query plan
@@ -126,8 +142,18 @@ def _process_polars(file_path, category, day, output_file):
         if day == "monday":
             expr = pl.lit("BENIGN")
         else:
-            hist_start = DAY_SCHEDULES[day]["start"]
-            hist_end = DAY_SCHEDULES[day]["end"]
+            # Detect schedule based on granular file name
+            lower_file = os.path.basename(file_path).lower()
+            sched = None
+            for key, val in FILE_SCHEDULES.items():
+                if key in lower_file:
+                    sched = val
+                    break
+            if sched is None:
+                sched = FILE_SCHEDULES.get(day, {"start": 1499126400, "end": 1499212800})
+                
+            hist_start = sched["start"]
+            hist_end = sched["end"]
             hist_duration = hist_end - hist_start
             duration = t_max - t_min
             
