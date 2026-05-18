@@ -17,6 +17,8 @@ import os
 import glob
 import gc
 import argparse
+import warnings
+warnings.filterwarnings("ignore")
 import numpy as np
 import polars as pl
 from sklearn.ensemble import RandomForestClassifier
