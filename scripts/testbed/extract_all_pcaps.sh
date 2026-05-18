@@ -42,6 +42,11 @@ for PCAP in $FILES; do
         echo "[*] Ignorando arquivo massivo de benchmark de PPS: $PCAP"
         continue
     fi
+    # Ignora segunda-feira por ser 100% benigna e descartada pelo benchmark de ML
+    if [[ "$PCAP" == *"Monday"* ]]; then
+        echo "[*] Ignorando segunda-feira (Monday) benigna para poupar tempo de extração..."
+        continue
+    fi
     
     echo "---------------------------------------------------------"
     echo "[*] Injetando no XDP/eBPF: $(basename "$PCAP")"
@@ -56,7 +61,7 @@ for PCAP in $FILES; do
     sleep 2
     
     echo "    -> Disparando tcpreplay linear (300x) via veth0..."
-    tcpreplay -i veth0 --multiplier=300.0 "$PCAP"
+    tcpreplay --timer=gtod -i veth0 --multiplier=300.0 "$PCAP"
     
     echo "    -> Finalizando coleta e gravando CSV..."
     kill -SIGINT $LOADER_PID
