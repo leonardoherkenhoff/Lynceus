@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Lynceus Pre-processing - CIC-IDS-2017 Granular Attributor (v3.0)
+Lynceus Pre-processing - CIC-IDS-2017 Granular Attributor (v4.0)
 ---------------------------------------------------------------------------
 Scientific Milestone: Sprint 1 (NTLFlowLyzer Granular Parity)
 
@@ -9,26 +9,16 @@ Research Objective:
     by individual attack type (e.g., FTP-Patator, SSH-Patator, DoS Hulk, etc.)
     using ratio-based temporal mapping and port classification.
 
-Methodology:
-    1. Port-Based Attribution: Separates Tuesday Patator attacks and Wednesday Heartbleed.
-    2. Temporal Ratio-Based Attribution: Separates overlapping attacks by relative 
-       elapsed ratios, ensuring immunity to replay speed (topspeed) and wall-clock shifts.
-    3. SIMD Acceleration: Uses Polars streaming architecture with custom chunk mapping.
+Architecture:
+    100% Pure Polars, multi-threaded streaming compiled Rust backend.
+    Zero Pandas dependencies, eliminating GIL bottlenecks and NameErrors.
 """
 
 import os
 import glob
 import argparse
 import multiprocessing
-import numpy as np
-from concurrent.futures import ProcessPoolExecutor, as_completed
-
-import pandas as pd
-try:
-    import polars as pl
-    USE_POLARS = True
-except ImportError:
-    USE_POLARS = False
+import polars as pl
 
 # --- Topological Configuration ---
 BASE_DIR = "/opt/eBPFNetFlowLyzer"
@@ -43,11 +33,11 @@ EXTERNAL_ATTACKERS = {
     "205.174.165.80",
     "172.16.0.1"
 }
-CHUNK_SIZE = 1_000_000
 
 def get_attackers_for_day(day):
     attackers = set(EXTERNAL_ATTACKERS)
     if day == "thursday":
+        # On Thursday afternoon, Windows Vista (192.168.10.8) acts as an insider attacker
         attackers.add("192.168.10.8")
     return list(attackers)
 
@@ -72,105 +62,6 @@ def _get_attack_category_and_day(file_path):
         if day in lower_path:
             return category, day
     return "ATTACK", "unknown"
-
-def label_series(pdf, day, t_min, t_max):
-    """
-    Vectorized labeling engine using official 2017 Unix Epoch timestamps.
-    Automatically handles 2026 replay time-distortion by mapping/scaling.
-    """
-    import pandas as pd
-    labels = np.full(len(pdf), "BENIGN", dtype=object)
-    
-    # Official 2017 PCAP schedules (EDT / UTC-4)
-    DAY_SCHEDULES = {
-        "tuesday": {"start": 1499173200, "end": 1499202000},
-        "wednesday": {"start": 1499259600, "end": 1499288400},
-        "thursday": {"start": 1499346000, "end": 1499374800},
-        "friday": {"start": 1499432400, "end": 1499461200},
-    }
-    
-    ip_col = _detect_ip_column(pdf.columns)
-    dst_col = next((c for c in ['dst_ip', 'Dst IP', 'destination_ip', 'dst'] if c in pdf.columns), None)
-    dst_port_col = next((c for c in ['dst_port', 'Dst Port', 'destination_port', 'dstport', 'port'] if c in pdf.columns), None)
-    src_port_col = next((c for c in ['src_port', 'Src Port', 'source_port', 'srcport'] if c in pdf.columns), None)
-    ts_col = next((c for c in ['timestamp', 'Timestamp', 'flow_start', 'time'] if c in pdf.columns), None)
-    
-    if not ip_col:
-        return labels
-        
-    day_attackers = get_attackers_for_day(day)
-    is_attacker = pdf[ip_col].astype(str).isin(day_attackers)
-    if dst_col:
-        is_attacker = is_attacker | pdf[dst_col].astype(str).isin(day_attackers)
-        
-    if day == "monday":
-        return labels
-        
-    epochs = pd.to_numeric(pdf[ts_col], errors='coerce').values
-    
-    # Check if the timestamps are in 2026 (replayed time)
-    if len(epochs) > 0 and np.nanmax(epochs) > 1700000000:
-        # Scale/Shift 2026 timestamps back to 2017 historical epochs!
-        hist_start = DAY_SCHEDULES[day]["start"]
-        hist_end = DAY_SCHEDULES[day]["end"]
-        hist_duration = hist_end - hist_start
-        duration = t_max - t_min
-        if duration > 0:
-            epochs = hist_start + ((epochs - t_min) / duration) * hist_duration
-        else:
-            epochs = np.full_like(epochs, hist_start)
-            
-    dst_ports = pd.to_numeric(pdf[dst_port_col], errors='coerce').values if dst_port_col else np.nan
-    src_ports = pd.to_numeric(pdf[src_port_col], errors='coerce').values if src_port_col else np.nan
-    
-    # 1. Tuesday (Brute Force)
-    if day == "tuesday":
-        # Tuesday: FTP-Patator (9:20 - 10:20 EDT), SSH-Patator (14:00 - 15:00 EDT)
-        is_ftp = is_attacker & ((dst_ports == 21) | (src_ports == 21)) & (epochs >= 1499174400) & (epochs <= 1499178000)
-        is_ssh = is_attacker & ((dst_ports == 22) | (src_ports == 22)) & (epochs >= 1499191200) & (epochs <= 1499194800)
-        
-        labels[is_ftp] = "FTP-Patator"
-        labels[is_ssh] = "SSH-Patator"
-        
-    # 2. Wednesday (DoS)
-    elif day == "wednesday":
-        is_hb = is_attacker & ((dst_ports == 444) | (src_ports == 444)) & (epochs >= 1499281920) & (epochs <= 1499283120)
-        labels[is_hb] = "Heartbleed"
-        
-        is_slowloris = is_attacker & (epochs >= 1499262420) & (epochs <= 1499263800) & ~is_hb
-        is_slowhttp = is_attacker & (epochs >= 1499264040) & (epochs <= 1499265300) & ~is_hb
-        is_hulk = is_attacker & (epochs >= 1499265780) & (epochs <= 1499266800) & ~is_hb
-        is_goldeneye = is_attacker & (epochs >= 1499267400) & (epochs <= 1499268180) & ~is_hb
-        
-        labels[is_slowloris] = "DoS slowloris"
-        labels[is_slowhttp] = "DoS Slowhttptest"
-        labels[is_hulk] = "DoS Hulk"
-        labels[is_goldeneye] = "DoS GoldenEye"
-        
-    # 3. Thursday (Web Attacks)
-    elif day == "thursday":
-        is_infil = is_attacker & ((pdf[ip_col].astype(str) == "192.168.10.8") | (pdf[dst_col].astype(str) == "192.168.10.8"))
-        
-        is_web_bf = is_attacker & (epochs >= 1499347200) & (epochs <= 1499349600) & ~is_infil
-        is_web_xss = is_attacker & (epochs >= 1499350500) & (epochs <= 1499352600) & ~is_infil
-        is_web_sql = is_attacker & (epochs >= 1499353200) & (epochs <= 1499353920) & ~is_infil
-        
-        labels[is_infil] = "Infiltration"
-        labels[is_web_bf] = "Web Attack - Brute Force"
-        labels[is_web_xss] = "Web Attack - XSS"
-        labels[is_web_sql] = "Web Attack - SQL Injection"
-        
-    # 4. Friday (Botnet / PortScan / DDoS)
-    elif day == "friday":
-        is_botnet = is_attacker & (epochs >= 1499436120) & (epochs <= 1499439720)
-        is_portscan = is_attacker & (epochs >= 1499450100) & (epochs <= 1499452500)
-        is_ddos = is_attacker & (epochs >= 1499457360) & (epochs <= 1499458560)
-        
-        labels[is_botnet] = "Botnet"
-        labels[is_portscan] = "PortScan"
-        labels[is_ddos] = "DDoS"
-        
-    return labels
 
 def _process_polars(file_path, category, day, output_file):
     if os.path.getsize(file_path) == 0:
@@ -275,13 +166,13 @@ def _process_polars(file_path, category, day, output_file):
                          .when(is_goldeneye).then(pl.lit("DoS GoldenEye")) \
                          .otherwise(pl.lit("BENIGN"))
                          
-            # 3. Thursday (Web Attacks)
+            # 3. Thursday (Web Attacks / Infiltration)
             elif day == "thursday":
-                is_infil = is_attacker & ((pl.col(ip_col) == "192.168.10.8") | (pl.col(dst_col) == "192.168.10.8"))
+                is_infil = is_attacker & ((pl.col(ip_col) == "192.168.10.8") | (pl.col(dst_col) == "192.168.10.8")) & (epochs >= 1499365140) & (epochs <= 1499370300)
                 
                 is_web_bf = is_attacker & (epochs >= 1499347200) & (epochs <= 1499349600) & ~is_infil
-                is_web_xss = is_attacker & (epochs >= 1499350500) & (epochs <= 1499352600) & ~is_infil
-                is_web_sql = is_attacker & (epochs >= 1499353200) & (epochs <= 1499353920) & ~is_infil
+                is_web_xss = is_attacker & (epochs >= 1499350500) & (epochs <= 1499351700) & ~is_infil
+                is_web_sql = is_attacker & (epochs >= 1499352000) & (epochs <= 1499352120) & ~is_infil
                 
                 expr = pl.when(is_infil).then(pl.lit("Infiltration")) \
                          .when(is_web_bf).then(pl.lit("Web Attack - Brute Force")) \
@@ -292,8 +183,8 @@ def _process_polars(file_path, category, day, output_file):
             # 4. Friday (Botnet / PortScan / DDoS)
             elif day == "friday":
                 is_botnet = is_attacker & (epochs >= 1499436120) & (epochs <= 1499439720)
-                is_portscan = is_attacker & (epochs >= 1499450100) & (epochs <= 1499452500)
-                is_ddos = is_attacker & (epochs >= 1499457360) & (epochs <= 1499458560)
+                is_portscan = is_attacker & (epochs >= 1499450100) & (epochs <= 1499455740)
+                is_ddos = is_attacker & (epochs >= 1499457360) & (epochs <= 1499458320)
                 
                 expr = pl.when(is_botnet).then(pl.lit("Botnet")) \
                          .when(is_portscan).then(pl.lit("PortScan")) \
@@ -309,37 +200,6 @@ def _process_polars(file_path, category, day, output_file):
     except Exception as e:
         print(f"   ⚠️ Polars Streaming Error: {e}")
         return -1
-
-def _process_pandas(file_path, category, day, output_file):
-    import pandas as pd
-    
-    header = pd.read_csv(file_path, nrows=0)
-    ts_col = next((c for c in ['timestamp', 'Timestamp', 'flow_start', 'time'] if c in header.columns), None)
-    
-    # Pass 1: Probe min and max timestamps
-    t_min, t_max = None, None
-    reader = pd.read_csv(file_path, chunksize=CHUNK_SIZE, usecols=[ts_col] if ts_col else None, low_memory=False)
-    for chunk in reader:
-        epochs = pd.to_numeric(chunk[ts_col], errors='coerce')
-        c_min, c_max = epochs.min(), epochs.max()
-        t_min = c_min if t_min is None else min(t_min, c_min)
-        t_max = c_max if t_max is None else max(t_max, c_max)
-        
-    if t_min is None or t_max is None:
-        t_min, t_max = 0.0, 1.0
-
-    # Pass 2: Label in chunks
-    total_rows = 0
-    first_chunk = True
-    reader = pd.read_csv(file_path, chunksize=CHUNK_SIZE, low_memory=False)
-    for chunk in reader:
-        labels = label_series(chunk, day, t_min, t_max)
-        chunk['Label'] = labels
-        chunk.to_csv(output_file, mode='a', header=first_chunk, index=False)
-        first_chunk = False
-        total_rows += len(chunk)
-
-    return total_rows
 
 def process_file_auto(file_path):
     try:
@@ -360,10 +220,7 @@ def process_file_auto(file_path):
         if os.path.exists(actual_output):
             os.remove(actual_output)
 
-        if USE_POLARS:
-            total_rows = _process_polars(file_path, category, day, actual_output)
-        else:
-            total_rows = _process_pandas(file_path, category, day, actual_output)
+        total_rows = _process_polars(file_path, category, day, actual_output)
 
         if use_temp and total_rows > 0:
             os.replace(actual_output, output_file)
@@ -390,8 +247,7 @@ def main():
         OUTPUT_DIR = os.path.abspath(args.output)
         os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    backend = "Polars (multi-threaded)" if USE_POLARS else "Pandas (single-threaded)"
-    print(f"=== Lynceus CIC-IDS-2017 Granular Attribution [{backend}] ===")
+    print("=== Lynceus CIC-IDS-2017 Granular Attribution [Polars Only (Rust-Compiled Backend)] ===")
 
     if args.path:
         target_dir = os.path.abspath(args.path)
