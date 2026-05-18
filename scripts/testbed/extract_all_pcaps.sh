@@ -14,11 +14,15 @@ echo "=== Lynceus Batch Extractor (L3/L4/L7) ==="
 echo "========================================================="
 
 echo "[*] Compilando motor eBPF (Zero-Libc)..."
-make clean
-make
-
 OUT_DIR="/opt/eBPFNetFlowLyzer/data/interim/EBPF_RAW"
 mkdir -p "$OUT_DIR"
+
+echo "[*] Configurando par veth (veth0 <-> veth1) para ingestão offline..."
+ip link add veth0 type veth peer name veth1 2>/dev/null || true
+ip link set veth0 up
+ip link set veth1 up
+ip link set dev veth0 mtu 9000
+ip link set dev veth1 mtu 9000
 
 FILES=$(ls "$PCAP_DIR"/*.pcap 2>/dev/null)
 
@@ -39,21 +43,24 @@ for PCAP in $FILES; do
     
     CSV_NAME=$(basename "$PCAP" .pcap).csv
     
-    # O motor eBPF anexa ao hook XDP da interface loopback (modo skb)
-    ./build/loader skb lo > "$OUT_DIR/$CSV_NAME" 2>/dev/null &
+    # O motor eBPF anexa ao hook XDP da interface receptora (veth1)
+    ./build/loader skb veth1 > "$OUT_DIR/$CSV_NAME" 2>/dev/null &
     LOADER_PID=$!
     
     echo "    -> Aguardando estabilização dos mapas BPF..."
     sleep 2
     
-    echo "    -> Disparando tcpreplay em topspeed..."
-    tcpreplay -i lo --topspeed "$PCAP" > /dev/null 2>&1
+    echo "    -> Disparando tcpreplay em topspeed via veth0..."
+    tcpreplay -i veth0 --topspeed "$PCAP" > /dev/null 2>&1
     
     echo "    -> Finalizando coleta e gravando CSV..."
     kill -SIGINT $LOADER_PID
     wait $LOADER_PID 2>/dev/null
     echo "[V] Extração concluida."
 done
+
+echo "[*] Destruindo par veth..."
+ip link delete veth0 2>/dev/null || true
 
 echo "========================================================="
 echo "[*] Extração em Lote Finalizada."

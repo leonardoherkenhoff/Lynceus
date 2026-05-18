@@ -9,13 +9,24 @@ if [ -z "$1" ]; then
 fi
 
 PCAP_FILE=$1
-IFACE="lo"
 
 echo "========================================================="
 echo "=== Lynceus Performance Stress-Test (Sprint 2) ==="
 echo "========================================================="
 echo "[*] Arquivo PCAP: $PCAP_FILE"
-echo "[*] Interface Alvo: $IFACE"
+
+echo "[*] Configurando par veth (veth0 <-> veth1) para injeção topspeed..."
+ip link add veth0 type veth peer name veth1 2>/dev/null || true
+ip link set veth0 up
+ip link set veth1 up
+ip link set dev veth0 mtu 9000
+ip link set dev veth1 mtu 9000
+
+IFACE="veth1"
+TC_IFACE="veth0"
+
+echo "[*] Interface Receptora (XDP): $IFACE"
+echo "[*] Interface Injetora (tcpreplay): $TC_IFACE"
 
 echo "[*] Compilando motor Lynceus com otimizacoes maximas..."
 make clean
@@ -37,8 +48,8 @@ TOP_PID=$!
 echo "[*] Iniciando a injeção massiva (TOPSPEED) via tcpreplay..."
 echo "[*] Monitorando relogio global..."
 
-# Executa e cronometra o tcpreplay
-/usr/bin/time -v tcpreplay -i $IFACE --topspeed "$PCAP_FILE"
+# Executa e cronometra o tcpreplay na veth0
+/usr/bin/time -v tcpreplay -i $TC_IFACE --topspeed "$PCAP_FILE"
 
 echo "[*] Injeção concluida! Enviando sinal de encerramento para o Daemon..."
 kill -SIGINT $LYNCEUS_PID
@@ -46,6 +57,9 @@ kill $TOP_PID 2>/dev/null
 
 echo "[*] Aguardando descarga de buffers (flush)..."
 wait $LYNCEUS_PID
+
+echo "[*] Destruindo par veth..."
+ip link delete veth0 2>/dev/null || true
 
 echo "========================================================="
 echo "=== Teste de Desempenho Concluido ==="
