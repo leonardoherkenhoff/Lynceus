@@ -2,12 +2,16 @@
 # Lynceus - Batch PCAP Extractor
 # Extrai as features de rede de múltiplos PCAPs sequencialmente.
 
-PCAP_DIR="/root/CIC-IDS-2017"
+PCAP_DIR="/root/CIC-IDS-2017-sliced"
+if [ ! -d "$PCAP_DIR" ]; then
+    PCAP_DIR="/root/CIC-IDS-2017"
+fi
 
 if [ ! -d "$PCAP_DIR" ]; then
     echo "[!] Diretório de origem não encontrado: $PCAP_DIR"
     exit 1
 fi
+echo "[*] Usando diretório de PCAPs: $PCAP_DIR"
 
 echo "========================================================="
 echo "=== Lynceus Batch Extractor (L3/L4/L7) ==="
