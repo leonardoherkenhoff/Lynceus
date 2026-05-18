@@ -60,8 +60,8 @@ for PCAP in $FILES; do
     echo "    -> Aguardando estabilização dos mapas BPF..."
     sleep 2
     
-    echo "    -> Disparando tcpreplay linear (300x) via veth0..."
-    tcpreplay --timer=gtod -i veth0 --multiplier=300.0 "$PCAP"
+    echo "    -> Disparando tcpreplay em TOPSPEED (Limites de Hardware) via veth0..."
+    tcpreplay --topspeed -i veth0 "$PCAP"
     
     echo "    -> Finalizando coleta e gravando CSV..."
     kill -SIGINT $LOADER_PID
