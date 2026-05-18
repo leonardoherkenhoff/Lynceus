@@ -20,6 +20,8 @@ echo "========================================================="
 echo "[*] Compilando motor eBPF (Zero-Libc)..."
 OUT_DIR="/opt/eBPFNetFlowLyzer/data/interim/EBPF_RAW"
 mkdir -p "$OUT_DIR"
+echo "[*] Purgando arquivos CSV residuais de extrações anteriores..."
+rm -f "$OUT_DIR"/*.csv
 
 if ! command -v tcpreplay &> /dev/null; then
     echo "[!] tcpreplay não encontrado. Instalando..."
