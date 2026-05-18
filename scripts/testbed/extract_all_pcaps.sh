@@ -39,12 +39,19 @@ for PCAP in $FILES; do
     
     CSV_NAME=$(basename "$PCAP" .pcap).csv
     
-    # O motor Lynceus processa PCAPs localmente via SKB mode e joga para stdout
-    ./build/loader -i "$PCAP" > "$OUT_DIR/$CSV_NAME"
+    # O motor eBPF anexa ao hook XDP da interface loopback (modo skb)
+    ./build/loader skb lo > "$OUT_DIR/$CSV_NAME" 2>/dev/null &
+    LOADER_PID=$!
     
-    if [ $? -ne 0 ]; then
-        echo "[!] Aviso: Falha na extração de $PCAP. Verifique os logs."
-    fi
+    echo "    -> Aguardando estabilização dos mapas BPF..."
+    sleep 2
+    
+    echo "    -> Disparando tcpreplay em topspeed..."
+    tcpreplay -i lo --topspeed "$PCAP" > /dev/null 2>&1
+    
+    echo "    -> Finalizando coleta e gravando CSV..."
+    kill -SIGINT $LOADER_PID
+    wait $LOADER_PID 2>/dev/null
     echo "[V] Extração concluida."
 done
 
