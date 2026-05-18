@@ -43,32 +43,38 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dir", type=str, default=PROCESSED_DIR, help="Directory containing labeled CSVs")
     parser.add_argument("--binary", action="store_true", help="Perform Binary (Attack vs Benign) classification")
+    parser.add_argument("--max-samples", type=int, default=800000, help="Maximum sample count to load (anti-OOM cap, set <= 0 to disable)")
     args = parser.parse_args()
 
-    print("=== Lynceus CIC-IDS-2017 Validation (Sprint 1) ===", flush=True)
+    print("=== LYNCEUS DATASET VALIDATION PROTOCOL (CIC-IDS-2017) ===", flush=True)
     
     csv_files = glob.glob(os.path.join(args.dir, "**", "labeled_*.csv"), recursive=True)
     csv_files = [f for f in csv_files if os.path.basename(f) != "labeled_EBPF_RAW.csv"]
     
     if not csv_files:
-        print(f"⚠️ No labeled CSVs found in {args.dir}", flush=True)
+        print(f"[ERROR] No labeled CSV partition files detected in: {args.dir}", flush=True)
         return
 
-    print(f"[*] Found {len(csv_files)} labeled CSV files.", flush=True)
+    print(f"[INFO] Identified {len(csv_files)} labeled partition files.", flush=True)
     
     # 1. Probe total rows and feature schema using Polars Lazy frames (0 MB RAM overhead)
-    total_rows = 0
+    actual_rows = 0
     for f in csv_files:
-        total_rows += pl.scan_csv(f).select(pl.len()).collect().item()
+        actual_rows += pl.scan_csv(f).select(pl.len()).collect().item()
         
-    print(f"[*] Total Rows to Process: {total_rows}", flush=True)
+    total_rows = actual_rows
+    if args.max_samples > 0:
+        total_rows = min(actual_rows, args.max_samples)
+        print(f"[INFO] Applying adaptive sample cap: {total_rows} / {actual_rows} target samples.", flush=True)
+    else:
+        print(f"[INFO] Target sequence length: {total_rows} samples (unrestricted).", flush=True)
     
     schema = pl.read_csv(csv_files[0], n_rows=0).schema
     feature_cols = [c for c in schema.keys() if c not in IDENTITY_DROP and c != "Label"]
     num_features = len(feature_cols)
     
     # 2. Pre-allocate NumPy arrays in memory (Float32 to fit exactly in RAM)
-    print(f"[*] Pre-allocating NumPy structures: {total_rows}x{num_features} (float32)...", flush=True)
+    print(f"[INFO] Allocating contiguous memory matrices: {total_rows}x{num_features} (float32).", flush=True)
     X = np.empty((total_rows, num_features), dtype=np.float32)
     y = np.empty(total_rows, dtype=np.uint8)
     
@@ -78,15 +84,24 @@ def main():
     # 3. Stream each file sequentially into the pre-allocated NumPy array
     current_idx = 0
     for f in csv_files:
-        print(f"    -> Loading & Preprocessing (Polars Streaming): {os.path.basename(f)}...", flush=True)
+        # Check if sample limit has already been met
+        remaining = total_rows - current_idx
+        if remaining <= 0:
+            break
+            
+        print(f"    -> [INGEST] Streaming partition: {os.path.basename(f)}...", flush=True)
         
-        # Use Polars Lazy Engine with column projection, static float32 casting, and streaming collect.
-        # This completely avoids parsing the unused columns and prevents double allocation of Float64 in numpy.
+        # Determine partition height to set optimal slice limit
+        partition_len = pl.scan_csv(f).select(pl.len()).collect().item()
+        slice_limit = min(partition_len, remaining)
+        
+        # Use Polars Lazy Engine with column projection, static float32 casting, and slice truncation.
         df = pl.scan_csv(f, infer_schema_length=10000) \
                .select(feature_cols + ["Label"]) \
                .with_columns([
                    pl.col(c).cast(pl.Float32) for c in feature_cols
                ]) \
+               .slice(0, slice_limit) \
                .collect(engine="streaming")
                
         chunk_len = len(df)
@@ -118,19 +133,19 @@ def main():
         del df, chunk_features, chunk_labels, chunk_labels_encoded
         gc.collect()
         
-    print("[*] Ingestion Complete. Class Distribution:", flush=True)
+    print("[INFO] Ingestion finalized. Empirical class distribution:", flush=True)
     for lbl, idx in label_map.items():
         count = np.sum(y == idx)
         print(f"    {lbl}: {count}", flush=True)
 
-    print("\n[*] Splitting Data (70/30) in NumPy space...", flush=True)
+    print("\n[PROCESS] Executing stratified holdout split (70/30)...", flush=True)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
     
     del X
     del y
     gc.collect()
 
-    print("\n[*] Training Random Forest Classifier on Xeon Silver...", flush=True)
+    print("\n[MODEL] Initializing Random Forest estimator (n_estimators=100)...", flush=True)
     # Applied scientific parity parameters: 100 estimators, fully grown trees (max_depth=None)
     clf = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
     
@@ -139,19 +154,19 @@ def main():
     with parallel_backend('threading', n_jobs=-1):
         clf.fit(X_train, y_train)
 
-    print("[*] Evaluating Model...", flush=True)
+    print("[EVAL] Generating peer-to-peer classification matrix...", flush=True)
     y_pred = clf.predict(X_test)
     
-    print("\n" + "="*50, flush=True)
-    print("                 FINAL RESULTS", flush=True)
-    print("="*50, flush=True)
+    print("\n" + "="*60, flush=True)
+    print("                 EXPERIMENTAL METRICS REPORT", flush=True)
+    print("="*60, flush=True)
     
     target_names = [label_list[i] for i in range(len(label_list))]
     print(classification_report(y_test, y_pred, target_names=target_names, digits=4), flush=True)
     
     f1_macro = f1_score(y_test, y_pred, average='macro')
     print(f"-> MACRO F1-SCORE: {f1_macro:.4f}", flush=True)
-    print("="*50, flush=True)
+    print("="*60, flush=True)
 
 if __name__ == "__main__":
     main()
