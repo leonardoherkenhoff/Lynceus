@@ -17,6 +17,9 @@ echo "[*] Compilando motor eBPF (Zero-Libc)..."
 make clean
 make
 
+OUT_DIR="/opt/eBPFNetFlowLyzer/data/interim/EBPF_RAW"
+mkdir -p "$OUT_DIR"
+
 FILES=$(ls "$PCAP_DIR"/*.pcap 2>/dev/null)
 
 if [ -z "$FILES" ]; then
@@ -34,8 +37,10 @@ for PCAP in $FILES; do
     echo "---------------------------------------------------------"
     echo "[*] Injetando no XDP/eBPF: $(basename "$PCAP")"
     
-    # O motor Lynceus processa PCAPs localmente via SKB mode
-    ./build/loader -i "$PCAP"
+    CSV_NAME=$(basename "$PCAP" .pcap).csv
+    
+    # O motor Lynceus processa PCAPs localmente via SKB mode e joga para stdout
+    ./build/loader -i "$PCAP" > "$OUT_DIR/$CSV_NAME"
     
     if [ $? -ne 0 ]; then
         echo "[!] Aviso: Falha na extração de $PCAP. Verifique os logs."
