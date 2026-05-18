@@ -76,8 +76,14 @@ def main():
     # 3. Stream each file sequentially into the pre-allocated NumPy array
     current_idx = 0
     for f in csv_files:
-        print(f"    -> Loading & Preprocessing: {os.path.basename(f)}...", flush=True)
-        df = pl.read_csv(f, ignore_errors=True)
+        print(f"    -> Loading & Preprocessing (Polars Streaming): {os.path.basename(f)}...", flush=True)
+        
+        # Use Polars Lazy Engine with column projection and streaming collect.
+        # This completely avoids parsing the unused string/identity columns and streaming peaks.
+        df = pl.scan_csv(f, infer_schema_length=10000) \
+               .select(feature_cols + ["Label"]) \
+               .collect(streaming=True)
+               
         chunk_len = len(df)
         
         # Inline cleaning and extraction
