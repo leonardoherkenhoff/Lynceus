@@ -60,7 +60,7 @@ for PCAP in $FILES; do
     # O motor eBPF anexa ao hook XDP da interface receptora (veth1)
     # Salvamos o stderr para diagnóstico científico preciso de falhas de carregamento BPF
     ERR_FILE="$OUT_DIR/${CSV_NAME}.err"
-    ./build/loader skb veth1 > "$OUT_DIR/$CSV_NAME" 2> "$ERR_FILE" &
+    ./build/loader veth1 > "$OUT_DIR/$CSV_NAME" 2> "$ERR_FILE" &
     LOADER_PID=$!
     
     echo "    -> Aguardando estabilização dos mapas BPF..."

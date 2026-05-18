@@ -41,7 +41,7 @@ make
 
 echo "[*] Iniciando o Daemon do Lynceus (XDP) em background..."
 # Roda o Lynceus na interface de loopback
-./build/loader skb $IFACE > loader_audit.log 2>&1 &
+./build/loader $IFACE > loader_audit.log 2>&1 &
 LYNCEUS_PID=$!
 
 echo "[*] Aguardando estabilizacao dos mapas BPF (3s)..."
