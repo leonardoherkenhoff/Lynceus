@@ -300,12 +300,24 @@ def process_file_auto(file_path):
         os.makedirs(output_folder, exist_ok=True)
 
         output_file_name = os.path.splitext(os.path.basename(file_path))[0]
+        if output_file_name.startswith("labeled_"):
+            output_file_name = output_file_name[len("labeled_"):]
+            
         output_file = os.path.join(output_folder, f"labeled_{output_file_name}.csv")
 
+        # Atomic in-place write protection via temporary file
+        use_temp = (os.path.abspath(file_path) == os.path.abspath(output_file))
+        actual_output = output_file + ".tmp" if use_temp else output_file
+        if os.path.exists(actual_output):
+            os.remove(actual_output)
+
         if USE_POLARS:
-            total_rows = _process_polars(file_path, category, day, output_file)
+            total_rows = _process_polars(file_path, category, day, actual_output)
         else:
-            total_rows = _process_pandas(file_path, category, day, output_file)
+            total_rows = _process_pandas(file_path, category, day, actual_output)
+
+        if use_temp and total_rows > 0:
+            os.replace(actual_output, output_file)
 
         success = total_rows > 0
         return (file_path, success, max(0, total_rows))
