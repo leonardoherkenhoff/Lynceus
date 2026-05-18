@@ -34,29 +34,7 @@ IDENTITY_DROP = [
     'traffic_class', 'flow_label', 'TunnelId', 'TunnelType'
 ]
 
-# NTLFlowLyzer Parity Filter (Approximate 187 features)
-# We keep Lynceus TCP state metrics + Length/IAT statistical suites
-def apply_ntl_parity(df):
-    """Retains only features mathematically equivalent to NTLFlowLyzer."""
-    # Lynceus features mapping to NTL concepts
-    keep_prefixes = [
-        'Tot_Pay', 'Fwd_Pay', 'Bwd_Pay',
-        'Tot_IAT', 'Fwd_IAT', 'Bwd_IAT',
-        'Active', 'Idle',
-        'FIN_', 'SYN_', 'RST_', 'PSH_', 'ACK_', 'URG_', 'ECE_', 'CWR_',
-        'FwdInitWinBytes', 'BwdInitWinBytes',
-        'PacketsCount', 'FwdPacketsCount', 'BwdPacketsCount',
-        'TotalBytes', 'FwdBytes', 'BwdBytes',
-        'DownUpRatio', 'Label'
-    ]
-    
-    # Filter columns
-    cols_to_keep = [c for c in df.columns if any(c.startswith(p) for p in keep_prefixes)]
-    
-    # Ensure identity features are dropped even if they accidentally match a prefix
-    cols_to_keep = [c for c in cols_to_keep if c not in IDENTITY_DROP]
-    
-    return df[cols_to_keep]
+
 
 def load_and_merge_datasets(target_dir):
     csv_files = glob.glob(os.path.join(target_dir, "**", "labeled_*.csv"), recursive=True)
@@ -103,8 +81,7 @@ def main():
         print("[*] Converting to Binary Classification...")
         df['Label'] = np.where(df['Label'] == 'BENIGN', 'BENIGN', 'ATTACK')
 
-    print("[*] Applying Parity Filter: LYN_P_NTL")
-    df = apply_ntl_parity(df)
+    print("[*] Utilizando a base de atributos completa do Lynceus (Full Mode)")
     
     print("[*] Purging Identity / Leakage Features...")
     df = clean_dataset(df)
