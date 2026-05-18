@@ -36,7 +36,7 @@ for URL in "${URLS[@]}"; do
     echo "============================================================"
     
     # O parametro -c garante que continue de onde parou caso caia a conexao
-    wget -c --load-cookies cookies.txt "$URL" -O "$FILENAME"
+    wget -c --load-cookies cookies.txt --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36" --show-progress "$URL" -O "$FILENAME"
 done
 
 echo "============================================================"
