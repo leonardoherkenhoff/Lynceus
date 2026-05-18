@@ -236,25 +236,108 @@ def _process_polars(file_path, category, day, output_file):
         if t_min is None or t_max is None:
             t_min, t_max = 0.0, 1.0
 
-        # Define custom polars Struct batch mapping
-        struct_cols = [c for c in [ip_col, dst_col, dst_port_col, src_port_col, ts_col] if c is not None]
-        
-        def pl_label_batch(struct_series):
-            import pandas as pd
-            series_dict = {
-                field: struct_series.struct.field(field).to_pandas()
-                for field in struct_series.struct.fields
-            }
-            df = pd.DataFrame(series_dict)
-            labels = label_series(df, day, t_min, t_max)
-            return pl.Series("Label", labels)
+        # Official 2017 PCAP schedules (EDT / UTC-4)
+        DAY_SCHEDULES = {
+            "tuesday": {"start": 1499173200, "end": 1499202000},
+            "wednesday": {"start": 1499259600, "end": 1499288400},
+            "thursday": {"start": 1499346000, "end": 1499374800},
+            "friday": {"start": 1499432400, "end": 1499461200},
+        }
 
-        # Pass 2: Lazy evaluation and streaming sink
+        # Build lazy query plan
         q = pl.scan_csv(file_path, schema_overrides=overrides, ignore_errors=True)
-        q = q.with_columns(
-            pl.struct(struct_cols).map_batches(pl_label_batch, return_dtype=pl.Utf8).alias("Label")
-        )
         
+        day_attackers = get_attackers_for_day(day)
+        
+        # Attacker condition
+        is_attacker = pl.col(ip_col).is_in(day_attackers)
+        if dst_col:
+            is_attacker = is_attacker | pl.col(dst_col).is_in(day_attackers)
+            
+        if day == "monday":
+            expr = pl.lit("BENIGN")
+        else:
+            hist_start = DAY_SCHEDULES[day]["start"]
+            hist_end = DAY_SCHEDULES[day]["end"]
+            hist_duration = hist_end - hist_start
+            duration = t_max - t_min
+            
+            # Timestamp parsing and scaling natively
+            raw_epochs = pl.col(ts_col).cast(pl.Float64)
+            if duration > 0 and t_max > 1700000000:
+                epochs = hist_start + ((raw_epochs - t_min) / duration) * hist_duration
+            else:
+                epochs = raw_epochs
+                
+            dst_ports = pl.col(dst_port_col).cast(pl.Float64) if dst_port_col else pl.lit(None)
+            src_ports = pl.col(src_port_col).cast(pl.Float64) if src_port_col else pl.lit(None)
+            
+            # 1. Tuesday (Brute Force)
+            if day == "tuesday":
+                is_ftp = is_attacker & ((dst_ports == 21) | (src_ports == 21)) & (epochs >= 1499174400) & (epochs <= 1499178000)
+                is_ssh = is_attacker & ((dst_ports == 22) | (src_ports == 22)) & (epochs >= 1499191200) & (epochs <= 1499194800)
+                
+                # Fallbacks for extreme topspeed time skew
+                is_ftp_fb = is_attacker & ((dst_ports == 21) | (src_ports == 21))
+                is_ssh_fb = is_attacker & ((dst_ports == 22) | (src_ports == 22))
+                
+                expr = pl.when(is_ftp).then(pl.lit("FTP-Patator")) \
+                         .when(is_ssh).then(pl.lit("SSH-Patator")) \
+                         .when(is_ftp_fb).then(pl.lit("FTP-Patator")) \
+                         .when(is_ssh_fb).then(pl.lit("SSH-Patator")) \
+                         .when(is_attacker).then(pl.lit("BruteForce")) \
+                         .otherwise(pl.lit("BENIGN"))
+                         
+            # 2. Wednesday (DoS)
+            elif day == "wednesday":
+                is_hb = is_attacker & ((dst_ports == 444) | (src_ports == 444)) & (epochs >= 1499281920) & (epochs <= 1499283120)
+                is_hb_fb = is_attacker & ((dst_ports == 444) | (src_ports == 444))
+                
+                is_slowloris = is_attacker & (epochs >= 1499262420) & (epochs <= 1499263800) & ~is_hb
+                is_slowhttp = is_attacker & (epochs >= 1499264040) & (epochs <= 1499265300) & ~is_hb
+                is_hulk = is_attacker & (epochs >= 1499265780) & (epochs <= 1499266800) & ~is_hb
+                is_goldeneye = is_attacker & (epochs >= 1499267400) & (epochs <= 1499268180) & ~is_hb
+                
+                expr = pl.when(is_hb).then(pl.lit("Heartbleed")) \
+                         .when(is_slowloris).then(pl.lit("DoS slowloris")) \
+                         .when(is_slowhttp).then(pl.lit("DoS Slowhttptest")) \
+                         .when(is_hulk).then(pl.lit("DoS Hulk")) \
+                         .when(is_goldeneye).then(pl.lit("DoS GoldenEye")) \
+                         .when(is_hb_fb).then(pl.lit("Heartbleed")) \
+                         .when(is_attacker).then(pl.lit("DoS")) \
+                         .otherwise(pl.lit("BENIGN"))
+                         
+            # 3. Thursday (Web Attacks)
+            elif day == "thursday":
+                is_infil = is_attacker & ((pl.col(ip_col) == "192.168.10.8") | (pl.col(dst_col) == "192.168.10.8"))
+                
+                is_web_bf = is_attacker & (epochs >= 1499347200) & (epochs <= 1499349600) & ~is_infil
+                is_web_xss = is_attacker & (epochs >= 1499350500) & (epochs <= 1499352600) & ~is_infil
+                is_web_sql = is_attacker & (epochs >= 1499353200) & (epochs <= 1499353920) & ~is_infil
+                
+                expr = pl.when(is_infil).then(pl.lit("Infiltration")) \
+                         .when(is_web_bf).then(pl.lit("Web Attack - Brute Force")) \
+                         .when(is_web_xss).then(pl.lit("Web Attack - XSS")) \
+                         .when(is_web_sql).then(pl.lit("Web Attack - SQL Injection")) \
+                         .when(is_attacker).then(pl.lit("WebAttack")) \
+                         .otherwise(pl.lit("BENIGN"))
+                         
+            # 4. Friday (Botnet / PortScan / DDoS)
+            elif day == "friday":
+                is_botnet = is_attacker & (epochs >= 1499436120) & (epochs <= 1499439720)
+                is_portscan = is_attacker & (epochs >= 1499450100) & (epochs <= 1499452500)
+                is_ddos = is_attacker & (epochs >= 1499457360) & (epochs <= 1499458560)
+                
+                expr = pl.when(is_botnet).then(pl.lit("Botnet")) \
+                         .when(is_portscan).then(pl.lit("PortScan")) \
+                         .when(is_ddos).then(pl.lit("DDoS")) \
+                         .when(is_attacker).then(pl.lit("DDoS_PortScan")) \
+                         .otherwise(pl.lit("BENIGN"))
+            else:
+                expr = pl.lit("BENIGN")
+
+        # Native compiled projection and stream sink
+        q = q.with_columns(expr.alias("Label"))
         q.sink_csv(output_file)
         return pl.scan_csv(output_file).select(pl.len()).collect().item()
     except Exception as e:
