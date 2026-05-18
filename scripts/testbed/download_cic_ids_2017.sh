@@ -3,8 +3,8 @@
 # Script de download automatizado para o CIC-IDS-2017
 # Uso: Executar no servidor bare-metal.
 
-mkdir -p datasets/CIC-IDS-2017/PCAPs
-cd datasets/CIC-IDS-2017/PCAPs
+mkdir -p /root/CIC-IDS-2017
+cd /root/CIC-IDS-2017
 
 echo "Preparando arquivo de cookies..."
 cat << 'EOF' > cookies.txt
