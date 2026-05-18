@@ -35,17 +35,23 @@ BASE_DIR = "/opt/eBPFNetFlowLyzer"
 INPUT_DIR = os.path.join(BASE_DIR, "data/interim/EBPF_RAW")
 OUTPUT_DIR = os.path.join(BASE_DIR, "data/processed/EBPF")
 
-# CIC-IDS-2017 Attacker IPs (Kali Linux and Windows Attackers)
-ATTACKER_IPS = [
+# Base external attackers (NAT and Kali/Win IPs)
+EXTERNAL_ATTACKERS = {
     "205.174.165.73",
     "205.174.165.69",
     "205.174.165.70",
     "205.174.165.71",
     "205.174.165.80",
     "172.16.0.1"
-]
-ATTACKER_IPS_SET = frozenset(ATTACKER_IPS)
+}
 CHUNK_SIZE = 1_000_000
+
+def get_attackers_for_day(day):
+    attackers = set(EXTERNAL_ATTACKERS)
+    if day == "thursday":
+        # Infiltration Step 2: Vista (192.168.10.8) becomes an internal attacker
+        attackers.add("192.168.10.8")
+    return list(attackers)
 
 IP_CANDIDATES = ['src_ip', 'Src IP', 'Source IP', 'source_ip', 'src']
 
@@ -64,17 +70,19 @@ def _detect_ip_column(columns):
             return col
     return None
 
-def _get_attack_category(file_path):
+def _get_attack_category_and_day(file_path):
     lower_path = file_path.lower()
     for day, category in DAY_ATTACK_MAP.items():
         if day in lower_path:
-            return category
-    return "ATTACK" # Fallback
+            return category, day
+    return "ATTACK", "unknown" # Fallback
 
-def _process_polars(file_path, category, output_file):
+def _process_polars(file_path, category, day, output_file):
     if os.path.getsize(file_path) == 0:
         return 0
         
+    day_attackers = get_attackers_for_day(day)
+    
     try:
         all_cols = pl.read_csv(file_path, n_rows=0, infer_schema_length=0).columns
         structural_keywords = ["ip", "src", "dst", "port", "protocol", "label", "timestamp"]
@@ -96,9 +104,9 @@ def _process_polars(file_path, category, output_file):
             if category == "BENIGN":
                 q = q.with_columns(pl.lit("BENIGN").alias("Label"))
             else:
-                condition = pl.col(ip_col).is_in(ATTACKER_IPS)
+                condition = pl.col(ip_col).is_in(day_attackers)
                 if dst_col in all_cols:
-                    condition = condition | pl.col(dst_col).is_in(ATTACKER_IPS)
+                    condition = condition | pl.col(dst_col).is_in(day_attackers)
                 
                 q = q.with_columns(
                     pl.when(condition)
@@ -113,10 +121,11 @@ def _process_polars(file_path, category, output_file):
         print(f"   ⚠️ Polars Streaming Error: {e}")
         return -1
 
-def _process_pandas(file_path, category, output_file):
+def _process_pandas(file_path, category, day, output_file):
     import pandas as pd
     import numpy as np
 
+    day_attackers = frozenset(get_attackers_for_day(day))
     header = pd.read_csv(file_path, nrows=0)
     ip_col = _detect_ip_column(header.columns.tolist())
     dst_col = "dst_ip" if "dst_ip" in header.columns else ("Dst IP" if "Dst IP" in header.columns else "destination_ip")
@@ -129,9 +138,9 @@ def _process_pandas(file_path, category, output_file):
             if category == "BENIGN":
                 chunk['Label'] = 'BENIGN'
             else:
-                is_attacker = chunk[ip_col].astype(str).isin(ATTACKER_IPS_SET)
+                is_attacker = chunk[ip_col].astype(str).isin(day_attackers)
                 if dst_col in chunk.columns:
-                    is_attacker = is_attacker | chunk[dst_col].astype(str).isin(ATTACKER_IPS_SET)
+                    is_attacker = is_attacker | chunk[dst_col].astype(str).isin(day_attackers)
                 
                 chunk['Label'] = np.where(is_attacker, category, 'BENIGN')
         chunk.to_csv(output_file, mode='a', header=first_chunk, index=False)
@@ -142,7 +151,7 @@ def _process_pandas(file_path, category, output_file):
 
 def process_file_auto(file_path):
     try:
-        category = _get_attack_category(file_path)
+        category, day = _get_attack_category_and_day(file_path)
         rel_path = os.path.relpath(os.path.dirname(file_path), INPUT_DIR)
         output_folder = os.path.join(OUTPUT_DIR, rel_path)
         os.makedirs(output_folder, exist_ok=True)
@@ -151,9 +160,9 @@ def process_file_auto(file_path):
         output_file = os.path.join(output_folder, f"labeled_{output_file_name}.csv")
 
         if USE_POLARS:
-            total_rows = _process_polars(file_path, category, output_file)
+            total_rows = _process_polars(file_path, category, day, output_file)
         else:
-            total_rows = _process_pandas(file_path, category, output_file)
+            total_rows = _process_pandas(file_path, category, day, output_file)
 
         success = total_rows > 0
         return (file_path, success, max(0, total_rows))

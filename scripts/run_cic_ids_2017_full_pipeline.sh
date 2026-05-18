@@ -27,9 +27,13 @@ fi
 # 2. Extração
 echo ""
 echo "[Fase 2/6] Extração de Features In-Kernel (eBPF)"
-echo "    -> Convertendo pacotes L2-L7 para CSV..."
-./scripts/testbed/extract_all_pcaps.sh | tee "$LOG_DIR/2_extraction.log"
-if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "[X] Falha na Extração"; exit 1; fi
+if [ -d "data/interim/EBPF_RAW" ] && [ "$(ls -A data/interim/EBPF_RAW/*.csv 2>/dev/null | wc -l)" -gt 0 ]; then
+    echo "    -> CSVs brutos já detectados em data/interim/EBPF_RAW. Pulando a extração."
+else
+    echo "    -> Convertendo pacotes L2-L7 para CSV..."
+    ./scripts/testbed/extract_all_pcaps.sh | tee "$LOG_DIR/2_extraction.log"
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "[X] Falha na Extração"; exit 1; fi
+fi
 
 # 2.5. Correção de Dependências Python (NumPy 2.x Breakage)
 echo ""
