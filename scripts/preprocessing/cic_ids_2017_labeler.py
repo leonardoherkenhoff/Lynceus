@@ -129,29 +129,17 @@ def label_series(pdf, day, t_min, t_max):
         is_ftp = is_attacker & ((dst_ports == 21) | (src_ports == 21)) & (epochs >= 1499174400) & (epochs <= 1499178000)
         is_ssh = is_attacker & ((dst_ports == 22) | (src_ports == 22)) & (epochs >= 1499191200) & (epochs <= 1499194800)
         
-        # Fallback to pure port-based if no matches due to topspeed time skew
-        if np.sum(is_ftp) == 0:
-            is_ftp = is_attacker & ((dst_ports == 21) | (src_ports == 21))
-        if np.sum(is_ssh) == 0:
-            is_ssh = is_attacker & ((dst_ports == 22) | (src_ports == 22))
-            
         labels[is_ftp] = "FTP-Patator"
         labels[is_ssh] = "SSH-Patator"
         
     # 2. Wednesday (DoS)
     elif day == "wednesday":
         is_hb = is_attacker & ((dst_ports == 444) | (src_ports == 444)) & (epochs >= 1499281920) & (epochs <= 1499283120)
-        if np.sum(is_hb) == 0:
-            is_hb = is_attacker & ((dst_ports == 444) | (src_ports == 444))
         labels[is_hb] = "Heartbleed"
         
-        # slowloris (9:47 - 10:10 EDT): 1499262420 to 1499263800
         is_slowloris = is_attacker & (epochs >= 1499262420) & (epochs <= 1499263800) & ~is_hb
-        # Slowhttptest (10:14 - 10:35 EDT): 1499264040 to 1499265300
         is_slowhttp = is_attacker & (epochs >= 1499264040) & (epochs <= 1499265300) & ~is_hb
-        # Hulk (10:43 - 11:00 EDT): 1499265780 to 1499266800
         is_hulk = is_attacker & (epochs >= 1499265780) & (epochs <= 1499266800) & ~is_hb
-        # GoldenEye (11:10 - 11:23 EDT): 1499267400 to 1499268180
         is_goldeneye = is_attacker & (epochs >= 1499267400) & (epochs <= 1499268180) & ~is_hb
         
         labels[is_slowloris] = "DoS slowloris"
@@ -163,11 +151,8 @@ def label_series(pdf, day, t_min, t_max):
     elif day == "thursday":
         is_infil = is_attacker & ((pdf[ip_col].astype(str) == "192.168.10.8") | (pdf[dst_col].astype(str) == "192.168.10.8"))
         
-        # Web Brute Force (9:20 - 10:00 EDT): 1499347200 to 1499349600
         is_web_bf = is_attacker & (epochs >= 1499347200) & (epochs <= 1499349600) & ~is_infil
-        # Web XSS (10:15 - 10:50 EDT): 1499350500 to 1499352600
         is_web_xss = is_attacker & (epochs >= 1499350500) & (epochs <= 1499352600) & ~is_infil
-        # Web SQL Injection (11:00 - 11:12 EDT): 1499353200 to 1499353920
         is_web_sql = is_attacker & (epochs >= 1499353200) & (epochs <= 1499353920) & ~is_infil
         
         labels[is_infil] = "Infiltration"
@@ -177,21 +162,14 @@ def label_series(pdf, day, t_min, t_max):
         
     # 4. Friday (Botnet / PortScan / DDoS)
     elif day == "friday":
-        # Botnet (10:02 - 11:02 EDT): 1499436120 to 1499439720
         is_botnet = is_attacker & (epochs >= 1499436120) & (epochs <= 1499439720)
-        # PortScan (13:55 - 14:35 EDT): 1499450100 to 1499452500
         is_portscan = is_attacker & (epochs >= 1499450100) & (epochs <= 1499452500)
-        # DDoS (15:56 - 16:16 EDT): 1499457360 to 1499458560
         is_ddos = is_attacker & (epochs >= 1499457360) & (epochs <= 1499458560)
         
         labels[is_botnet] = "Botnet"
         labels[is_portscan] = "PortScan"
         labels[is_ddos] = "DDoS"
         
-    # Fallback to general daily categories for unmatched attacker flows
-    unmatched_attack = is_attacker & (labels == "BENIGN")
-    labels[unmatched_attack] = DAY_ATTACK_MAP[day]
-    
     return labels
 
 def _process_polars(file_path, category, day, output_file):
@@ -277,21 +255,13 @@ def _process_polars(file_path, category, day, output_file):
                 is_ftp = is_attacker & ((dst_ports == 21) | (src_ports == 21)) & (epochs >= 1499174400) & (epochs <= 1499178000)
                 is_ssh = is_attacker & ((dst_ports == 22) | (src_ports == 22)) & (epochs >= 1499191200) & (epochs <= 1499194800)
                 
-                # Fallbacks for extreme topspeed time skew
-                is_ftp_fb = is_attacker & ((dst_ports == 21) | (src_ports == 21))
-                is_ssh_fb = is_attacker & ((dst_ports == 22) | (src_ports == 22))
-                
                 expr = pl.when(is_ftp).then(pl.lit("FTP-Patator")) \
                          .when(is_ssh).then(pl.lit("SSH-Patator")) \
-                         .when(is_ftp_fb).then(pl.lit("FTP-Patator")) \
-                         .when(is_ssh_fb).then(pl.lit("SSH-Patator")) \
-                         .when(is_attacker).then(pl.lit("BruteForce")) \
                          .otherwise(pl.lit("BENIGN"))
                          
             # 2. Wednesday (DoS)
             elif day == "wednesday":
                 is_hb = is_attacker & ((dst_ports == 444) | (src_ports == 444)) & (epochs >= 1499281920) & (epochs <= 1499283120)
-                is_hb_fb = is_attacker & ((dst_ports == 444) | (src_ports == 444))
                 
                 is_slowloris = is_attacker & (epochs >= 1499262420) & (epochs <= 1499263800) & ~is_hb
                 is_slowhttp = is_attacker & (epochs >= 1499264040) & (epochs <= 1499265300) & ~is_hb
@@ -303,8 +273,6 @@ def _process_polars(file_path, category, day, output_file):
                          .when(is_slowhttp).then(pl.lit("DoS Slowhttptest")) \
                          .when(is_hulk).then(pl.lit("DoS Hulk")) \
                          .when(is_goldeneye).then(pl.lit("DoS GoldenEye")) \
-                         .when(is_hb_fb).then(pl.lit("Heartbleed")) \
-                         .when(is_attacker).then(pl.lit("DoS")) \
                          .otherwise(pl.lit("BENIGN"))
                          
             # 3. Thursday (Web Attacks)
@@ -319,7 +287,6 @@ def _process_polars(file_path, category, day, output_file):
                          .when(is_web_bf).then(pl.lit("Web Attack - Brute Force")) \
                          .when(is_web_xss).then(pl.lit("Web Attack - XSS")) \
                          .when(is_web_sql).then(pl.lit("Web Attack - SQL Injection")) \
-                         .when(is_attacker).then(pl.lit("WebAttack")) \
                          .otherwise(pl.lit("BENIGN"))
                          
             # 4. Friday (Botnet / PortScan / DDoS)
@@ -331,7 +298,6 @@ def _process_polars(file_path, category, day, output_file):
                 expr = pl.when(is_botnet).then(pl.lit("Botnet")) \
                          .when(is_portscan).then(pl.lit("PortScan")) \
                          .when(is_ddos).then(pl.lit("DDoS")) \
-                         .when(is_attacker).then(pl.lit("DDoS_PortScan")) \
                          .otherwise(pl.lit("BENIGN"))
             else:
                 expr = pl.lit("BENIGN")
