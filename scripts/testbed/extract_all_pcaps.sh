@@ -28,14 +28,15 @@ if ! command -v tcpreplay &> /dev/null; then
     apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y tcpreplay
 fi
 
-echo "[*] Configurando par veth (veth0 <-> veth1) para ingestão offline..."
+echo "[*] Configurando par veth (veth0 <-> veth1) para Ingestão Offline (develop mode)..."
 ip link delete veth0 2>/dev/null || true
 ip link delete veth1 2>/dev/null || true
 ip link add veth0 type veth peer name veth1
-ip link set dev veth0 mtu 9000
-ip link set dev veth1 mtu 9000
 ip link set veth0 up
 ip link set veth1 up
+sysctl -w net.ipv6.conf.veth0.disable_ipv6=0 >/dev/null 2>&1 || true
+sysctl -w net.ipv6.conf.veth1.disable_ipv6=0 >/dev/null 2>&1 || true
+sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null 2>&1 || true
 FILES=$(ls "$PCAP_DIR"/*.pcap 2>/dev/null)
 
 if [ -z "$FILES" ]; then
@@ -59,7 +60,7 @@ for PCAP in $FILES; do
     # O motor eBPF anexa ao hook XDP da interface receptora (veth1)
     # Salvamos o stderr para diagnóstico científico preciso de falhas de carregamento BPF
     ERR_FILE="$OUT_DIR/${CSV_NAME}.err"
-    ./build/loader veth1 skb > "$OUT_DIR/$CSV_NAME" 2> "$ERR_FILE" &
+    ./build/loader veth1 > "$OUT_DIR/$CSV_NAME" 2> "$ERR_FILE" &
     LOADER_PID=$!
     
     echo "    -> Aguardando estabilização dos mapas BPF..."

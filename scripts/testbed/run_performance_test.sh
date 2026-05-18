@@ -20,14 +20,15 @@ if ! command -v tcpreplay &> /dev/null; then
     apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y tcpreplay
 fi
 
-echo "[*] Configurando par veth (veth0 <-> veth1) para injeção topspeed..."
+echo "[*] Configurando par veth (veth0 <-> veth1) para injeção topspeed (develop mode)..."
 ip link delete veth0 2>/dev/null || true
 ip link delete veth1 2>/dev/null || true
 ip link add veth0 type veth peer name veth1
-ip link set dev veth0 mtu 9000
-ip link set dev veth1 mtu 9000
 ip link set veth0 up
 ip link set veth1 up
+sysctl -w net.ipv6.conf.veth0.disable_ipv6=0 >/dev/null 2>&1 || true
+sysctl -w net.ipv6.conf.veth1.disable_ipv6=0 >/dev/null 2>&1 || true
+sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null 2>&1 || true
 IFACE="veth1"
 TC_IFACE="veth0"
 
@@ -40,7 +41,7 @@ make
 
 echo "[*] Iniciando o Daemon do Lynceus (XDP) em background..."
 # Roda o Lynceus na interface de loopback
-./build/loader $IFACE skb > loader_audit.log 2>&1 &
+./build/loader $IFACE > loader_audit.log 2>&1 &
 LYNCEUS_PID=$!
 
 echo "[*] Aguardando estabilizacao dos mapas BPF (3s)..."

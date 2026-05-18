@@ -3,6 +3,8 @@
 # Fatiará os PCAPs em arquivos individuais de ataque de acordo com o cronograma oficial.
 # Evita agrupar ataques do mesmo dia (como DoS), garantindo métricas de extração separadas.
 
+export TZ="EST5EDT"
+
 SRC="/root/CIC-IDS-2017"
 DST="/root/CIC-IDS-2017-sliced"
 
