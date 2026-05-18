@@ -26,8 +26,8 @@ ip link delete veth1 2>/dev/null || true
 ip link add veth0 type veth peer name veth1
 ip link set veth0 up
 ip link set veth1 up
-ip link set dev veth0 mtu 1500
-ip link set dev veth1 mtu 1500
+ip link set dev veth0 mtu 3000
+ip link set dev veth1 mtu 3000
 
 IFACE="veth1"
 TC_IFACE="veth0"
