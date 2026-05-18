@@ -41,14 +41,19 @@ def load_and_merge_datasets(target_dir):
     if not csv_files:
         raise FileNotFoundError(f"No labeled CSVs found in {target_dir}")
         
-    print(f"[*] Found {len(csv_files)} labeled CSV files.")
+    print(f"[*] Found {len(csv_files)} labeled CSV files.", flush=True)
     df_list = []
     
     for f in csv_files:
-        print(f"    -> Loading {os.path.basename(f)}...")
-        df = pd.read_csv(f, low_memory=False)
-        df_list.append(df)
-        
+        print(f"    -> Loading {os.path.basename(f)}...", flush=True)
+        # Load directly in chunks and cast to float32 to survive the 13GB RAM limit
+        chunk_iter = pd.read_csv(f, chunksize=500000, low_memory=False)
+        for chunk in chunk_iter:
+            # Cast all numerical columns to float32
+            num_cols = chunk.select_dtypes(include=['float64', 'int64']).columns
+            chunk[num_cols] = chunk[num_cols].astype(np.float32)
+            df_list.append(chunk)
+            
     merged_df = pd.concat(df_list, ignore_index=True)
     return merged_df
 
@@ -59,6 +64,12 @@ def clean_dataset(df):
     
     df.replace([np.inf, -np.inf], np.nan, inplace=True)
     df.fillna(0, inplace=True)
+    
+    # Final downcast check
+    num_cols = df.select_dtypes(include=['float64']).columns
+    if len(num_cols) > 0:
+        df[num_cols] = df[num_cols].astype(np.float32)
+        
     return df
 
 def main():
@@ -67,56 +78,56 @@ def main():
     parser.add_argument("--binary", action="store_true", help="Perform Binary (Attack vs Benign) classification")
     args = parser.parse_args()
 
-    print("=== Lynceus CIC-IDS-2017 Validation (Sprint 1) ===")
+    print("=== Lynceus CIC-IDS-2017 Validation (Sprint 1) ===", flush=True)
     
     try:
         df = load_and_merge_datasets(args.dir)
     except FileNotFoundError as e:
-        print(f"⚠️ {e}")
+        print(f"⚠️ {e}", flush=True)
         return
 
-    print(f"[*] Original Dataset Shape: {df.shape}")
+    print(f"[*] Original Dataset Shape: {df.shape}", flush=True)
     
     if args.binary:
-        print("[*] Converting to Binary Classification...")
+        print("[*] Converting to Binary Classification...", flush=True)
         df['Label'] = np.where(df['Label'] == 'BENIGN', 'BENIGN', 'ATTACK')
 
-    print("[*] Utilizando a base de atributos completa do Lynceus (Full Mode)")
-    
-    print("[*] Purging Identity / Leakage Features...")
+    print("[*] Utilizando a base de atributos completa do Lynceus (Full Mode)", flush=True)
+    print("[*] Purging Identity / Leakage Features...", flush=True)
     df = clean_dataset(df)
     
-    print(f"[*] Final Feature Shape: {df.shape}")
-    print("[*] Class Distribution:")
-    print(df['Label'].value_counts())
+    print(f"[*] Final Feature Shape: {df.shape}", flush=True)
+    print("[*] Class Distribution:", flush=True)
+    print(df['Label'].value_counts(), flush=True)
 
-    X = df.drop(columns=['Label'])
-    y = df['Label']
-
-    # Free memory
-    del df
+    y = df['Label'].copy()
+    df.drop(columns=['Label'], inplace=True)
+    X = df
 
     # No Random Undersampling applied to maintain literature parity
-    X_res, y_res = X, y
+    print("\n[*] Splitting Data (70/30)...", flush=True)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
+    
+    import gc
+    del X
+    del y
+    gc.collect()
 
-    print("\n[*] Splitting Data (70/30)...")
-    X_train, X_test, y_train, y_test = train_test_split(X_res, y_res, test_size=0.3, random_state=42, stratify=y_res)
-
-    print("\n[*] Training Random Forest Classifier...")
-    clf = RandomForestClassifier(n_estimators=50, n_jobs=-1, random_state=42)
+    print("\n[*] Training Random Forest Classifier...", flush=True)
+    clf = RandomForestClassifier(n_estimators=20, n_jobs=-1, max_depth=15, random_state=42)
     clf.fit(X_train, y_train)
 
-    print("[*] Evaluating Model...")
+    print("[*] Evaluating Model...", flush=True)
     y_pred = clf.predict(X_test)
     
-    print("\n" + "="*50)
-    print("                 FINAL RESULTS")
-    print("="*50)
-    print(classification_report(y_test, y_pred, digits=4))
+    print("\n" + "="*50, flush=True)
+    print("                 FINAL RESULTS", flush=True)
+    print("="*50, flush=True)
+    print(classification_report(y_test, y_pred, digits=4), flush=True)
     
     f1_macro = f1_score(y_test, y_pred, average='macro')
-    print(f"-> MACRO F1-SCORE: {f1_macro:.4f}")
-    print("="*50)
+    print(f"-> MACRO F1-SCORE: {f1_macro:.4f}", flush=True)
+    print("="*50, flush=True)
 
 if __name__ == "__main__":
     main()
