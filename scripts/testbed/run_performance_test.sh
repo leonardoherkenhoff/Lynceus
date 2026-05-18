@@ -15,6 +15,11 @@ echo "=== Lynceus Performance Stress-Test (Sprint 2) ==="
 echo "========================================================="
 echo "[*] Arquivo PCAP: $PCAP_FILE"
 
+if ! command -v tcpreplay &> /dev/null; then
+    echo "[!] tcpreplay não encontrado. Instalando..."
+    apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y tcpreplay
+fi
+
 echo "[*] Configurando par veth (veth0 <-> veth1) para injeção topspeed..."
 ip link add veth0 type veth peer name veth1 2>/dev/null || true
 ip link set veth0 up

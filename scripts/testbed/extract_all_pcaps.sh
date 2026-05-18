@@ -17,6 +17,11 @@ echo "[*] Compilando motor eBPF (Zero-Libc)..."
 OUT_DIR="/opt/eBPFNetFlowLyzer/data/interim/EBPF_RAW"
 mkdir -p "$OUT_DIR"
 
+if ! command -v tcpreplay &> /dev/null; then
+    echo "[!] tcpreplay não encontrado. Instalando..."
+    apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y tcpreplay
+fi
+
 echo "[*] Configurando par veth (veth0 <-> veth1) para ingestão offline..."
 ip link add veth0 type veth peer name veth1 2>/dev/null || true
 ip link set veth0 up
@@ -51,7 +56,7 @@ for PCAP in $FILES; do
     sleep 2
     
     echo "    -> Disparando tcpreplay em topspeed via veth0..."
-    tcpreplay -i veth0 --topspeed "$PCAP" > /dev/null 2>&1
+    tcpreplay -i veth0 --topspeed "$PCAP"
     
     echo "    -> Finalizando coleta e gravando CSV..."
     kill -SIGINT $LOADER_PID
