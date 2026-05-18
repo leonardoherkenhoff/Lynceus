@@ -21,7 +21,9 @@ if ! command -v tcpreplay &> /dev/null; then
 fi
 
 echo "[*] Configurando par veth (veth0 <-> veth1) para injeção topspeed..."
-ip link add veth0 type veth peer name veth1 2>/dev/null || true
+ip link delete veth0 2>/dev/null || true
+ip link delete veth1 2>/dev/null || true
+ip link add veth0 type veth peer name veth1
 ip link set veth0 up
 ip link set veth1 up
 ip link set dev veth0 mtu 65535
