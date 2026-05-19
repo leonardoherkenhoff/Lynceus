@@ -28,6 +28,14 @@ if ! command -v editcap &> /dev/null; then
     apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y wireshark-common
 fi
 
+if [ -d "$DST" ] && [ -n "$(ls -A $DST/*.pcap 2>/dev/null)" ]; then
+    echo "    -> PCAPs fatiados detectados em $DST. Pulando fatiamento."
+    echo "========================================================="
+    echo "✅ FATIAMENTO DETECTADO E ANTECIPADO!"
+    echo "========================================================="
+    exit 0
+fi
+
 mkdir -p "$DST"
 rm -f "$DST"/*.pcap  # Limpar fatiamentos antigos
 
