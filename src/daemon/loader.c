@@ -634,7 +634,10 @@ int main(int argc, char **argv) {
         fprintf(stderr, "[*] Worker %d: %lu events processed\n", i, workers[i].processed_events);
     }
     pthread_join(g_writer_thread, NULL);
-    for (int i = 0; i < num_ifaces; i++) bpf_xdp_detach(ifindexes[i], XDP_FLAGS_SKB_MODE, NULL);
+    for (int i = 0; i < num_ifaces; i++) {
+        bpf_xdp_detach(ifindexes[i], XDP_FLAGS_DRV_MODE, NULL);
+        bpf_xdp_detach(ifindexes[i], XDP_FLAGS_SKB_MODE, NULL);
+    }
     int stats_fd = bpf_object__find_map_fd_by_name(obj, "global_stats");
     __u32 stats_key = 0; uint64_t *cpu_stats = calloc(cores, sizeof(uint64_t));
     uint64_t total_ingress = 0;

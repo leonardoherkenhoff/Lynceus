@@ -67,8 +67,8 @@ for PCAP in $FILES; do
     # Obter dinamicamente o MAC de veth1 para reescrita fisica de pacotes, mitigando drops por PACKET_OTHERHOST
     VETH1_MAC=$(cat /sys/class/net/veth1/address 2>/dev/null || ip link show veth1 | grep link/ether | awk '{print $2}')
     
-    # Executa o daemon do Lynceus no modo nativo (drv). Caso falhe por falta de suporte no driver, ele cai automaticamente para skb.
-    ./build/loader veth1 > "$OUT_DIR/$CSV_NAME" 2> "$ERR_FILE" &
+    # Executa o daemon do Lynceus no modo nativo (drv). Para veth nativo, anexamos em ambas (veth1 e veth0) para inicializar o xdp_ring.
+    ./build/loader veth1 veth0 > "$OUT_DIR/$CSV_NAME" 2> "$ERR_FILE" &
     LOADER_PID=$!
     
     echo "    -> Aguardando estabilização dos mapas BPF..."

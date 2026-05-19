@@ -46,8 +46,8 @@ make
 echo "[*] Iniciando o Daemon do Lynceus (XDP) em background..."
 # Obter dinamicamente o MAC de veth1 para reescrita fisica de pacotes, mitigando drops por PACKET_OTHERHOST
 VETH1_MAC=$(cat /sys/class/net/$IFACE/address 2>/dev/null || ip link show $IFACE | grep link/ether | awk '{print $2}')
-# Roda o Lynceus na interface de loopback em modo nativo (drv), com fallback automatico para skb
-./build/loader $IFACE > loader_audit.log 2>&1 &
+# Roda o Lynceus na interface de loopback em modo nativo (drv). Para veth nativo, anexamos em ambas ($IFACE e $TC_IFACE) para inicializar o xdp_ring.
+./build/loader $IFACE $TC_IFACE > loader_audit.log 2>&1 &
 LYNCEUS_PID=$!
 
 echo "[*] Aguardando estabilizacao dos mapas BPF (3s)..."
