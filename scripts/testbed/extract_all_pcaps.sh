@@ -32,6 +32,8 @@ echo "[*] Configurando par veth (veth0 <-> veth1) para Ingestão Offline (develo
 ip link delete veth0 2>/dev/null || true
 ip link delete veth1 2>/dev/null || true
 ip link add veth0 type veth peer name veth1
+ip link set dev veth0 mtu 9000
+ip link set dev veth1 mtu 9000
 ip link set veth0 up
 ip link set veth1 up
 ip link set veth0 promisc on
@@ -62,7 +64,11 @@ for PCAP in $FILES; do
     # O motor eBPF anexa ao hook XDP da interface receptora (veth1)
     # Salvamos o stderr para diagnóstico científico preciso de falhas de carregamento BPF
     ERR_FILE="$OUT_DIR/${CSV_NAME}.err"
-    ./build/loader veth1 skb > "$OUT_DIR/$CSV_NAME" 2> "$ERR_FILE" &
+    # Obter dinamicamente o MAC de veth1 para reescrita fisica de pacotes, mitigando drops por PACKET_OTHERHOST
+    VETH1_MAC=$(cat /sys/class/net/veth1/address 2>/dev/null || ip link show veth1 | grep link/ether | awk '{print $2}')
+    
+    # Executa o daemon do Lynceus no modo nativo (drv). Caso falhe por falta de suporte no driver, ele cai automaticamente para skb.
+    ./build/loader veth1 > "$OUT_DIR/$CSV_NAME" 2> "$ERR_FILE" &
     LOADER_PID=$!
     
     echo "    -> Aguardando estabilização dos mapas BPF..."
@@ -74,8 +80,8 @@ for PCAP in $FILES; do
         cat "$ERR_FILE"
     fi
     
-    echo "    -> Disparando tcpreplay em TOPSPEED (Limites de Hardware) via veth0..."
-    tcpreplay-edit --topspeed --mtu-trunc -i veth0 "$PCAP"
+    echo "    -> Disparando tcpreplay em TOPSPEED com reescrita de DMAC ($VETH1_MAC) e MTU truncado..."
+    tcpreplay-edit --topspeed --mtu-trunc --enet-dmac="$VETH1_MAC" -i veth0 "$PCAP"
     
     echo "    -> Aguardando escoamento dos buffers (flush)..."
     sleep 3

@@ -24,6 +24,8 @@ echo "[*] Configurando par veth (veth0 <-> veth1) para injeção topspeed (devel
 ip link delete veth0 2>/dev/null || true
 ip link delete veth1 2>/dev/null || true
 ip link add veth0 type veth peer name veth1
+ip link set dev veth0 mtu 9000
+ip link set dev veth1 mtu 9000
 ip link set veth0 up
 ip link set veth1 up
 ip link set veth0 promisc on
@@ -42,8 +44,10 @@ make clean
 make
 
 echo "[*] Iniciando o Daemon do Lynceus (XDP) em background..."
-# Roda o Lynceus na interface de loopback
-./build/loader $IFACE skb > loader_audit.log 2>&1 &
+# Obter dinamicamente o MAC de veth1 para reescrita fisica de pacotes, mitigando drops por PACKET_OTHERHOST
+VETH1_MAC=$(cat /sys/class/net/$IFACE/address 2>/dev/null || ip link show $IFACE | grep link/ether | awk '{print $2}')
+# Roda o Lynceus na interface de loopback em modo nativo (drv), com fallback automatico para skb
+./build/loader $IFACE > loader_audit.log 2>&1 &
 LYNCEUS_PID=$!
 
 echo "[*] Aguardando estabilizacao dos mapas BPF (3s)..."
@@ -58,7 +62,7 @@ echo "[*] Iniciando a injeção massiva (TOPSPEED) via tcpreplay..."
 echo "[*] Monitorando relogio global..."
 
 # Executa e cronometra o tcpreplay na veth0
-/usr/bin/time -v tcpreplay-edit -i $TC_IFACE --topspeed --mtu-trunc "$PCAP_FILE"
+/usr/bin/time -v tcpreplay-edit -i $TC_IFACE --topspeed --mtu-trunc --enet-dmac="$VETH1_MAC" "$PCAP_FILE"
 
 echo "[*] Injeção concluida! Aguardando escoamento dos buffers (3s)..."
 sleep 3
