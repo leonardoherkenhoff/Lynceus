@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 """
-Lynceus ISCX-VPN Labeler
-Mapeia os fluxos extraídos no CSV baseando-se no contexto topológico (nome do arquivo PCAP original).
+Lynceus Pre-processing - Topological Ground-Truth Attributor (ISCX-VPN-2016)
+---------------------------------------------------------------------------
+Scientific Milestone: v2.0 (High-Performance I/O)
+
+Research Objective:
+    Performs deterministic labeling of extraction results based on network
+    topology and filename heuristics defined by Draper-Gil et al. (2016).
+
+Methodology:
+    1. Iterative Parsing: Receives raw flow CSV from Lynceus daemon.
+    2. Contextual Mapping: Appends Application Type and VPN Status features based on file context.
 """
 
 import sys

@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
+# ==============================================================================
 # Lynceus Testbed - Download Script for ISCX-VPN-NonVPN-2016 Dataset
+# ------------------------------------------------------------------------------
+# Scientific Milestone: v2.0 (High-Performance I/O)
+#
+# Research Objective:
+#     Automates the authenticated ingestion of the 5 raw PCAP archives 
+#     from the UNB CIC Datasets portal.
+# ==============================================================================
 
 set -e
 

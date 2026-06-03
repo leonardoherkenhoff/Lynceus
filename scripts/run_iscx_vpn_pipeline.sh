@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
+# ==============================================================================
 # Lynceus Testbed - Pipeline Executor for ISCX-VPN-2016
+# ------------------------------------------------------------------------------
+# Scientific Milestone: v2.0 (High-Performance I/O)
+#
+# Research Objective:
+#     Orchestrates the XDP packet injection, eBPF parsing, and ground-truth 
+#     topological attribution for the ISCX-VPN-2016 dataset.
+# ==============================================================================
 
 set -e
 

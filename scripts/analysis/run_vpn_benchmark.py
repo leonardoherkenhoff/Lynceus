@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 """
-Lynceus ISCX-VPN-2016 ML Benchmark
+Lynceus Analysis - ML Benchmark (ISCX-VPN-2016)
+---------------------------------------------------------------------------
+Scientific Milestone: v2.0 (High-Performance I/O)
 
-Reproduz a metodologia do artigo: "Characterization of Encrypted and VPN Traffic using Time-related Features" (Draper-Gil et al., 2016)
-- 10-fold Cross-Validation
-- Scenarios:
-  A.1: VPN vs Non-VPN Binary Classification
-  A.2: Application Type (separado por VPN / NonVPN)
-  B: 14-class unified classification
-- Features: Time-based apenas (duração, IATs, active/idle)
+Research Objective:
+    Reproduces the exact machine learning pipeline methodology of the CICFlowMeter VPN Paper.
+    "Characterization of Encrypted and VPN Traffic using Time-related Features" (Draper-Gil et al., 2016).
+
+Methodology:
+    1. Cross Validation: 10-fold Stratified K-Fold.
+    2. Scenarios:
+       A.1: VPN vs Non-VPN Binary Classification
+       A.2: Application Type (separated by VPN / Non-VPN contexts)
+       B: 14-class unified classification
+    3. Feature Space: Exclusively time-based metrics (duration, IATs, active/idle).
 """
 
 import sys
