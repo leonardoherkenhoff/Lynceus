@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
 Lynceus Research Pipeline - Network Topology Virtualization & Extraction (v1.0)
------------------------------------------------------------
-Scientific Milestone: v1.0 (The Definitive Foundation)
+---------------------------------------------------------------------------
+Scientific Milestone: v2.0 (High-Performance I/O)
 
 Research Objective:
-Orchestrates the high-fidelity extraction of network features by simulating 
-topological environments (VETH) and ingesting raw traffic (PCAP).
+    Orchestrates the high-fidelity extraction of network features by simulating 
+    topological environments (VETH) and ingesting raw traffic (PCAP).
 
 Architecture:
-1. Topology Creation: Instantiates virtual ethernet pairs (veth0/veth1).
-2. Engine Ignition: Spawns the Lynceus loader with stdout-to-pipe redirection.
-3. Traffic Injection: Replays PCAP artifacts via tcpreplay into the virtual stack.
-4. Telemetry Capture: Asynchronous collection of CSV streams from the engine.
+    1. Topology Creation: Instantiates virtual ethernet pairs (veth0/veth1).
+    2. Engine Ignition: Spawns the Lynceus loader with stdout-to-pipe redirection.
+    3. Traffic Injection: Replays PCAP artifacts via tcpreplay into the virtual stack.
+    4. Telemetry Capture: Asynchronous collection of CSV streams from the engine.
 """
 
 import subprocess

@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
 Lynceus Research Infrastructure - Resource Consumption Profiler (v1.0)
------------------------------------------------------------
-Scientific Milestone: v1.0 (The Definitive Foundation)
+---------------------------------------------------------------------------
+Scientific Milestone: v2.0 (High-Performance I/O)
 
 Research Objective:
-Performs asynchronous sampling of CPU and Memory footprints for the 
-Lynceus Telemetry Engine during experimental workloads.
+    Performs asynchronous sampling of CPU and Memory footprints for the 
+    Lynceus Telemetry Engine during experimental workloads.
 
 Methodology:
-1. Process Identification: Targets the engine PID provided by the orchestrator.
-2. Stochastic Sampling: Captures metrics at a deterministic 1Hz frequency.
-3. Persistence: Exports time-series data to CSV for resource overhead analysis.
+    1. Process Identification: Targets the engine PID provided by the orchestrator.
+    2. Stochastic Sampling: Captures metrics at a deterministic 1Hz frequency.
+    3. Persistence: Exports time-series data to CSV for resource overhead analysis.
 """
 
 import psutil

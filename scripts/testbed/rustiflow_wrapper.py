@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-Lynceus Parity Experiment — RustiFlow Wrapper (V5)
----------------------------------------------
+Lynceus Parity Experiment - RustiFlow Wrapper (V5)
+---------------------------------------------------------------------------
+Scientific Milestone: v2.0 (High-Performance I/O)
+
+Research Objective:
+    Extrai features de cada PCAP usando RustiFlow para teste de paridade de métricas.
 """
 
 import subprocess

@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 """
 Lynceus Telemetry Benchmark & Validation (v3.0)
+---------------------------------------------------------------------------
+Scientific Milestone: v2.0 (High-Performance I/O)
 Protocol: Feature Parity Analysis (SBSeg 2026)
 
-RESEARCH OBJECTIVE:
-Evaluate Lynceus performance under different feature set constraints:
-  1. Base (495 features)
-  2. NTL+AL Parity (399 features)
-  3. NFX Parity (15 features)
-  4. RustiFlow Parity (203 features)
+Research Objective:
+    Evaluate Lynceus performance under different feature set constraints:
+      1. Base (495 features)
+      2. NTL+AL Parity (399 features)
+      3. NFX Parity (15 features)
+      4. RustiFlow Parity (203 features)
 
-METHODOLOGY:
-  1. Cross-Day Temporal Validation: Independent training (Day 01) 
-     and testing (Day 03) sets from CICDDoS2019.
-  2. Stochastic Split Validation: 70/30 split for single-day captures.
-  3. Identity Purge: Mandatory removal of IP/Port metadata.
+Methodology:
+    1. Cross-Day Temporal Validation: Independent training (Day 01) 
+       and testing (Day 03) sets from CICDDoS2019.
+    2. Stochastic Split Validation: 70/30 split for single-day captures.
+    3. Identity Purge: Mandatory removal of IP/Port metadata.
 """
 
 import numpy as np

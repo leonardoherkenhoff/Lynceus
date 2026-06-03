@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """
-Lynceus Parity Experiment — NetFeatureXtract (NFX) Wrapper
------------------------------------------------------------
-Versão Sequencial Estável com Timeout de 1800s.
+Lynceus Parity Experiment - NetFeatureXtract (NFX) Wrapper
+---------------------------------------------------------------------------
+Scientific Milestone: v2.0 (High-Performance I/O)
+
+Research Objective:
+    Extrai features de cada PCAP usando NFX em ambiente simulado VETH.
+    Versão Sequencial Estável com Timeout de 1800s.
 """
 
 import os

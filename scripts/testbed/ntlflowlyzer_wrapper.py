@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Lynceus Parity Experiment — NTLFlowLyzer Wrapper
--------------------------------------------------
-Extrai features de cada PCAP usando NTLFlowLyzer (parity-netflowlyzer).
-Gera config.json dinâmico para cada PCAP e invoca o NTLFlowLyzer via CLI.
+Lynceus Parity Experiment - NTLFlowLyzer Wrapper
+---------------------------------------------------------------------------
+Scientific Milestone: v2.0 (High-Performance I/O)
 
-Invocação: sudo python3 scripts/testbed/ntlflowlyzer_wrapper.py
+Research Objective:
+    Extrai features de cada PCAP usando NTLFlowLyzer (parity-netflowlyzer).
+    Gera config.json dinâmico para cada PCAP e invoca o NTLFlowLyzer via CLI.
 """
 
 import subprocess
