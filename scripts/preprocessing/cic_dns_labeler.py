@@ -9,14 +9,14 @@ Research Objective:
     heuristics for the 5 classes: Benign, Malware, Spam, Phishing, Exfiltration.
 
 Methodology:
-    1. Iterative Parsing: Receives raw flow CSV from Lynceus daemon.
+    1. Directory Crawl: Locates all raw CSV streams.
     2. Contextual Mapping: Appends Activity Label based on file and directory context.
 """
 
 import sys
 import os
+import glob
 import pandas as pd
-from pathlib import Path
 
 def determine_label(filepath_str):
     path_lower = filepath_str.lower()
@@ -24,48 +24,59 @@ def determine_label(filepath_str):
     
     label = "Unknown"
     
-    # Heurística para o EXF Dataset (Exfiltration)
-    if "/exf/" in path_lower:
-        if "attack" in path_lower and "benign" not in filename_lower:
-            label = "Exfiltration"
-        elif "benign" in path_lower:
-            label = "Benign"
-            
-    # Heurística para o 2021 Dataset Original
-    elif "/2021/" in path_lower:
-        if "firstdaybenign" in path_lower or "benign" in filename_lower:
-            label = "Benign"
-        elif "malware" in filename_lower or "malware" in path_lower:
-            label = "Malware"
-        elif "spam" in filename_lower or "spam" in path_lower:
-            label = "Spam"
-        elif "phishing" in filename_lower or "phishing" in path_lower:
-            label = "Phishing"
-        
-        # Fallback (as vezes SecondDay.zip inteiro é Malware ou Spam)
-        # Na ausencia da classe no filename, tenta pelo nome da pasta se houver.
+    # Heurística baseada no filename, já que o caminho não é passado inteiro agora.
+    # Na extração batch (extract_all_pcaps.sh), o nome do pcap fica "embutido" no prefixo do nome do csv
+    # mas o nome não foi passado pra esse script.
+    # Vamos usar apenas filename_lower, visto que extract_all_pcaps.sh salva o PCAP original no DB ou renomeia?
+    # O extract_all_pcaps atual salva os arquivos gerados sem o nome do pcap, só usa data/hora, exceto 
+    # se modificarmos o extract_all_pcaps.sh para salvar com o prefixo.
+    # Espera! O extract_all_pcaps.sh do CIC-IDS-2017 renomeia sim: mv csv "$2/${base_pcap}_${hora}.csv"
+    # Assim, `filename_lower` já tem o prefixo do nome do PCAP original.
+    
+    if "firstdaybenign" in filename_lower or "benign" in filename_lower:
+        label = "Benign"
+    elif "malware" in filename_lower:
+        label = "Malware"
+    elif "spam" in filename_lower:
+        label = "Spam"
+    elif "phishing" in filename_lower:
+        label = "Phishing"
+    elif "attack" in filename_lower or "exf" in filename_lower:
+        label = "Exfiltration"
         
     return label
 
-def main(input_csv, source_pcap):
-    if not os.path.exists(input_csv):
-        print(f"[ERRO] Arquivo CSV {input_csv} nao encontrado.")
-        sys.exit(1)
+def process_directory(in_dir, out_dir):
+    os.makedirs(out_dir, exist_ok=True)
+    csv_files = glob.glob(os.path.join(in_dir, "*.csv"))
+    
+    if not csv_files:
+        print(f"[ERRO] Nenhum arquivo CSV encontrado em {in_dir}")
+        return
         
-    label = determine_label(source_pcap)
-    
-    # Carrega o CSV gerado pelo Lynceus
-    df = pd.read_csv(input_csv)
-    
-    # Anexa o ground-truth
-    df['Activity'] = label
-    
-    # Sobrescreve
-    df.to_csv(input_csv, index=False)
-    print(f"   [+] Labeled: {input_csv} -> [Activity: {label}]")
+    for in_path in csv_files:
+        filename = os.path.basename(in_path)
+        out_path = os.path.join(out_dir, filename.replace(".csv", "_labeled.csv"))
+        
+        label = determine_label(filename)
+        
+        try:
+            df = pd.read_csv(in_path)
+            if len(df) == 0:
+                continue
+            
+            df['Activity'] = label
+            
+            df.to_csv(out_path, index=False)
+            print(f"   [+] Labeled: {filename} -> [Activity: {label}]")
+        except pd.errors.EmptyDataError:
+            print(f"   [!] Arquivo Vazio: {filename}")
+        except Exception as e:
+            print(f"   [!] Erro lendo {filename}: {e}")
 
 if __name__ == '__main__':
-    if len(sys.argv) < 3:
-        print("Uso: cic_dns_labeler.py <csv_gerado.csv> <caminho_pcap_original>")
+    if len(sys.argv) != 3:
+        print("Uso: cic_dns_labeler.py <input_dir> <output_dir>")
         sys.exit(1)
-    main(sys.argv[1], sys.argv[2])
+        
+    process_directory(sys.argv[1], sys.argv[2])
