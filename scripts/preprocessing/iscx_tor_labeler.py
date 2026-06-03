@@ -9,25 +9,23 @@ Research Objective:
     topology and filename heuristics defined by Habibi Lashkari et al. (2017).
 
 Methodology:
-    1. Iterative Parsing: Receives raw flow CSV from Lynceus daemon.
-    2. Contextual Mapping: Appends Application Type and Tor Status features based on file context.
+    1. Directory Crawl: Locates all raw CSV streams.
+    2. Contextual Mapping: Appends Application Type and Tor Status features 
+       based on original filename semantics.
 """
 
 import sys
 import os
+import glob
 import pandas as pd
-from pathlib import Path
 
 def determine_labels(filepath_str):
     """
-    Deduz os rótulos de Tor Status e Application Type baseado no path do arquivo injetado.
-    Tor.zip e NonTor.tar.xz geram arvores de diretorios que refletem a classe.
+    Deduz os rótulos de Tor Status e Application Type baseado no path do arquivo.
     """
     path_lower = filepath_str.lower()
     
     # 1. Tor Status (Scenario A)
-    # Se "nontor" estiver no caminho ou nome de arquivo, eh Non-Tor.
-    # Caso contrario, assume-se Tor.
     tor_status = "NonTor" if "nontor" in path_lower else "Tor"
     
     # 2. Application Type (Scenario B)
@@ -43,39 +41,49 @@ def determine_labels(filepath_str):
     elif "mail" in path_lower or "email" in path_lower:
         app_type = "Mail"
     elif "voip" in path_lower or "skype" in path_lower or "hangouts" in path_lower or "facebook" in path_lower:
-        app_type = "VoIP" # O paper agrupa hangouts, facebook voice e skype aqui, mas pode conflitar se skype for chat/ft.
+        app_type = "VoIP" 
     elif "p2p" in path_lower or "torrent" in path_lower or "vuze" in path_lower:
         app_type = "P2P"
     elif "ft" in path_lower or "filetransfer" in path_lower or "sftp" in path_lower or "ftps" in path_lower:
         app_type = "File-Transfer"
     
-    # Heurística extra de disambiguação por palavras-chave
-    if app_type == "Unknown":
-        if "streaming" in path_lower:
-            app_type = "Video-Streaming" # Default guess for streaming if audio/video isn't explicit
+    if app_type == "Unknown" and "streaming" in path_lower:
+        app_type = "Video-Streaming"
             
     return tor_status, app_type
 
-def main(input_csv, source_pcap):
-    if not os.path.exists(input_csv):
-        print(f"[ERRO] Arquivo CSV {input_csv} nao encontrado.")
-        sys.exit(1)
+def process_directory(in_dir, out_dir):
+    os.makedirs(out_dir, exist_ok=True)
+    csv_files = glob.glob(os.path.join(in_dir, "*.csv"))
+    
+    if not csv_files:
+        print(f"[ERRO] Nenhum arquivo CSV encontrado em {in_dir}")
+        return
         
-    tor_status, app_type = determine_labels(source_pcap)
-    
-    # Carrega o CSV gerado pelo Lynceus (Pandas fallback seguro p/ pequenos lotes de pcap individual)
-    df = pd.read_csv(input_csv)
-    
-    # Anexa o ground-truth
-    df['Tor_Status'] = tor_status
-    df['Application_Type'] = app_type
-    
-    # Sobrescreve o mesmo arquivo (pois esta operando na pasta processed/ ja isolada)
-    df.to_csv(input_csv, index=False)
-    print(f"   [+] Labeled: {input_csv} -> [Status: {tor_status} | App: {app_type}]")
+    for in_path in csv_files:
+        filename = os.path.basename(in_path)
+        out_path = os.path.join(out_dir, filename.replace(".csv", "_labeled.csv"))
+        
+        tor_status, app_type = determine_labels(filename)
+        
+        try:
+            df = pd.read_csv(in_path)
+            if len(df) == 0:
+                continue
+            
+            df['Tor_Status'] = tor_status
+            df['Application_Type'] = app_type
+            
+            df.to_csv(out_path, index=False)
+            print(f"   [+] Labeled: {filename} -> [Status: {tor_status} | App: {app_type}]")
+        except pd.errors.EmptyDataError:
+            print(f"   [!] Arquivo Vazio: {filename}")
+        except Exception as e:
+            print(f"   [!] Erro lendo {filename}: {e}")
 
 if __name__ == '__main__':
-    if len(sys.argv) < 3:
-        print("Uso: iscx_tor_labeler.py <csv_gerado.csv> <caminho_pcap_original>")
+    if len(sys.argv) != 3:
+        print("Uso: iscx_tor_labeler.py <input_dir> <output_dir>")
         sys.exit(1)
-    main(sys.argv[1], sys.argv[2])
+        
+    process_directory(sys.argv[1], sys.argv[2])

@@ -1,82 +1,76 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Lynceus Testbed - Pipeline Executor for ISCX-Tor-2016
+# Lynceus Testbed - Modular Pipeline Executor for ISCX-Tor-2016
 # ------------------------------------------------------------------------------
 # Scientific Milestone: v2.0 (High-Performance I/O)
 #
 # Research Objective:
 #     Orchestrates the XDP packet injection, eBPF parsing, and ground-truth 
-#     topological attribution for the ISCX-Tor-2016 dataset.
+#     topological attribution for the ISCX-Tor-2016 dataset using generic 
+#     testbed modules.
 # ==============================================================================
 
 set -e
 
-BASE_DIR="/opt/eBPFNetFlowLyzer"
+WORKSPACE="/opt/eBPFNetFlowLyzer"
 PCAP_DIR="/root/ISCX-Tor-2016"
-OUTPUT_DIR="$BASE_DIR/data/processed/ISCX_TOR_LABELED"
+RAW_OUT_DIR="$WORKSPACE/data/interim/EBPF_RAW_TOR"
+LABELED_OUT_DIR="$WORKSPACE/data/processed/ISCX_TOR_LABELED"
+LOG_DIR="$WORKSPACE/logs_pipeline_tor"
 
-mkdir -p "$OUTPUT_DIR"
-rm -f "$OUTPUT_DIR"/*.csv
+mkdir -p "$LOG_DIR"
+cd "$WORKSPACE"
 
-echo "=== ISCX-Tor-2016 Testbed Pipeline ==="
-echo "[*] Limpando CSVs de execuções anteriores..."
-rm -f "$BASE_DIR/data/interim/EBPF_RAW"/*.csv
+echo "========================================================="
+echo "=== ORQUESTRADOR MASTER: Tor vs Non-Tor (ISCX-2016) ==="
+echo "========================================================="
+echo "[*] Todos os logs serao salvos em: $LOG_DIR"
 
-echo "[*] Iniciando o daemon Lynceus em background..."
-# O daemon original deve estar compilado em /opt/eBPFNetFlowLyzer/src/daemon/lynceus_daemon
-if [ ! -f "$BASE_DIR/src/daemon/lynceus_daemon" ]; then
-    echo "[ERRO] Daemon nao encontrado. Compile com 'make' primeiro."
-    exit 1
+# 1. Download (Verificacao)
+echo ""
+echo "[Fase 1/5] Ingestão de Datasets"
+if [ ! -d "$PCAP_DIR" ] || [ -z "$(find $PCAP_DIR -type f -name '*.pcap' 2>/dev/null)" ]; then
+    echo "    -> Iniciando download dos arquivos..."
+    ./scripts/testbed/download_iscx_tor.sh | tee "$LOG_DIR/1_download.log"
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "[X] Falha no Download"; exit 1; fi
+else
+    echo "    -> PCAPs detectados em $PCAP_DIR. Pulando download."
 fi
 
-$BASE_DIR/src/daemon/lynceus_daemon veth1 &
-DAEMON_PID=$!
-sleep 2 # Tempo para carregar o eBPF program
+# 2. Extração
+echo ""
+echo "[Fase 2/5] Extração de Features In-Kernel (eBPF)"
+echo "    -> Extraindo pacotes para CSV em TOPSPEED (Modular)..."
+./scripts/testbed/extract_all_pcaps.sh "$PCAP_DIR" "$RAW_OUT_DIR" | tee "$LOG_DIR/2_extraction.log"
+if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "[X] Falha na Extração"; exit 1; fi
 
-echo "[*] Injetando PCAPs via tcpreplay..."
-# Encontra todos os arquivos .pcap dentro da arvore descompactada
-find "$PCAP_DIR" -type f -name "*.pcap*" | while read -r pcap_file; do
-    echo "--------------------------------------------------------"
-    echo " -> Processando: $pcap_file"
-    
-    # Identificador seguro do pcap
-    safe_pcap_name=$(basename "$pcap_file" | sed 's/[^a-zA-Z0-9]/_/g')
-    
-    # Idempotência: pula se já existir o resultado final (evita re-processamento caro)
-    if ls "$OUTPUT_DIR/${safe_pcap_name}_"*.csv >/dev/null 2>&1; then
-        echo "    [SKIP] CSV processado já detectado para este arquivo. Pulando injeção."
-        continue
-    fi
-    
-    # Injeta a maxima velocidade na interface dummy/veth pareada com veth1
-    # Assumimos que veth0 está conectada a veth1.
-    tcpreplay-edit -i veth0 --topspeed --mtu-trunc "$pcap_file"
-    
-    # Aguarda o flush (timeout padrão do código intocado = 5.0s, então esperamos 6s para garantir)
-    echo "    Aguardando flush do Lynceus (6s)..."
-    sleep 6
-    
-    # Movimenta e rotula o(s) CSV(s) que surgiram no interim folder
-    for csv_file in "$BASE_DIR/data/interim/EBPF_RAW"/*.csv; do
-        if [ -f "$csv_file" ]; then
-            # Pega apenas o timestamp ou nome aleatorio gerado
-            base_csv=$(basename "$csv_file")
-            
-            # Gera um nome combinando o labeler e pcap
-            safe_pcap_name=$(basename "$pcap_file" | sed 's/[^a-zA-Z0-9]/_/g')
-            target_csv="$OUTPUT_DIR/${safe_pcap_name}_${base_csv}"
-            
-            mv "$csv_file" "$target_csv"
-            
-            # Executa o labeler passando o caminho original do PCAP
-            python3 "$BASE_DIR/scripts/preprocessing/iscx_tor_labeler.py" "$target_csv" "$pcap_file"
-        fi
-    done
-done
+# 3. Rotulagem
+echo ""
+echo "[Fase 3/5] Rotulagem Lógica (Tor vs Non-Tor / Application)"
+echo "    -> Processando CSVs recém extraídos..."
+python3 scripts/preprocessing/iscx_tor_labeler.py "$RAW_OUT_DIR" "$LABELED_OUT_DIR" | tee "$LOG_DIR/3_labeling.log"
+if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "[X] Falha no Labeling"; exit 1; fi
 
-echo "--------------------------------------------------------"
-echo "[*] Finalizando o daemon..."
-kill -SIGINT $DAEMON_PID
-wait $DAEMON_PID 2>/dev/null || true
+# 4. Machine Learning
+echo ""
+echo "[Fase 4/5] Avaliação de Classificação L3/L4"
+echo "    -> ML Benchmark (Random Forest, KNN, C4.5)..."
+python3 scripts/analysis/run_tor_benchmark.py "$LABELED_OUT_DIR" | tee "$LOG_DIR/4_ml_benchmark.log"
+if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "[X] Falha no Treinamento ML"; exit 1; fi
 
-echo "✅ Pipeline Tor completo! Arquivos rotulados disponiveis em: $OUTPUT_DIR"
+# 5. Stress Test
+echo ""
+echo "[Fase 5/5] PPS Benchmark (Stress Test)"
+echo "    -> Mesclando os PCAPs..."
+MERGED_PCAP="$PCAP_DIR/Tor_Merged.pcap"
+if [ ! -f "$MERGED_PCAP" ]; then
+    ./scripts/testbed/merge_pcaps.sh "$PCAP_DIR" "$MERGED_PCAP" | tee "$LOG_DIR/5_merge.log"
+fi
+
+echo "    -> Executando stress test de alta vazão..."
+./scripts/testbed/run_performance_test.sh "$MERGED_PCAP" | tee "$LOG_DIR/6_performance.log"
+
+echo ""
+echo "========================================================="
+echo "=== PIPELINE CONCLUIDO COM SUCESSO ==="
+echo "========================================================="
