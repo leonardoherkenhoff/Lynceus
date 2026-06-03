@@ -52,12 +52,14 @@ echo "[*] Downloads concluídos. Extraindo os arquivos..."
 if [ -f "NonTor.tar.xz" ]; then
     echo " -> Descompactando NonTor.tar.xz..."
     tar -xf NonTor.tar.xz
+    rm -f NonTor.tar.xz
 fi
 
 # Extração do Tor.zip
 if [ -f "Tor.zip" ]; then
     echo " -> Descompactando Tor.zip..."
     unzip -n Tor.zip > /dev/null
+    rm -f Tor.zip
 fi
 
 echo "✅ Dataset extraído com sucesso em $DEST_DIR"

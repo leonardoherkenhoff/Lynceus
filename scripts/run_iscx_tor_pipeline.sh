@@ -39,6 +39,15 @@ find "$PCAP_DIR" -type f -name "*.pcap*" | while read -r pcap_file; do
     echo "--------------------------------------------------------"
     echo " -> Processando: $pcap_file"
     
+    # Identificador seguro do pcap
+    safe_pcap_name=$(basename "$pcap_file" | sed 's/[^a-zA-Z0-9]/_/g')
+    
+    # Idempotência: pula se já existir o resultado final (evita re-processamento caro)
+    if ls "$OUTPUT_DIR/${safe_pcap_name}_"*.csv >/dev/null 2>&1; then
+        echo "    [SKIP] CSV processado já detectado para este arquivo. Pulando injeção."
+        continue
+    fi
+    
     # Injeta a maxima velocidade na interface dummy/veth pareada com veth1
     # Assumimos que veth0 está conectada a veth1.
     tcpreplay-edit -i veth0 --topspeed --mtu-trunc "$pcap_file"
