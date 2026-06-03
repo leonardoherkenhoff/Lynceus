@@ -39,7 +39,7 @@ ip link set veth1 promisc on
 sysctl -w net.ipv6.conf.veth0.disable_ipv6=0 >/dev/null 2>&1 || true
 sysctl -w net.ipv6.conf.veth1.disable_ipv6=0 >/dev/null 2>&1 || true
 sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null 2>&1 || true
-FILES=$(ls "$PCAP_DIR"/*.pcap 2>/dev/null)
+FILES=$(find "$PCAP_DIR" -type f \( -iname "*.pcap" -o -iname "*.pcapng" \) 2>/dev/null)
 
 if [ -z "$FILES" ]; then
     echo "[X] Nenhum PCAP encontrado para extração."
