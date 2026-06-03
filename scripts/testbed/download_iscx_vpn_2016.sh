@@ -46,7 +46,7 @@ for url in "${URLS[@]}"; do
     fi
     echo " -> Baixando $filename..."
     # -C - resumes partial downloads; -L follows redirects
-    curl -b "$COOKIES_FILE" -c "$COOKIES_FILE" -L -C - -O "$url"
+    curl -b "$COOKIES_FILE" -c "$COOKIES_FILE" -L -C - -o "$filename" "$url"
 done
 
 echo "[*] Extracting ZIP archives..."
