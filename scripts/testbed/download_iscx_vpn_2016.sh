@@ -53,7 +53,7 @@ echo "[*] Extracting ZIP archives..."
 for z in *.zip; do
     if [ -f "$z" ]; then
         echo " -> Descompactando $z..."
-        unzip -o -q "$z"
+        unzip -o -q "$z" || echo "Ignorando zip invalido: $z"
     fi
 done
 
