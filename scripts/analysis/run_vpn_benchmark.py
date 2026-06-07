@@ -22,7 +22,6 @@ import gc
 import polars as pl
 import pandas as pd
 import numpy as np
-from joblib import parallel_backend
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
@@ -49,10 +48,9 @@ def get_time_based_features(df):
 
 def evaluate_model(X, y, name, clf):
     cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
-    with parallel_backend('threading', n_jobs=-1):
-        prec = cross_val_score(clf, X, y, cv=cv, scoring='precision_weighted')
-        rec = cross_val_score(clf, X, y, cv=cv, scoring='recall_weighted')
-        f1 = cross_val_score(clf, X, y, cv=cv, scoring='f1_weighted')
+    prec = cross_val_score(clf, X, y, cv=cv, scoring='precision_weighted', n_jobs=1)
+    rec = cross_val_score(clf, X, y, cv=cv, scoring='recall_weighted', n_jobs=1)
+    f1 = cross_val_score(clf, X, y, cv=cv, scoring='f1_weighted', n_jobs=1)
     print(f"[{name}] Precision: {prec.mean():.4f} | Recall: {rec.mean():.4f} | F1: {f1.mean():.4f}")
 
 def main(csv_dir):
@@ -110,10 +108,11 @@ def main(csv_dir):
     gc.collect()
     
     # Classificadores (C4.5 equivalente é DecisionTree, e Random Forest que Lynceus usa)
+    # Paralelismo contido nas instâncias limitadas a 8 threads para evitar OOM no OpenBLAS/KNN
     classifiers = {
         "C4.5 (J48)": DecisionTreeClassifier(random_state=42),
-        "KNN": KNeighborsClassifier(n_neighbors=5),
-        "Random Forest (Lynceus)": RandomForestClassifier(n_estimators=100, random_state=42)
+        "KNN": KNeighborsClassifier(n_neighbors=5, n_jobs=8),
+        "Random Forest (Lynceus)": RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=8)
     }
     
     print("\n--- [SCENARIO A.1] VPN vs Non-VPN (Binario) ---")
