@@ -18,8 +18,6 @@ echo "========================================================="
 
 echo "[*] Preparando diretório de saída..."
 mkdir -p "$OUT_DIR"
-echo "[*] Purgando arquivos CSV residuais de extrações anteriores..."
-rm -f "$OUT_DIR"/*.csv
 
 if ! command -v tcpreplay &> /dev/null; then
     echo "[!] tcpreplay não encontrado. Instalando..."
@@ -54,10 +52,17 @@ for PCAP in $FILES; do
         continue
     fi
     
+    CSV_NAME=$(basename "$PCAP" .pcap)
+    CSV_NAME=$(basename "$CSV_NAME" .pcapng).csv
+    
+    if [ -s "$OUT_DIR/$CSV_NAME" ]; then
+        echo "---------------------------------------------------------"
+        echo "[*] Cache Hit: O arquivo $CSV_NAME já foi extraído previamente. Pulando injeção."
+        continue
+    fi
+    
     echo "---------------------------------------------------------"
     echo "[*] Injetando no XDP/eBPF: $(basename "$PCAP")"
-    
-    CSV_NAME=$(basename "$PCAP" .pcap).csv
     
     # O motor eBPF anexa ao hook XDP da interface receptora (veth1)
     # Salvamos o stderr para diagnóstico científico preciso de falhas de carregamento BPF
