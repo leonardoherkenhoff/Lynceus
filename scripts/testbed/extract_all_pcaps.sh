@@ -79,7 +79,7 @@ for PCAP in $FILES; do
     fi
     
     echo "    -> Disparando tcpreplay em TOPSPEED com reescrita de DMAC ($VETH1_MAC) e MTU truncado..."
-    tcpreplay-edit --topspeed --mtu-trunc --enet-dmac="$VETH1_MAC" -i veth0 "$PCAP"
+    tcpreplay-edit --topspeed --mtu-trunc --dlt=enet --enet-dmac="$VETH1_MAC" --enet-smac="0a:0b:0c:0d:0e:0f" -i veth0 "$PCAP"
     
     echo "    -> Aguardando escoamento dos buffers (flush)..."
     sleep 3
