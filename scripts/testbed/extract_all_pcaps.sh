@@ -80,8 +80,8 @@ for PCAP in $FILES; do
     
     echo "    -> Disparando tcpreplay em TOPSPEED com reescrita de DMAC ($VETH1_MAC) e MTU truncado..."
     TMP_PCAP="/tmp/norm_$(basename "$PCAP")"
-    tcprewrite --dlt=enet --enet-dmac="$VETH1_MAC" --enet-smac="0a:0b:0c:0d:0e:0f" --infile="$PCAP" --outfile="$TMP_PCAP"
-    tcpreplay --topspeed --mtu-trunc -i veth0 "$TMP_PCAP"
+    tcprewrite --mtu-trunc --dlt=enet --enet-dmac="$VETH1_MAC" --enet-smac="0a:0b:0c:0d:0e:0f" --infile="$PCAP" --outfile="$TMP_PCAP"
+    tcpreplay --topspeed -i veth0 "$TMP_PCAP"
     rm -f "$TMP_PCAP"
     
     echo "    -> Aguardando escoamento dos buffers (flush)..."
