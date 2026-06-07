@@ -2,7 +2,7 @@
 """
 Lynceus Analysis - ML Benchmark (CIC-Bell-DNS-2024)
 ---------------------------------------------------------------------------
-Scientific Milestone: v2.0 (High-Performance I/O)
+Scientific Milestone: v2.0 (High-Performance I/O - Polars Architecture)
 
 Research Objective:
     Validates if L3/L4 flow features (eBPF) can detect L7 DNS attacks 
@@ -16,8 +16,11 @@ Methodology:
 """
 
 import sys
+import gc
+import polars as pl
 import pandas as pd
 import numpy as np
+from joblib import parallel_backend
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
@@ -45,9 +48,10 @@ def get_lynceus_l3_features(df):
 
 def evaluate_model(X, y, name, clf):
     cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
-    prec = cross_val_score(clf, X, y, cv=cv, scoring='precision_weighted')
-    rec = cross_val_score(clf, X, y, cv=cv, scoring='recall_weighted')
-    f1 = cross_val_score(clf, X, y, cv=cv, scoring='f1_weighted')
+    with parallel_backend('threading', n_jobs=-1):
+        prec = cross_val_score(clf, X, y, cv=cv, scoring='precision_weighted')
+        rec = cross_val_score(clf, X, y, cv=cv, scoring='recall_weighted')
+        f1 = cross_val_score(clf, X, y, cv=cv, scoring='f1_weighted')
     print(f"[{name}] Precision: {prec.mean():.4f} | Recall: {rec.mean():.4f} | F1: {f1.mean():.4f}")
 
 def main(csv_dir):
@@ -64,8 +68,7 @@ def main(csv_dir):
         print(f"Nenhum CSV encontrado em {csv_dir}.")
         return
         
-    import gc
-    print(f"[*] Carregando {len(files)} arquivos CSV rotulados (modo otimizado float32)...")
+    print(f"[*] Carregando {len(files)} arquivos CSV (modo Polars Lazy Evaluation)...")
     
     time_features = [
         'duration', 'Fwd_IAT_Mean', 'Fwd_IAT_Min', 'Fwd_IAT_Max', 'Fwd_IAT_Std',
@@ -78,28 +81,31 @@ def main(csv_dir):
     ]
     cols_to_use = time_features + ['Activity']
     
-    df_list = []
+    queries = []
     for f in files:
         try:
-            tmp = pd.read_csv(f, usecols=lambda c: c in cols_to_use, dtype={c: np.float32 for c in time_features})
-            df_list.append(tmp)
+            q = pl.scan_csv(str(f), infer_schema_length=10000).select(cols_to_use).with_columns([
+                pl.col(c).cast(pl.Float32) for c in time_features
+            ])
+            queries.append(q)
         except Exception as e:
-            print(f"Erro lendo {f}: {e}")
-            continue
+            print(f"Erro scaneando {f}: {e}")
             
-    df = pd.concat(df_list, ignore_index=True)
-    df_list.clear()
+    df_pl = pl.concat(queries).collect(engine="streaming")
+    df_pd = df_pl.to_pandas()
+    del df_pl
+    queries.clear()
     gc.collect()
     
-    df = df.replace([np.inf, -np.inf], np.nan).dropna()
+    df_pd = df_pd.replace([np.inf, -np.inf], np.nan).dropna()
     
     # Remover fluxos classificados como "Unknown" que o labeler não soube classificar
-    df = df[df['Activity'] != 'Unknown']
+    df_pd = df_pd[df_pd['Activity'] != 'Unknown']
     
-    X = get_lynceus_l3_features(df).astype(np.float32).values
-    y = df['Activity'].values
+    X = get_lynceus_l3_features(df_pd).astype(np.float32).values
+    y = df_pd['Activity'].values
     
-    del df
+    del df_pd
     gc.collect()
     
     classifiers = {
@@ -110,11 +116,11 @@ def main(csv_dir):
     }
     
     print("\n--- Multiclass DNS Attack Detection (5 Classes) ---")
-    counts = y.value_counts()
+    counts = pd.Series(y).value_counts()
     for cls, count in counts.items():
         print(f"  - {cls}: {count} fluxos")
         
-    if len(y.unique()) > 1:
+    if len(np.unique(y)) > 1:
         for name, clf in classifiers.items():
             evaluate_model(X, y, name, clf)
     else:
