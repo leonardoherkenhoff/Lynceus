@@ -2,7 +2,7 @@
 """
 Lynceus Analysis - ML Benchmark (ISCX-Tor-2016)
 ---------------------------------------------------------------------------
-Scientific Milestone: v2.0 (High-Performance I/O)
+Scientific Milestone: v2.0 (High-Performance I/O - Polars Architecture)
 
 Research Objective:
     Reproduces the exact machine learning pipeline methodology of the CIC Tor Paper:
@@ -18,8 +18,11 @@ Methodology:
 """
 
 import sys
+import gc
+import polars as pl
 import pandas as pd
 import numpy as np
+from joblib import parallel_backend
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
@@ -47,9 +50,10 @@ def get_23_time_based_features(df):
 def evaluate_model(X, y, name, clf):
     # Paper usa 10-fold CV
     cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
-    prec = cross_val_score(clf, X, y, cv=cv, scoring='precision_weighted')
-    rec = cross_val_score(clf, X, y, cv=cv, scoring='recall_weighted')
-    f1 = cross_val_score(clf, X, y, cv=cv, scoring='f1_weighted')
+    with parallel_backend('threading', n_jobs=-1):
+        prec = cross_val_score(clf, X, y, cv=cv, scoring='precision_weighted')
+        rec = cross_val_score(clf, X, y, cv=cv, scoring='recall_weighted')
+        f1 = cross_val_score(clf, X, y, cv=cv, scoring='f1_weighted')
     print(f"[{name}] Precision: {prec.mean():.4f} | Recall: {rec.mean():.4f} | F1: {f1.mean():.4f}")
 
 def main(csv_dir):
@@ -67,8 +71,7 @@ def main(csv_dir):
         print(f"Nenhum CSV encontrado em {csv_dir}.")
         return
         
-    import gc
-    print(f"[*] Carregando {len(files)} arquivos CSV rotulados (modo otimizado float32)...")
+    print(f"[*] Carregando {len(files)} arquivos CSV (modo Polars Lazy Evaluation)...")
     
     time_features = [
         'duration', 'Fwd_IAT_Mean', 'Fwd_IAT_Min', 'Fwd_IAT_Max', 'Fwd_IAT_Std',
@@ -80,34 +83,37 @@ def main(csv_dir):
     ]
     cols_to_use = time_features + ['Tor_Status', 'Application_Type']
     
-    df_list = []
+    queries = []
     for f in files:
         try:
-            tmp = pd.read_csv(f, usecols=lambda c: c in cols_to_use, dtype={c: np.float32 for c in time_features})
-            df_list.append(tmp)
+            q = pl.scan_csv(str(f), infer_schema_length=10000).select(cols_to_use).with_columns([
+                pl.col(c).cast(pl.Float32) for c in time_features
+            ])
+            queries.append(q)
         except Exception as e:
-            print(f"Erro lendo {f}: {e}")
-            continue
+            print(f"Erro scaneando {f}: {e}")
             
-    df = pd.concat(df_list, ignore_index=True)
-    df_list.clear()
+    df_pl = pl.concat(queries).collect(engine="streaming")
+    df_pd = df_pl.to_pandas()
+    del df_pl
+    queries.clear()
     gc.collect()
     
     # Tratamento de NAs e Infinitos gerados por divisão por zero no extrator
-    df = df.replace([np.inf, -np.inf], np.nan).dropna()
+    df_pd = df_pd.replace([np.inf, -np.inf], np.nan).dropna()
     
     # Prepara o Sub-espaço de Features Requisitado (23 features temporais)
-    X_full = get_23_time_based_features(df).astype(np.float32).values
+    X_full = get_23_time_based_features(df_pd).astype(np.float32).values
     
     # Cenário A: Tor vs NonTor
-    y_tor = df['Tor_Status'].values
+    y_tor = df_pd['Tor_Status'].values
     
     # Cenário B: Tipos de Aplicação APENAS para tráfego Tor
-    mask_tor = (df['Tor_Status'] == "Tor").values
+    mask_tor = (df_pd['Tor_Status'] == "Tor").values
     X_scenario_b = X_full[mask_tor]
-    y_app = df.loc[mask_tor, 'Application_Type'].values
+    y_app = df_pd.loc[mask_tor, 'Application_Type'].values
     
-    del df
+    del df_pd
     gc.collect()
     
     # Algoritmos mapeados no Paper
@@ -120,14 +126,14 @@ def main(csv_dir):
     }
     
     print("\n--- [SCENARIO A] Tor vs Non-Tor (Binary) ---")
-    if len(y_tor.unique()) > 1:
+    if len(np.unique(y_tor)) > 1:
         for name, clf in classifiers.items():
             evaluate_model(X_full, y_tor, name, clf)
     else:
         print("[!] Ignorado: O dataset não possui exemplos de ambas as classes (Tor e NonTor).")
         
     print("\n--- [SCENARIO B] Application Characterization (Tor-only 8 Classes) ---")
-    if len(y_app.unique()) > 1:
+    if len(np.unique(y_app)) > 1:
         for name, clf in classifiers.items():
             evaluate_model(X_scenario_b, y_app, name, clf)
     else:
