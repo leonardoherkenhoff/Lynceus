@@ -64,17 +64,43 @@ def main(csv_dir):
         print(f"Nenhum CSV encontrado em {csv_dir}.")
         return
         
-    print(f"[*] Carregando {len(files)} arquivos CSV rotulados...")
-    df_list = [pd.read_csv(f) for f in files]
+    import gc
+    print(f"[*] Carregando {len(files)} arquivos CSV rotulados (modo otimizado float32)...")
+    
+    time_features = [
+        'duration', 'Fwd_IAT_Mean', 'Fwd_IAT_Min', 'Fwd_IAT_Max', 'Fwd_IAT_Std',
+        'Bwd_IAT_Mean', 'Bwd_IAT_Min', 'Bwd_IAT_Max', 'Bwd_IAT_Std',
+        'Tot_IAT_Mean', 'Tot_IAT_Min', 'Tot_IAT_Max', 'Tot_IAT_Std',
+        'Active_Mean', 'Active_Min', 'Active_Max', 'Active_Std',
+        'Idle_Mean', 'Idle_Min', 'Idle_Max', 'Idle_Std',
+        'BytesRate', 'PacketsRate',
+        'TotalFwdPkts', 'TotalBwdPkts', 'TotalLengthFwdPkts', 'TotalLengthBwdPkts'
+    ]
+    cols_to_use = time_features + ['Activity']
+    
+    df_list = []
+    for f in files:
+        try:
+            tmp = pd.read_csv(f, usecols=lambda c: c in cols_to_use, dtype={c: np.float32 for c in time_features})
+            df_list.append(tmp)
+        except Exception as e:
+            print(f"Erro lendo {f}: {e}")
+            continue
+            
     df = pd.concat(df_list, ignore_index=True)
+    df_list.clear()
+    gc.collect()
     
     df = df.replace([np.inf, -np.inf], np.nan).dropna()
     
     # Remover fluxos classificados como "Unknown" que o labeler não soube classificar
     df = df[df['Activity'] != 'Unknown']
     
-    X = get_lynceus_l3_features(df)
-    y = df['Activity']
+    X = get_lynceus_l3_features(df).astype(np.float32).values
+    y = df['Activity'].values
+    
+    del df
+    gc.collect()
     
     classifiers = {
         "ZeroR (Baseline)": DummyClassifier(strategy="most_frequent"),
