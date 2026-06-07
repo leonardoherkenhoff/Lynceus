@@ -66,11 +66,11 @@ for PCAP in $FILES; do
     VETH1_MAC=$(cat /sys/class/net/veth1/address 2>/dev/null || ip link show veth1 | grep link/ether | awk '{print $2}')
     
     # Executa o daemon do Lynceus no modo nativo (drv). Para veth nativo, anexamos em ambas (veth1 e veth0) para inicializar o xdp_ring.
-    ./build/loader veth1 veth0 skb > "$OUT_DIR/$CSV_NAME" 2> "$ERR_FILE" &
+    ./build/loader veth1 veth0 skb > "$ERR_FILE" 2> "$ERR_FILE" &
     LOADER_PID=$!
     
     echo "    -> Aguardando estabilização dos mapas BPF..."
-    while ! grep -q "XDP attached on veth1" "$OUT_DIR/$CSV_NAME" 2>/dev/null; do sleep 0.5; done; echo "    -> BPF Maps estabilizados!"
+    while ! grep -q "XDP attached on veth1" "$ERR_FILE" 2>/dev/null; do sleep 0.5; done; echo "    -> BPF Maps estabilizados!"
     
     if ! kill -0 $LOADER_PID 2>/dev/null; then
         echo "    [X] ERRO CRÍTICO: O loader eBPF morreu imediatamente antes do replay!"
@@ -92,9 +92,9 @@ for PCAP in $FILES; do
     wait $LOADER_PID 2>/dev/null
     
     # Telemetria de tamanho do CSV para auditoria imediata
-    if [ -f "$OUT_DIR/$CSV_NAME" ]; then
-        LINES=$(wc -l < "$OUT_DIR/$CSV_NAME")
-        SIZE=$(du -sh "$OUT_DIR/$CSV_NAME" | cut -f1)
+    if [ -f "$ERR_FILE" ]; then
+        LINES=$(wc -l < "$ERR_FILE")
+        SIZE=$(du -sh "$ERR_FILE" | cut -f1)
         echo "    -> [Auditoria] CSV gerado: $LINES linhas ($SIZE)"
         if [ "$LINES" -le 1 ]; then
             echo "    [!] ALERTA: CSV contém apenas cabeçalhos (0 fluxos capturados)!"
