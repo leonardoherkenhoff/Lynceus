@@ -2,10 +2,9 @@
 # Lynceus - Batch PCAP Extractor
 # Extrai as features de rede de múltiplos PCAPs sequencialmente.
 
-PCAP_DIR="/root/CIC-IDS-2017-sliced"
-if [ ! -d "$PCAP_DIR" ]; then
-    PCAP_DIR="/root/CIC-IDS-2017"
-fi
+# Permite injeção de variáveis via argumento posicional
+PCAP_DIR="${1:-/root/CIC-IDS-2017}"
+OUT_DIR="${2:-/opt/eBPFNetFlowLyzer/data/interim/EBPF_RAW}"
 
 if [ ! -d "$PCAP_DIR" ]; then
     echo "[!] Diretório de origem não encontrado: $PCAP_DIR"
@@ -17,8 +16,7 @@ echo "========================================================="
 echo "=== Lynceus Batch Extractor (L3/L4/L7) ==="
 echo "========================================================="
 
-echo "[*] Compilando motor eBPF (Zero-Libc)..."
-OUT_DIR="/opt/eBPFNetFlowLyzer/data/interim/EBPF_RAW"
+echo "[*] Preparando diretório de saída..."
 mkdir -p "$OUT_DIR"
 echo "[*] Purgando arquivos CSV residuais de extrações anteriores..."
 rm -f "$OUT_DIR"/*.csv
@@ -32,8 +30,8 @@ echo "[*] Configurando par veth (veth0 <-> veth1) para Ingestão Offline (develo
 ip link delete veth0 2>/dev/null || true
 ip link delete veth1 2>/dev/null || true
 ip link add veth0 type veth peer name veth1
-ip link set dev veth0 mtu 1500
-ip link set dev veth1 mtu 1500
+ip link set dev veth0 mtu 65535
+ip link set dev veth1 mtu 65535
 ip link set veth0 up
 ip link set veth1 up
 ip link set veth0 promisc on
@@ -41,7 +39,7 @@ ip link set veth1 promisc on
 sysctl -w net.ipv6.conf.veth0.disable_ipv6=0 >/dev/null 2>&1 || true
 sysctl -w net.ipv6.conf.veth1.disable_ipv6=0 >/dev/null 2>&1 || true
 sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null 2>&1 || true
-FILES=$(ls "$PCAP_DIR"/*.pcap 2>/dev/null)
+FILES=$(find "$PCAP_DIR" -type f \( -iname "*.pcap" -o -iname "*.pcapng" \) 2>/dev/null)
 
 if [ -z "$FILES" ]; then
     echo "[X] Nenhum PCAP encontrado para extração."
@@ -68,11 +66,11 @@ for PCAP in $FILES; do
     VETH1_MAC=$(cat /sys/class/net/veth1/address 2>/dev/null || ip link show veth1 | grep link/ether | awk '{print $2}')
     
     # Executa o daemon do Lynceus no modo nativo (drv). Para veth nativo, anexamos em ambas (veth1 e veth0) para inicializar o xdp_ring.
-    ./build/loader veth1 veth0 > "$OUT_DIR/$CSV_NAME" 2> "$ERR_FILE" &
+    ./build/loader veth1 veth0 skb > "$OUT_DIR/$CSV_NAME" 2> "$ERR_FILE" &
     LOADER_PID=$!
     
     echo "    -> Aguardando estabilização dos mapas BPF..."
-    sleep 2
+    while ! grep -q "XDP attached on veth1" "$OUT_DIR/$CSV_NAME" 2>/dev/null; do sleep 0.5; done; echo "    -> BPF Maps estabilizados!"
     
     if ! kill -0 $LOADER_PID 2>/dev/null; then
         echo "    [X] ERRO CRÍTICO: O loader eBPF morreu imediatamente antes do replay!"
@@ -81,7 +79,10 @@ for PCAP in $FILES; do
     fi
     
     echo "    -> Disparando tcpreplay em TOPSPEED com reescrita de DMAC ($VETH1_MAC) e MTU truncado..."
-    tcpreplay-edit --topspeed --mtu-trunc --enet-dmac="$VETH1_MAC" -i veth0 "$PCAP"
+    TMP_PCAP="/tmp/norm_$(basename "$PCAP")"
+    tcprewrite --dlt=enet --enet-dmac="$VETH1_MAC" --enet-smac="0a:0b:0c:0d:0e:0f" --infile="$PCAP" --outfile="$TMP_PCAP"
+    tcpreplay --topspeed -i veth0 "$TMP_PCAP"
+    rm -f "$TMP_PCAP"
     
     echo "    -> Aguardando escoamento dos buffers (flush)..."
     sleep 3
