@@ -66,7 +66,7 @@ for PCAP in $FILES; do
     VETH1_MAC=$(cat /sys/class/net/veth1/address 2>/dev/null || ip link show veth1 | grep link/ether | awk '{print $2}')
     
     # Executa o daemon do Lynceus no modo nativo (drv). Para veth nativo, anexamos em ambas (veth1 e veth0) para inicializar o xdp_ring.
-    ./build/loader veth1 veth0 > "$OUT_DIR/$CSV_NAME" 2> "$ERR_FILE" &
+    ./build/loader veth1 veth0 skb > "$OUT_DIR/$CSV_NAME" 2> "$ERR_FILE" &
     LOADER_PID=$!
     
     echo "    -> Aguardando estabilização dos mapas BPF..."
