@@ -70,7 +70,7 @@ for PCAP in $FILES; do
     LOADER_PID=$!
     
     echo "    -> Aguardando estabilização dos mapas BPF..."
-    sleep 2
+    while ! grep -q "XDP attached on veth1" "$OUT_DIR/$CSV_NAME" 2>/dev/null; do sleep 0.5; done; echo "    -> BPF Maps estabilizados!"
     
     if ! kill -0 $LOADER_PID 2>/dev/null; then
         echo "    [X] ERRO CRÍTICO: O loader eBPF morreu imediatamente antes do replay!"
