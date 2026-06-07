@@ -26,7 +26,7 @@ if ! command -v tcpreplay &> /dev/null; then
     apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y tcpreplay
 fi
 
-echo "[*] Configurando par veth (veth0 <-> veth1) para Ingestão Offline (develop mode)..."
+echo "[*] Configurando par veth (veth0 <-> veth1) para Ingestão Offline (MTU 65535 Jumbo Frames)..."
 ip link delete veth0 2>/dev/null || true
 ip link delete veth1 2>/dev/null || true
 ip link add veth0 type veth peer name veth1
@@ -39,6 +39,7 @@ ip link set veth1 promisc on
 sysctl -w net.ipv6.conf.veth0.disable_ipv6=0 >/dev/null 2>&1 || true
 sysctl -w net.ipv6.conf.veth1.disable_ipv6=0 >/dev/null 2>&1 || true
 sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null 2>&1 || true
+
 FILES=$(find "$PCAP_DIR" -type f \( -iname "*.pcap" -o -iname "*.pcapng" \) 2>/dev/null)
 
 if [ -z "$FILES" ]; then
@@ -52,7 +53,6 @@ for PCAP in $FILES; do
         echo "[*] Ignorando arquivo massivo de benchmark de PPS: $PCAP"
         continue
     fi
-
     
     echo "---------------------------------------------------------"
     echo "[*] Injetando no XDP/eBPF: $(basename "$PCAP")"
@@ -65,49 +65,49 @@ for PCAP in $FILES; do
     # Obter dinamicamente o MAC de veth1 para reescrita fisica de pacotes, mitigando drops por PACKET_OTHERHOST
     VETH1_MAC=$(cat /sys/class/net/veth1/address 2>/dev/null || ip link show veth1 | grep link/ether | awk '{print $2}')
     
-    # Executa o daemon do Lynceus no modo nativo (drv). Para veth nativo, anexamos em ambas (veth1 e veth0) para inicializar o xdp_ring.
-    ./build/loader veth1 veth0 skb > "$ERR_FILE" 2> "$ERR_FILE" &
+    # Executa o daemon do Lynceus no modo generico (SKB). Anexamos em ambas as interfaces para robustez.
+    ./build/loader veth1 veth0 skb > "$OUT_DIR/$CSV_NAME" 2> "$ERR_FILE" &
     LOADER_PID=$!
     
-    echo "    -> Aguardando estabilização dos mapas BPF..."
-    while ! grep -q "XDP attached on veth1" "$ERR_FILE" 2>/dev/null; do sleep 0.5; done; echo "    -> BPF Maps estabilizados!"
+    echo "    -> Aguardando estabilização dos mapas BPF e attachment XDP..."
+    while ! grep -q "XDP attached on veth1" "$ERR_FILE" 2>/dev/null; do sleep 0.5; done; echo "    -> Motor eBPF Ativo e Operante!"
     
     if ! kill -0 $LOADER_PID 2>/dev/null; then
-        echo "    [X] ERRO CRÍTICO: O loader eBPF morreu imediatamente antes do replay!"
-        echo "    ---> Causa provável (stderr):"
+        echo "    [X] ERRO CRÍTICO: O loader eBPF abortou antes da injeção L2!"
+        echo "    ---> Relatório de Crash (stderr):"
         cat "$ERR_FILE"
     fi
     
-    echo "    -> Disparando tcpreplay em TOPSPEED com reescrita de DMAC ($VETH1_MAC) e MTU truncado..."
+    echo "    -> Disparando tcpreplay em TOPSPEED com reescrita L2 (MAC e DLT)..."
     TMP_PCAP="/tmp/norm_$(basename "$PCAP")"
     tcprewrite --dlt=enet --enet-dmac="$VETH1_MAC" --enet-smac="0a:0b:0c:0d:0e:0f" --infile="$PCAP" --outfile="$TMP_PCAP"
     tcpreplay --topspeed -i veth0 "$TMP_PCAP"
     rm -f "$TMP_PCAP"
     
-    echo "    -> Aguardando escoamento dos buffers (flush)..."
+    echo "    -> Aguardando escoamento da fila L2 (flush)..."
     sleep 3
     
-    echo "    -> Finalizando coleta e gravando CSV..."
+    echo "    -> Finalizando coleta e persistindo CSV..."
     kill -SIGINT $LOADER_PID
     wait $LOADER_PID 2>/dev/null
     
     # Telemetria de tamanho do CSV para auditoria imediata
-    if [ -f "$ERR_FILE" ]; then
-        LINES=$(wc -l < "$ERR_FILE")
-        SIZE=$(du -sh "$ERR_FILE" | cut -f1)
-        echo "    -> [Auditoria] CSV gerado: $LINES linhas ($SIZE)"
+    if [ -f "$OUT_DIR/$CSV_NAME" ]; then
+        LINES=$(wc -l < "$OUT_DIR/$CSV_NAME")
+        SIZE=$(du -sh "$OUT_DIR/$CSV_NAME" | cut -f1)
+        echo "    -> [Auditoria] Dataset extraído: $LINES linhas ($SIZE)"
         if [ "$LINES" -le 1 ]; then
-            echo "    [!] ALERTA: CSV contém apenas cabeçalhos (0 fluxos capturados)!"
+            echo "    [!] ALERTA CRÍTICO: Zero fluxos capturados. Arquivo contém apenas cabeçalhos L7."
             if [ -s "$ERR_FILE" ]; then
-                echo "    ---> Erros relatados pelo Daemon:"
+                echo "    ---> Diagnóstico do Motor eBPF:"
                 cat "$ERR_FILE"
             fi
         fi
     else
-        echo "    [X] ERRO: Arquivo CSV não foi criado fisicamente!"
+        echo "    [X] ERRO CRÍTICO: IO de gravação falhou. Arquivo $CSV_NAME não existe."
     fi
     rm -f "$ERR_FILE"
-    echo "[V] Extração concluida."
+    echo "[V] Ingestão PCAP concluída."
 done
 
 echo "[*] Destruindo par veth..."
