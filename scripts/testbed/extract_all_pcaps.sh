@@ -30,8 +30,8 @@ echo "[*] Configurando par veth (veth0 <-> veth1) para Ingestão Offline (develo
 ip link delete veth0 2>/dev/null || true
 ip link delete veth1 2>/dev/null || true
 ip link add veth0 type veth peer name veth1
-ip link set dev veth0 mtu 1500
-ip link set dev veth1 mtu 1500
+ip link set dev veth0 mtu 65535
+ip link set dev veth1 mtu 65535
 ip link set veth0 up
 ip link set veth1 up
 ip link set veth0 promisc on
@@ -81,7 +81,7 @@ for PCAP in $FILES; do
     echo "    -> Disparando tcpreplay em TOPSPEED com reescrita de DMAC ($VETH1_MAC) e MTU truncado..."
     TMP_PCAP="/tmp/norm_$(basename "$PCAP")"
     tcprewrite --mtu-trunc --dlt=enet --enet-dmac="$VETH1_MAC" --enet-smac="0a:0b:0c:0d:0e:0f" --infile="$PCAP" --outfile="$TMP_PCAP"
-    tcpreplay -p 1000 -i veth0 "$TMP_PCAP"
+    tcpreplay --topspeed -i veth0 "$TMP_PCAP"
     rm -f "$TMP_PCAP"
     
     echo "    -> Aguardando escoamento dos buffers (flush)..."
