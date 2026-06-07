@@ -32,13 +32,13 @@ def get_time_based_features(df):
     O artigo isola estritamente features baseadas no tempo e taxa.
     """
     time_features = [
-        'flow_duration', 
-        'f_iat_mean', 'f_iat_min', 'f_iat_max', 'f_iat_std',
-        'b_iat_mean', 'b_iat_min', 'b_iat_max', 'b_iat_std',
-        'flow_iat_mean', 'flow_iat_min', 'flow_iat_max', 'flow_iat_std',
-        'active_mean', 'active_min', 'active_max', 'active_std',
-        'idle_mean', 'idle_min', 'idle_max', 'idle_std',
-        'flow_bytes_s', 'flow_packets_s'
+        'duration', 
+        'Fwd_IAT_Mean', 'Fwd_IAT_Min', 'Fwd_IAT_Max', 'Fwd_IAT_Std',
+        'Bwd_IAT_Mean', 'Bwd_IAT_Min', 'Bwd_IAT_Max', 'Bwd_IAT_Std',
+        'Tot_IAT_Mean', 'Tot_IAT_Min', 'Tot_IAT_Max', 'Tot_IAT_Std',
+        'Active_Mean', 'Active_Min', 'Active_Max', 'Active_Std',
+        'Idle_Mean', 'Idle_Min', 'Idle_Max', 'Idle_Std',
+        'BytesRate', 'PacketsRate'
     ]
     # Retorna apenas colunas que realmente existem na extração do Lynceus
     available = [c for c in time_features if c in df.columns]
