@@ -67,23 +67,48 @@ def main(csv_dir):
         print(f"Nenhum CSV encontrado em {csv_dir}.")
         return
         
-    print(f"[*] Carregando {len(files)} arquivos CSV rotulados...")
-    df_list = [pd.read_csv(f) for f in files]
+    import gc
+    print(f"[*] Carregando {len(files)} arquivos CSV rotulados (modo otimizado float32)...")
+    
+    time_features = [
+        'duration', 'Fwd_IAT_Mean', 'Fwd_IAT_Min', 'Fwd_IAT_Max', 'Fwd_IAT_Std',
+        'Bwd_IAT_Mean', 'Bwd_IAT_Min', 'Bwd_IAT_Max', 'Bwd_IAT_Std',
+        'Tot_IAT_Mean', 'Tot_IAT_Min', 'Tot_IAT_Max', 'Tot_IAT_Std',
+        'Active_Mean', 'Active_Min', 'Active_Max', 'Active_Std',
+        'Idle_Mean', 'Idle_Min', 'Idle_Max', 'Idle_Std',
+        'BytesRate', 'PacketsRate'
+    ]
+    cols_to_use = time_features + ['Tor_Status', 'Application_Type']
+    
+    df_list = []
+    for f in files:
+        try:
+            tmp = pd.read_csv(f, usecols=lambda c: c in cols_to_use, dtype={c: np.float32 for c in time_features})
+            df_list.append(tmp)
+        except Exception as e:
+            print(f"Erro lendo {f}: {e}")
+            continue
+            
     df = pd.concat(df_list, ignore_index=True)
+    df_list.clear()
+    gc.collect()
     
     # Tratamento de NAs e Infinitos gerados por divisão por zero no extrator
     df = df.replace([np.inf, -np.inf], np.nan).dropna()
     
     # Prepara o Sub-espaço de Features Requisitado (23 features temporais)
-    X_full = get_23_time_based_features(df)
+    X_full = get_23_time_based_features(df).astype(np.float32).values
     
     # Cenário A: Tor vs NonTor
-    y_tor = df['Tor_Status'] 
+    y_tor = df['Tor_Status'].values
     
     # Cenário B: Tipos de Aplicação APENAS para tráfego Tor
-    mask_tor = df['Tor_Status'] == "Tor"
+    mask_tor = (df['Tor_Status'] == "Tor").values
     X_scenario_b = X_full[mask_tor]
-    y_app = df.loc[mask_tor, 'Application_Type']
+    y_app = df.loc[mask_tor, 'Application_Type'].values
+    
+    del df
+    gc.collect()
     
     # Algoritmos mapeados no Paper
     # ZeroR é simulado no scikit-learn pelo DummyClassifier (strategy="prior" ou "most_frequent")
