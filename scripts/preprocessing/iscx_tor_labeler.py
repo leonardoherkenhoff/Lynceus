@@ -17,7 +17,7 @@ Methodology:
 import sys
 import os
 import glob
-import pandas as pd
+import polars as pl
 
 def determine_labels(filepath_str):
     """
@@ -67,17 +67,19 @@ def process_directory(in_dir, out_dir):
         tor_status, app_type = determine_labels(filename)
         
         try:
-            df = pd.read_csv(in_path)
-            if len(df) == 0:
+            # Pega esquema primeiro para ver se arquivo não está vazio
+            df_probe = pl.read_csv(in_path, n_rows=1)
+            if df_probe.height == 0:
+                print(f"   [!] Arquivo Vazio: {filename}")
                 continue
+                
+            # Sink streaming em Polars
+            pl.scan_csv(in_path).with_columns([
+                pl.lit(tor_status).alias("Tor_Status"),
+                pl.lit(app_type).alias("Application_Type")
+            ]).sink_csv(out_path)
             
-            df['Tor_Status'] = tor_status
-            df['Application_Type'] = app_type
-            
-            df.to_csv(out_path, index=False)
             print(f"   [+] Labeled: {filename} -> [Status: {tor_status} | App: {app_type}]")
-        except pd.errors.EmptyDataError:
-            print(f"   [!] Arquivo Vazio: {filename}")
         except Exception as e:
             print(f"   [!] Erro lendo {filename}: {e}")
 

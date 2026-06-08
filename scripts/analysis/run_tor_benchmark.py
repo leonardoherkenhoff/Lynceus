@@ -20,7 +20,6 @@ Methodology:
 import sys
 import gc
 import polars as pl
-import pandas as pd
 import numpy as np
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.ensemble import RandomForestClassifier
@@ -29,22 +28,6 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.dummy import DummyClassifier
 from pathlib import Path
 
-def get_23_time_based_features(df):
-    """
-    O artigo isola estritamente 23 features baseadas no tempo e taxa.
-    """
-    time_features = [
-        'duration', 
-        'Fwd_IAT_Mean', 'Fwd_IAT_Min', 'Fwd_IAT_Max', 'Fwd_IAT_Std',
-        'Bwd_IAT_Mean', 'Bwd_IAT_Min', 'Bwd_IAT_Max', 'Bwd_IAT_Std',
-        'Tot_IAT_Mean', 'Tot_IAT_Min', 'Tot_IAT_Max', 'Tot_IAT_Std',
-        'Active_Mean', 'Active_Min', 'Active_Max', 'Active_Std',
-        'Idle_Mean', 'Idle_Min', 'Idle_Max', 'Idle_Std',
-        'BytesRate', 'PacketsRate'
-    ]
-    # Retorna apenas colunas que realmente existem na extração do Lynceus
-    available = [c for c in time_features if c in df.columns]
-    return df[available]
 
 def evaluate_model(X, y, name, clf):
     # Paper usa 10-fold CV
@@ -91,27 +74,27 @@ def main(csv_dir):
         except Exception as e:
             print(f"Erro scaneando {f}: {e}")
             
+    # Executa a coleta sob demanda com a engine de streaming em Rust
     df_pl = pl.concat(queries).collect(engine="streaming")
-    df_pd = df_pl.to_pandas()
-    del df_pl
     queries.clear()
     gc.collect()
+
+    import polars.selectors as cs
+    # Tratamento de NAs e Infinitos usando Polars estrito
+    df_pl = df_pl.filter(
+        ~pl.any_horizontal(pl.all().is_null(), cs.numeric().is_nan(), cs.numeric().is_infinite())
+    )
+
+    # Extração Numérica e Vetores NumPy diretos
+    y_tor = df_pl.select("Tor_Status").to_numpy().flatten()
+    y_app = df_pl.select("Application_Type").to_numpy().flatten()
+    X_full = df_pl.select(time_features).to_numpy()
     
-    # Tratamento de NAs e Infinitos gerados por divisão por zero no extrator
-    df_pd = df_pd.replace([np.inf, -np.inf], np.nan).dropna()
-    
-    # Prepara o Sub-espaço de Features Requisitado (23 features temporais)
-    X_full = get_23_time_based_features(df_pd).astype(np.float32).values
-    
-    # Cenário A: Tor vs NonTor
-    y_tor = df_pd['Tor_Status'].values
-    
-    # Cenário B: Tipos de Aplicação APENAS para tráfego Tor
-    mask_tor = (df_pd['Tor_Status'] == "Tor").values
+    mask_tor = (y_tor == "Tor")
     X_scenario_b = X_full[mask_tor]
-    y_app = df_pd.loc[mask_tor, 'Application_Type'].values
-    
-    del df_pd
+    y_app = y_app[mask_tor]
+
+    del df_pl
     gc.collect()
     
     # Algoritmos mapeados no Paper
