@@ -19,7 +19,6 @@ Methodology:
 import sys
 import gc
 import polars as pl
-import pandas as pd
 import numpy as np
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.ensemble import RandomForestClassifier
@@ -28,24 +27,6 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.dummy import DummyClassifier
 from pathlib import Path
 
-def get_dns_features(df):
-    """
-    O artigo isola features de tempo, taxa de pacotes/bytes e características do pacote.
-    """
-    dns_features = [
-        'duration', 
-        'Fwd_IAT_Mean', 'Fwd_IAT_Min', 'Fwd_IAT_Max', 'Fwd_IAT_Std',
-        'Bwd_IAT_Mean', 'Bwd_IAT_Min', 'Bwd_IAT_Max', 'Bwd_IAT_Std',
-        'Tot_IAT_Mean', 'Tot_IAT_Min', 'Tot_IAT_Max', 'Tot_IAT_Std',
-        'Active_Mean', 'Active_Min', 'Active_Max', 'Active_Std',
-        'Idle_Mean', 'Idle_Min', 'Idle_Max', 'Idle_Std',
-        'BytesRate', 'PacketsRate',
-        'FwdBytes', 'BwdBytes', 'TotalBytes',
-        'FwdPacketsCount', 'BwdPacketsCount', 'PacketsCount',
-        'DNSQueryType', 'DNSQueryClass', 'DNSAnswerCount'
-    ]
-    available = [c for c in dns_features if c in df.columns]
-    return df[available]
 
 def evaluate_model(X, y, name, clf):
     cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
@@ -94,24 +75,26 @@ def main(csv_dir):
             print(f"Erro scaneando {f}: {e}")
             
     df_pl = pl.concat(queries).collect(engine="streaming")
-    df_pd = df_pl.to_pandas()
-    del df_pl
     queries.clear()
     gc.collect()
     
-    df_pd = df_pd.replace([np.inf, -np.inf], np.nan).dropna()
+    # Substituindo Pandas: Remove Inf e NaN via Polars filter
+    # Pega apenas linhas que não tem nulos nem infinitos
+    df_pl = df_pl.filter(
+        ~pl.any_horizontal(pl.all().is_null() | pl.all().is_nan() | pl.all().is_infinite())
+    )
     
-    X_full = get_dns_features(df_pd).astype(np.float32).values
+    X_full = df_pl.select(dns_features).to_numpy()
     
     # Binary Label (Benign vs Malicious)
-    y_bin = df_pd['DNS_Malicious_Status'].values
+    y_bin = df_pl.select('DNS_Malicious_Status').to_numpy().flatten()
     
     # Multiclass Label (Malicious types only)
-    mask_malicious = (df_pd['DNS_Malicious_Status'] == "Malicious").values
+    mask_malicious = (y_bin == "Malicious")
     X_malicious = X_full[mask_malicious]
-    y_type = df_pd.loc[mask_malicious, 'DNS_Malicious_Type'].values
+    y_type = df_pl.filter(pl.col('DNS_Malicious_Status') == "Malicious").select('DNS_Malicious_Type').to_numpy().flatten()
     
-    del df_pd
+    del df_pl
     gc.collect()
     
     # Paralelismo contido nas instâncias limitadas a 8 threads para evitar OOM no OpenBLAS/KNN

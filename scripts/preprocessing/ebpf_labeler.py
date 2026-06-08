@@ -26,13 +26,7 @@ import argparse
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-try:
-    import polars as pl
-    USE_POLARS = True
-except ImportError:
-    import pandas as pd
-    import numpy as np
-    USE_POLARS = False
+import polars as pl
 
 # --- Topological Configuration ---
 BASE_DIR = "/opt/eBPFNetFlowLyzer"
@@ -125,38 +119,6 @@ def _process_polars(file_path, category, output_file):
         return -1
 
 
-def _process_pandas(file_path, category, output_file):
-    """
-    Label a CSV file using Pandas (single-threaded fallback).
-
-    Args:
-        file_path (str): Path to the raw CSV.
-        category (str): Attack category label to apply.
-        output_file (str): Destination path for the labeled CSV.
-
-    Returns:
-        int: Number of rows processed.
-    """
-    import pandas as pd
-    import numpy as np
-
-    header = pd.read_csv(file_path, nrows=0)
-    ip_col = _detect_ip_column(header.columns.tolist())
-
-    total_rows = 0
-    first_chunk = True
-    reader = pd.read_csv(file_path, chunksize=CHUNK_SIZE, low_memory=False)
-    for chunk in reader:
-        if ip_col and ip_col in chunk.columns:
-            chunk['Label'] = np.where(
-                chunk[ip_col].astype(str).isin(ATTACKER_IPS_SET),
-                category, 'BENIGN'
-            )
-        chunk.to_csv(output_file, mode='a', header=first_chunk, index=False)
-        first_chunk = False
-        total_rows += len(chunk)
-
-    return total_rows
 
 
 def process_file_auto(file_path):
@@ -183,10 +145,7 @@ def process_file_auto(file_path):
                             if os.path.dirname(file_path) != INPUT_DIR else category)
         output_file = os.path.join(output_folder, f"labeled_{output_file_name}.csv")
 
-        if USE_POLARS:
-            total_rows = _process_polars(file_path, category, output_file)
-        else:
-            total_rows = _process_pandas(file_path, category, output_file)
+        total_rows = _process_polars(file_path, category, output_file)
 
         success = total_rows > 0
         return (file_path, success, max(0, total_rows))
@@ -219,7 +178,7 @@ def main():
         OUTPUT_DIR = os.path.abspath(args.output)
         os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    backend = "Polars (multi-threaded)" if USE_POLARS else "Pandas (single-threaded)"
+    backend = "Polars (multi-threaded streaming)"
     print(f"=== Lynceus Pre-processing: Topological Ground-Truth Attribution [{backend}] ===")
 
     if args.path:

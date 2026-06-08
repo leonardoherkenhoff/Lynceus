@@ -16,7 +16,6 @@ Methodology:
 import sys
 import os
 import glob
-import pandas as pd
 
 def determine_label(filepath_str):
     path_lower = filepath_str.lower()
