@@ -62,7 +62,7 @@ def main(csv_dir):
         'FwdPacketsCount', 'BwdPacketsCount', 'PacketsCount',
         'DNSQueryType', 'DNSQueryClass', 'DNSAnswerCount'
     ]
-    cols_to_use = dns_features + ['DNS_Malicious_Status', 'DNS_Malicious_Type']
+    cols_to_use = dns_features + ['Activity']
     
     queries = []
     for f in files:
@@ -86,13 +86,16 @@ def main(csv_dir):
     
     X_full = df_pl.select(dns_features).to_numpy()
     
+    # Raw Activity array
+    y_raw = df_pl.select('Activity').to_numpy().flatten()
+    
     # Binary Label (Benign vs Malicious)
-    y_bin = df_pl.select('DNS_Malicious_Status').to_numpy().flatten()
+    y_bin = np.where(y_raw == 'Benign', 'Benign', 'Malicious')
     
     # Multiclass Label (Malicious types only)
-    mask_malicious = (y_bin == "Malicious")
+    mask_malicious = (y_bin == 'Malicious')
     X_malicious = X_full[mask_malicious]
-    y_type = df_pl.filter(pl.col('DNS_Malicious_Status') == "Malicious").select('DNS_Malicious_Type').to_numpy().flatten()
+    y_type = y_raw[mask_malicious]
     
     del df_pl
     gc.collect()
