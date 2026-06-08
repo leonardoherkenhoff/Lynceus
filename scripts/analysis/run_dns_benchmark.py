@@ -76,12 +76,13 @@ def main(csv_dir):
             
     df_pl = pl.concat(queries).collect(engine="streaming")
     queries.clear()
+    import gc
     gc.collect()
-    
-    # Substituindo Pandas: Remove Inf e NaN via Polars filter
-    # Pega apenas linhas que não tem nulos nem infinitos
+    import polars.selectors as cs
+    # Tratamento de NAs e Infinitos usando Polars estrito
+    # is_nan e is_infinite apenas em colunas numericas
     df_pl = df_pl.filter(
-        ~pl.any_horizontal(pl.all().is_null() | pl.all().is_nan() | pl.all().is_infinite())
+        ~pl.any_horizontal(pl.all().is_null(), cs.numeric().is_nan(), cs.numeric().is_infinite())
     )
     
     X_full = df_pl.select(dns_features).to_numpy()
