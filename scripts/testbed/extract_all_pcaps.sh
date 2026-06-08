@@ -52,8 +52,11 @@ for PCAP in $FILES; do
         continue
     fi
     
-    CSV_NAME=$(basename "$PCAP" .pcap)
-    CSV_NAME=$(basename "$CSV_NAME" .pcapng).csv
+    # Gera nome unico baseado na pasta pai para evitar colisao
+    PARENT_DIR=$(basename "$(dirname "$PCAP")")
+    BASE_NAME=$(basename "$PCAP" .pcap)
+    BASE_NAME=$(basename "$BASE_NAME" .pcapng)
+    CSV_NAME="${PARENT_DIR}_${BASE_NAME}.csv"
     
     if [ -s "$OUT_DIR/$CSV_NAME" ]; then
         echo "---------------------------------------------------------"
@@ -62,7 +65,7 @@ for PCAP in $FILES; do
     fi
     
     echo "---------------------------------------------------------"
-    echo "[*] Injetando no XDP/eBPF: $(basename "$PCAP")"
+    echo "[*] Injetando no XDP/eBPF: $(basename "$PCAP") ($PARENT_DIR)"
     
     # O motor eBPF anexa ao hook XDP da interface receptora (veth1)
     # Salvamos o stderr para diagnóstico científico preciso de falhas de carregamento BPF
@@ -75,12 +78,30 @@ for PCAP in $FILES; do
     LOADER_PID=$!
     
     echo "    -> Aguardando estabilização dos mapas BPF e attachment XDP..."
-    while ! grep -q "XDP attached on veth1" "$ERR_FILE" 2>/dev/null; do sleep 0.5; done; echo "    -> Motor eBPF Ativo e Operante!"
+    TIMEOUT=0
+    ATTACHED=0
+    while [ $TIMEOUT -lt 20 ]; do
+        if grep -q "XDP attached on veth1" "$ERR_FILE" 2>/dev/null; then
+            ATTACHED=1
+            break
+        fi
+        if ! kill -0 $LOADER_PID 2>/dev/null; then
+            echo "    [X] ERRO CRÍTICO: O loader eBPF abortou prematuramente!"
+            break
+        fi
+        sleep 0.5
+        TIMEOUT=$((TIMEOUT + 1))
+    done
     
-    if ! kill -0 $LOADER_PID 2>/dev/null; then
-        echo "    [X] ERRO CRÍTICO: O loader eBPF abortou antes da injeção L2!"
-        echo "    ---> Relatório de Crash (stderr):"
-        cat "$ERR_FILE"
+    if [ $ATTACHED -eq 1 ]; then
+        echo "    -> Motor eBPF Ativo e Operante!"
+    else
+        echo "    [X] TIMEOUT/ERRO: Falha ao anexar XDP ou loader não respondeu em 10s!"
+        echo "    ---> Relatório de Erros do Loader (stderr):"
+        cat "$ERR_FILE" 2>/dev/null || echo "Arquivo de erro vazio ou inexistente."
+        kill -9 $LOADER_PID 2>/dev/null
+        rm -f "$OUT_DIR/$CSV_NAME"
+        continue
     fi
     
     echo "    -> Disparando tcpreplay em TOPSPEED com reescrita L2 (MAC e DLT)..."
