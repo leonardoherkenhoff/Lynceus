@@ -80,9 +80,9 @@ def main(csv_dir):
     gc.collect()
     import polars.selectors as cs
     # Tratamento de NAs e Infinitos usando Polars estrito
-    # is_nan e is_infinite apenas em colunas numericas
+    # is_nan e is_infinite apenas em colunas numericas flutuantes
     df_pl = df_pl.filter(
-        ~pl.any_horizontal(pl.all().is_null(), cs.numeric().is_nan(), cs.numeric().is_infinite())
+        ~pl.any_horizontal(pl.all().is_null(), cs.float().is_nan(), cs.float().is_infinite())
     )
     
     X_full = df_pl.select(dns_features).to_numpy()
