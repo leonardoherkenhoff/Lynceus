@@ -81,7 +81,7 @@ for PCAP in $FILES; do
     TIMEOUT=0
     ATTACHED=0
     while [ $TIMEOUT -lt 20 ]; do
-        if grep -q "XDP attached on veth1" "$ERR_FILE" 2>/dev/null; then
+        if grep -qE "XDP attached (on|to) veth1" "$ERR_FILE" 2>/dev/null; then
             ATTACHED=1
             break
         fi
