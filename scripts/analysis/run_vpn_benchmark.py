@@ -28,22 +28,6 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import make_scorer, precision_score, recall_score, f1_score
 from pathlib import Path
 
-def get_time_based_features(df):
-    """
-    O artigo isola estritamente features baseadas no tempo e taxa.
-    """
-    time_features = [
-        'duration', 
-        'Fwd_IAT_Mean', 'Fwd_IAT_Min', 'Fwd_IAT_Max', 'Fwd_IAT_Std',
-        'Bwd_IAT_Mean', 'Bwd_IAT_Min', 'Bwd_IAT_Max', 'Bwd_IAT_Std',
-        'Tot_IAT_Mean', 'Tot_IAT_Min', 'Tot_IAT_Max', 'Tot_IAT_Std',
-        'Active_Mean', 'Active_Min', 'Active_Max', 'Active_Std',
-        'Idle_Mean', 'Idle_Min', 'Idle_Max', 'Idle_Std',
-        'BytesRate', 'PacketsRate'
-    ]
-    # Retorna apenas colunas que realmente existem na extração do Lynceus
-    available = [c for c in time_features if c in df.columns]
-    return df[available]
 
 def evaluate_model(X, y, name, clf):
     cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
@@ -97,18 +81,7 @@ def main(csv_dir):
     queries.clear()
     gc.collect()
     
-    # Tratamento de NAs e Infinitos
-    
-    
-    X_full = 
-    
-    
-    
-    
-    
-    
-    
-    gc.collect()
+
     
     # Classificadores (C4.5 equivalente é DecisionTree, e Random Forest que Lynceus usa)
     # Paralelismo contido nas instâncias limitadas a 8 threads para evitar OOM no OpenBLAS/KNN
