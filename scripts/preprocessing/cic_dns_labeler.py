@@ -61,18 +61,17 @@ def process_directory(in_dir, out_dir):
         label = determine_label(filename)
         
         try:
-            df = pd.read_csv(in_path)
-            if len(df) == 0:
-                continue
+            # Substituição do Pandas por Polars Streaming (Mitigação do OOM Killer em CSVs de 13GB)
+            import polars as pl
             
-            df['Activity'] = label
-            
-            df.to_csv(out_path, index=False)
-            print(f"   [+] Labeled: {filename} -> [Activity: {label}]")
-        except pd.errors.EmptyDataError:
-            print(f"   [!] Arquivo Vazio: {filename}")
+            # Executa a adição da coluna em streaming contínuo sem alocar a base inteira em RAM
+            pl.scan_csv(in_path, ignore_errors=True) \
+              .with_columns(pl.lit(label).alias("Activity")) \
+              .sink_csv(out_path)
+              
+            print(f"   [+] Labeled (Streaming): {filename} -> [Activity: {label}]")
         except Exception as e:
-            print(f"   [!] Erro lendo {filename}: {e}")
+            print(f"   [!] Erro processando {filename}: {e}")
 
 if __name__ == '__main__':
     if len(sys.argv) != 3:
