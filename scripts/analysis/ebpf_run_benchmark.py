@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 """
 Lynceus Telemetry Benchmark & Validation (v3.0)
+---------------------------------------------------------------------------
+Scientific Milestone: v2.0 (High-Performance I/O)
 Protocol: Feature Parity Analysis (SBSeg 2026)
 
-RESEARCH OBJECTIVE:
-Evaluate Lynceus performance under different feature set constraints:
-  1. Base (495 features)
-  2. NTL+AL Parity (399 features)
-  3. NFX Parity (15 features)
-  4. RustiFlow Parity (203 features)
+Research Objective:
+    Evaluate Lynceus performance under different feature set constraints:
+      1. Base (495 features)
+      2. NTL+AL Parity (399 features)
+      3. NFX Parity (15 features)
+      4. RustiFlow Parity (203 features)
 
-METHODOLOGY:
-  1. Cross-Day Temporal Validation: Independent training (Day 01) 
-     and testing (Day 03) sets from CICDDoS2019.
-  2. Stochastic Split Validation: 70/30 split for single-day captures.
-  3. Identity Purge: Mandatory removal of IP/Port metadata.
+Methodology:
+    1. Cross-Day Temporal Validation: Independent training (Day 01) 
+       and testing (Day 03) sets from CICDDoS2019.
+    2. Stochastic Split Validation: 70/30 split for single-day captures.
+    3. Identity Purge: Mandatory removal of IP/Port metadata.
 """
 
 import numpy as np
@@ -28,13 +30,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_score
 
-try:
-    import polars as pl
-    import pandas as pd
-    USE_POLARS = True
-except ImportError:
-    import pandas as pd
-    USE_POLARS = False
+import polars as pl
 
 # Global configuration object for benchmark parameters
 args = None
@@ -101,9 +97,7 @@ def load_dataset(file_path, drop_cols):
     if args and args.max_samples:
         max_s = args.max_samples
     
-    if USE_POLARS:
-        return _load_polars(file_path, drop_cols, max_s)
-    return _load_pandas(file_path, drop_cols, max_s)
+    return _load_polars(file_path, drop_cols, max_s)
 
 
 def _load_polars(file_path, drop_cols, max_samples):
@@ -157,65 +151,42 @@ def _load_polars(file_path, drop_cols, max_samples):
 
 
 
-    # Convert to pandas for sklearn.
-    X = df.to_pandas()
-    y_pd = y.to_pandas()
-
     # SCIENTIFIC HARDENING: Drop non-numeric features and ensure numerical stability
-    # This is critical for parity across tools with different header names and precision issues (RustiFlow)
-    import numpy as np
-    X = X.select_dtypes(include=[np.number])
+    import polars.selectors as cs
     
-    # Final safety pass: replace residuals Infs/NaNs and clip to float32 range
-    X = X.replace([np.inf, -np.inf], np.nan).fillna(0)
+    # Manter apenas colunas numéricas
+    df = df.select(cs.numeric())
+    
+    # Final safety pass: cast to Float32 and handle any remaining edge cases
+    df = df.cast(pl.Float32)
+
+    import numpy as np
+    X_numpy = df.to_numpy()
+    y_numpy = y.to_numpy()
+    
+    # Numpy clip
     f32_info = np.finfo(np.float32)
-    X = X.clip(lower=f32_info.min, upper=f32_info.max)
-
-
+    X_numpy = np.clip(X_numpy, f32_info.min, f32_info.max)
 
     del df
     gc.collect()
-    return X, y_pd
-
-
-def _load_pandas(file_path, drop_cols, max_samples):
-    """
-    Load dataset using Pandas chunked CSV reader (fallback).
-    """
-    sample_df = pd.read_csv(file_path, nrows=1, low_memory=False)
-    use_cols = [c for c in sample_df.columns if c not in drop_cols]
-    feature_cols = [c for c in use_cols if c != 'Label']
-
-    X_list, y_list = [], []
-    reader = pd.read_csv(file_path, chunksize=CHUNK_SIZE, usecols=use_cols, low_memory=False)
-    total_loaded = 0
-
-    for chunk in reader:
-        if 'Label' not in chunk.columns:
-            continue
-
-        y_chunk = (chunk['Label'].str.upper() != 'BENIGN').astype(np.uint8)
-        X_chunk = chunk[feature_cols]
-        for col in X_chunk.columns:
-            X_chunk[col] = pd.to_numeric(X_chunk[col], errors='coerce')
-        X_chunk = X_chunk.fillna(0).astype(np.float32)
-
-        X_list.append(X_chunk)
-        y_list.append(y_chunk)
-        total_loaded += len(X_chunk)
-
-        if total_loaded >= max_samples:
-            break
-
-    if not X_list:
-        return None, None
-
-    X = pd.concat(X_list, copy=False)
-    y = pd.concat(y_list, copy=False)
-    del X_list, y_list
-    gc.collect()
-
-    return X, y
+    
+    # Retornar X_cols_list para compatibilidade com importances do RF (simulando df)
+    # Como sklearn perde os nomes das colunas ao usar numpy, vamos criar um wrapper 
+    # ou retornar os nomes das colunas para reconstruir o importances_
+    class SklearnNumpyWrapper:
+        def __init__(self, data, columns):
+            self.data = data
+            self.columns = columns
+            self.shape = data.shape
+            
+        def __array__(self, dtype=None):
+            return self.data
+            
+        def __getitem__(self, key):
+            return self.data[key]
+            
+    return SklearnNumpyWrapper(X_numpy, df.columns), y_numpy
 
 
 def print_results(X_test, y_test, y_pred, clf, n_train, n_test):
@@ -244,19 +215,18 @@ def print_results(X_test, y_test, y_pred, clf, n_train, n_test):
     print(f"    {'Test Samples:':<20} {n_test}")
     print(f"    {'Features:':<20} {X_test.shape[1]}")
 
-    importances = pd.Series(
-        clf.feature_importances_, index=X_test.columns
-    ).sort_values(ascending=False)
+    importances = list(zip(X_test.columns, clf.feature_importances_))
+    importances.sort(key=lambda x: x[1], reverse=True)
 
     print("\n    CRITICAL ATTACK SIGNATURES (Top 5):")
-    for feature, val in importances.head(5).items():
+    for feature, val in importances[:5]:
         print(f"      - {feature:<25} {val:.4f}")
 
     # Save metrics to JSON for persistence
     metrics = {
         "accuracy": acc, "precision": prec, "recall": rec, "f1_score": f1,
         "n_train": n_train, "n_test": n_test, "n_features": X_test.shape[1],
-        "top_features": importances.head(10).to_dict()
+        "top_features": {k: float(v) for k, v in importances[:10]}
     }
     return metrics
 
@@ -461,7 +431,7 @@ def run_benchmark():
 
 def _apply_parity_filter(df, mode):
     """Filter features to match the logical set of another tool (Scientific Parity)."""
-    cols = df.columns.tolist()
+    cols = df.columns
     if mode == 'rustiflow':
         # RustiFlow Full Parity (203 Features)
         # Includes Timing, IAT, PktLen, HdrLen, Bulk, Subflow, ActiveIdle, Icmp, TCP Window.
@@ -543,7 +513,7 @@ def _apply_parity_filter(df, mode):
     # Filter to what actually exists in Lynceus CSV
     final_keep = [c for c in keep if c in cols]
     print(f"    🔬 Parity Filter [{mode}]: Kept {len(final_keep)}/{len(cols)} features.")
-    return df[final_keep]
+    return df.data[:, [df.columns.index(c) for c in final_keep]] if isinstance(df, SklearnNumpyWrapper) else df[final_keep]
 
 
 def _run_split_validation(file_path, attack_name, drop_cols):
