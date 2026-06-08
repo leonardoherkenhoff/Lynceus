@@ -82,7 +82,7 @@ def main(csv_dir):
     import polars.selectors as cs
     # Tratamento de NAs e Infinitos usando Polars estrito
     df_pl = df_pl.filter(
-        ~pl.any_horizontal(pl.all().is_null(), cs.numeric().is_nan(), cs.numeric().is_infinite())
+        ~pl.any_horizontal(pl.all().is_null(), cs.float().is_nan(), cs.float().is_infinite())
     )
 
     # Extração Numérica e Vetores NumPy diretos
