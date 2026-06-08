@@ -71,7 +71,10 @@ def main(csv_dir):
             
     # Executa a coleta sob demanda com a engine de streaming em Rust
     df_pl = pl.concat(queries).collect(engine="streaming")
-    df_pl = df_pl.filter(~pl.any_horizontal(pl.all().is_null() | pl.all().is_nan() | pl.all().is_infinite()))
+    import polars.selectors as cs
+    df_pl = df_pl.filter(
+        ~pl.any_horizontal(pl.all().is_null(), cs.numeric().is_nan(), cs.numeric().is_infinite())
+    )
     y_vpn = df_pl.select("VPN_Status").to_numpy().flatten()
     y_app = df_pl.select("Application_Type").to_numpy().flatten()
     y_unified = np.core.defchararray.add(np.core.defchararray.add(y_vpn, "-"), y_app)
