@@ -20,7 +20,6 @@ Methodology:
 import sys
 import gc
 import polars as pl
-import pandas as pd
 import numpy as np
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.ensemble import RandomForestClassifier
@@ -88,23 +87,27 @@ def main(csv_dir):
             
     # Executa a coleta sob demanda com a engine de streaming em Rust
     df_pl = pl.concat(queries).collect(engine="streaming")
-    df_pd = df_pl.to_pandas()
-    del df_pl
+    df_pl = df_pl.filter(~pl.any_horizontal(pl.all().is_null() | pl.all().is_nan() | pl.all().is_infinite()))
+    y_vpn = df_pl.select("VPN_Status").to_numpy().flatten()
+    y_app = df_pl.select("Application_Type").to_numpy().flatten()
+    y_unified = np.core.defchararray.add(np.core.defchararray.add(y_vpn, "-"), y_app)
+    X_full = df_pl.select(time_features).to_numpy()
+    mask_nonvpn = (y_vpn == "NonVPN")
+    mask_vpn = (y_vpn == "VPN")
     queries.clear()
     gc.collect()
     
     # Tratamento de NAs e Infinitos
-    df_pd = df_pd.replace([np.inf, -np.inf], np.nan).dropna()
     
-    X_full = get_time_based_features(df_pd).astype(np.float32).values
-    y_vpn = df_pd['VPN_Status'].values
-    y_app = df_pd['Application_Type'].values
-    y_unified = (df_pd['VPN_Status'] + "-" + df_pd['Application_Type']).values
     
-    mask_nonvpn = (df_pd['VPN_Status'] == "NonVPN").values
-    mask_vpn = (df_pd['VPN_Status'] == "VPN").values
+    X_full = 
     
-    del df_pd
+    
+    
+    
+    
+    
+    
     gc.collect()
     
     # Classificadores (C4.5 equivalente é DecisionTree, e Random Forest que Lynceus usa)
