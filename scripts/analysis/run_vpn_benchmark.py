@@ -73,7 +73,7 @@ def main(csv_dir):
     df_pl = pl.concat(queries).collect(engine="streaming")
     import polars.selectors as cs
     df_pl = df_pl.filter(
-        ~pl.any_horizontal(pl.all().is_null(), cs.numeric().is_nan(), cs.numeric().is_infinite())
+        ~pl.any_horizontal(pl.all().is_null(), cs.float().is_nan(), cs.float().is_infinite())
     )
     y_vpn = df_pl.select("VPN_Status").to_numpy().flatten()
     y_app = df_pl.select("Application_Type").to_numpy().flatten()
