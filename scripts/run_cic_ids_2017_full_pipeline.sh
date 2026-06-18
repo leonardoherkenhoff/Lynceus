@@ -42,7 +42,7 @@ if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "[X] Falha na Extração"; exit 1; fi
 echo ""
 echo "[Fase 2.5/6] Ajustando ambiente Python (Downgrade NumPy < 2)"
 echo "    -> Prevenindo crash de compatibilidade no imbalanced-learn..."
-pip install "numpy<2.0.0" scikit-learn imbalanced-learn pandas polars --upgrade | tee "$LOG_DIR/2.5_pip.log"
+pip install --break-system-packages "numpy<2.0.0" scikit-learn imbalanced-learn pandas polars --upgrade | tee "$LOG_DIR/2.5_pip.log"
 if [ ${PIPESTATUS[0]} -ne 0 ]; then echo "[!] Aviso: pip install encontrou erros. Continuando mesmo assim..."; fi
 
 # 3. Rotulagem Topológica
