@@ -34,7 +34,7 @@ BPF_CFLAGS = -g -O2 -target bpf -D__TARGET_ARCH_x86 -I$(EBPF_DIR) \
 
 # --- Linker Dependencies ---
 # Explicitly including /usr/local/lib64 in rpath for custom libbpf 1.2+ builds.
-LDFLAGS = -L/usr/local/lib64 -lbpf -lelf -lz -lm -Wl,-rpath,/usr/local/lib64
+LDFLAGS = -L/usr/local/lib64 -lbpf -lelf -lz -lm -lpcap -Wl,-rpath,/usr/local/lib64
 
 # --- Build Rules ---
 
