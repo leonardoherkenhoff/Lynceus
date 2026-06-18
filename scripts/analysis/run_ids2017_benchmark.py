@@ -19,7 +19,7 @@ from sklearn.metrics import classification_report, f1_score
 from joblib import parallel_backend
 
 # --- Configuration ---
-PROCESSED_DIR = "/opt/lynceus/data/processed/EBPF"
+PROCESSED_DIR = "./data/processed/EBPF"
 
 # Identity Purge list to prevent trivial classification leaks
 IDENTITY_DROP = [

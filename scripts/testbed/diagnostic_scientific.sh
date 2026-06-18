@@ -3,8 +3,8 @@
 # --------------------------------------------------
 
 PCAP="/root/CIC-IDS-2017-sliced/Friday-DDoS.pcap"
-OUT_DIR="/opt/lynceus/data/interim/EBPF_RAW"
-LOG_FILE="/opt/lynceus/diagnostic_report.log"
+OUT_DIR="./data/interim/EBPF_RAW"
+LOG_FILE="./diagnostic_report.log"
 
 echo "=========================================================" | tee "$LOG_FILE"
 echo "=== LYNCEUS SCIENTIFIC DIAGNOSTIC PROTOCOL ===" | tee -a "$LOG_FILE"

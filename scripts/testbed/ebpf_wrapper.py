@@ -25,7 +25,7 @@ import shutil
 import re
 
 # --- Project Path Matrix ---
-BASE_DIR = "/opt/lynceus"
+BASE_DIR = "."
 DATA_RAW = os.path.join(BASE_DIR, "data/raw")
 DATA_INTERIM = os.path.join(BASE_DIR, "data/interim/EBPF_RAW")
 LOADER_BIN = os.path.join(BASE_DIR, "build/loader")

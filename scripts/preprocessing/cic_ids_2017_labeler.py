@@ -22,7 +22,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import polars as pl
 
 # --- Topological Configuration ---
-BASE_DIR = "/opt/lynceus"
+BASE_DIR = "."
 INPUT_DIR = os.path.join(BASE_DIR, "data/interim/EBPF_RAW")
 OUTPUT_DIR = os.path.join(BASE_DIR, "data/processed/EBPF")
 

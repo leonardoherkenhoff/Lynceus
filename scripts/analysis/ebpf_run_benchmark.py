@@ -319,7 +319,7 @@ def run_benchmark():
         help='Include TTL and TTL_Var_* features (Realistic mode)'
     )
     parser.add_argument(
-        '--dataset', type=str, default="/opt/lynceus/data/processed/EBPF",
+        '--dataset', type=str, default="./data/processed/EBPF",
         help='Path to labeled dataset directory'
     )
     parser.add_argument(

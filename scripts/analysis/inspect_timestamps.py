@@ -7,8 +7,8 @@ import os
 import glob
 import pandas as pd
 
-PROCESSED_DIR = "/opt/lynceus/data/processed/EBPF"
-INTERIM_DIR = "/opt/lynceus/data/interim/EBPF_RAW"
+PROCESSED_DIR = "./data/processed/EBPF"
+INTERIM_DIR = "./data/interim/EBPF_RAW"
 
 def inspect_all_files():
     files = glob.glob(os.path.join(PROCESSED_DIR, "labeled_*.csv"))

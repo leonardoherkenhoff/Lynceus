@@ -16,7 +16,7 @@ import json
 import shutil
 import tempfile
 
-BASE_DIR       = "/opt/lynceus"
+BASE_DIR       = "."
 NTL_DIR        = "/opt/NTLFlowLyzer"
 NTL_BIN        = "ntlflowlyzer"   # instalado via setup.py
 DATA_RAW       = os.path.join(BASE_DIR, "data/raw")
