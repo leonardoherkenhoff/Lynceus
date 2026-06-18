@@ -72,14 +72,17 @@ for PCAP in $FILES; do
         echo "    -> [Auditoria] Dataset extraído: $LINES linhas ($SIZE)"
         if [ "$LINES" -le 1 ]; then
             echo "    [!] ALERTA CRÍTICO: Zero fluxos capturados. Arquivo contém apenas cabeçalhos L7."
-            if [ -s "$ERR_FILE" ]; then
-                echo "    ---> Diagnóstico do Motor eBPF:"
-                cat "$ERR_FILE"
-            fi
         fi
     else
         echo "    [X] ERRO CRÍTICO: IO de gravação falhou. Arquivo $CSV_NAME não existe."
     fi
+    
+    # Extrai o benchmark do stderr e imprime na tela para registro
+    if [ -s "$ERR_FILE" ]; then
+        echo "    ---> Relatório de Performance (eBPF Nativo):"
+        grep "\[\*\]" "$ERR_FILE" | sed 's/^/         /'
+    fi
+    
     rm -f "$ERR_FILE"
     echo "[V] Ingestão PCAP concluída."
 done

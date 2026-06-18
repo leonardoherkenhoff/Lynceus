@@ -628,6 +628,8 @@ int main(int argc, char **argv) {
             // Sinaliza para o script de fora que a engine está operante (mesma string esperada)
             fprintf(stderr, "[*] XDP attached (PCAP Native Mode)\n");
 
+            struct timespec ts_start, ts_end;
+            clock_gettime(CLOCK_MONOTONIC, &ts_start);
             while (!exiting && pcap_next_ex(pcap, &header, &data) == 1) {
                 struct bpf_test_run_opts opts = {
                     .sz = sizeof(opts),
@@ -642,8 +644,15 @@ int main(int argc, char **argv) {
                 pkts_injected++;
                 if (g_max_events > 0 && pkts_injected >= g_max_events) break;
             }
+            clock_gettime(CLOCK_MONOTONIC, &ts_end);
+            double duration = (ts_end.tv_sec - ts_start.tv_sec) + (ts_end.tv_nsec - ts_start.tv_nsec) / 1e9;
+            double pps = (duration > 0) ? ((double)pkts_injected / duration) : 0;
             pcap_close(pcap);
-            fprintf(stderr, "[*] End of PCAP. Injected %lu packets natively.\n", pkts_injected);
+            fprintf(stderr, "[*] ---------------------------------------------------------\n");
+            fprintf(stderr, "[*] Benchmark: %lu packets injected natively.\n", pkts_injected);
+            fprintf(stderr, "[*] Duration : %.3f sec\n", duration);
+            fprintf(stderr, "[*] Speed    : %.2f PPS\n", pps);
+            fprintf(stderr, "[*] ---------------------------------------------------------\n");
             sleep(1); // Wait for ringbuffer drain
             exiting = true; // Signal workers to flush and exit
         }
