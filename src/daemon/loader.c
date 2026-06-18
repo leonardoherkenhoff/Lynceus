@@ -24,6 +24,7 @@
 #include <signal.h>
 #include <arpa/inet.h>
 #include <net/if.h>
+#define PCAP_DONT_INCLUDE_PCAP_BPF_H
 #include <pcap.h>
 #include <linux/if_link.h>
 #include <time.h>
@@ -628,7 +629,7 @@ int main(int argc, char **argv) {
             fprintf(stderr, "[*] XDP attached (PCAP Native Mode)\n");
 
             while (!exiting && pcap_next_ex(pcap, &header, &data) == 1) {
-                struct bpf_prog_test_run_opts opts = {
+                struct bpf_test_run_opts opts = {
                     .sz = sizeof(opts),
                     .data_in = data,
                     .data_size_in = header->caplen,
