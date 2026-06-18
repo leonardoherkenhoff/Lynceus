@@ -12,7 +12,7 @@
 
 set -e
 
-WORKSPACE="/opt/eBPFNetFlowLyzer"
+WORKSPACE="/opt/lynceus"
 PCAP_DIR="/root/CIC-Bell-DNS-2024"
 RAW_OUT_DIR="$WORKSPACE/data/interim/EBPF_RAW_DNS"
 LABELED_OUT_DIR="$WORKSPACE/data/processed/CIC_DNS_LABELED"
