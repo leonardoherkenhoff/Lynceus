@@ -12,7 +12,7 @@
 
 set -e
 
-WORKSPACE="/opt/eBPFNetFlowLyzer"
+WORKSPACE="/opt/lynceus"
 PCAP_DIR="/root/ISCX-VPN-2016"
 RAW_OUT_DIR="$WORKSPACE/data/interim/EBPF_RAW_VPN"
 LABELED_OUT_DIR="$WORKSPACE/data/processed/ISCX_VPN_LABELED"

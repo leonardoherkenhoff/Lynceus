@@ -4,7 +4,7 @@
 
 # Permite injeção de variáveis via argumento posicional
 PCAP_DIR="${1:-/root/CIC-IDS-2017}"
-OUT_DIR="${2:-/opt/eBPFNetFlowLyzer/data/interim/EBPF_RAW}"
+OUT_DIR="${2:-/opt/lynceus/data/interim/EBPF_RAW}"
 
 if [ ! -d "$PCAP_DIR" ]; then
     echo "[!] Diretório de origem não encontrado: $PCAP_DIR"
