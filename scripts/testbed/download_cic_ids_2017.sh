@@ -12,7 +12,7 @@ cat << 'EOF' > cookies.txt
 # https://curl.haxx.se/rfc/cookie_spec.html
 # This is a generated file! Do not edit.
 
-.cicresearch.ca	TRUE	/	TRUE	1779148774	Token	27im4a2plps0bu41780ncoc1mq
+.cicresearch.ca	TRUE	/	TRUE	1781848899	Token	n2vc08t2dgbcu1pd4vjeuj9mc0
 EOF
 
 URLS=(
