@@ -81,9 +81,9 @@ for PCAP in $FILES; do
     if [ -s "$ERR_FILE" ]; then
         echo "    ---> Relatório de Performance (eBPF Nativo):"
         grep "\[\*\]" "$ERR_FILE" | sed 's/^/         /'
+        echo "    ---> Log bruto preservado em: $ERR_FILE"
     fi
     
-    rm -f "$ERR_FILE"
     echo "[V] Ingestão PCAP concluída."
 done
 
