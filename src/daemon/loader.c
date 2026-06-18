@@ -25,6 +25,8 @@
 #include <arpa/inet.h>
 #include <net/if.h>
 #include <linux/if_link.h>
+#define PCAP_DONT_INCLUDE_PCAP_BPF_H
+#include <pcap/pcap.h>
 #include <time.h>
 #include <math.h>
 #include <pthread.h>
