@@ -602,39 +602,97 @@ int main(int argc, char **argv) {
     struct bpf_program *prog = bpf_object__find_program_by_name(obj, "xdp_prog");
     int prog_fd = bpf_program__fd(prog);
     int force_skb = 0;
-    for (int i = 1; i < argc; i++) if (strcmp(argv[i], "skb") == 0) force_skb = 1;
-
-    int *ifindexes = calloc(argc, sizeof(int)); int num_ifaces = 0;
+    char *pcap_file = NULL;
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "skb") == 0) continue;
-        int ifindex = if_nametoindex(argv[i]);
-        if (ifindex == 0) continue;
-        
-        detach_xdp_links_on_iface(ifindex);
-        bpf_xdp_detach(ifindex, XDP_FLAGS_DRV_MODE, NULL);
-        bpf_xdp_detach(ifindex, XDP_FLAGS_SKB_MODE, NULL);
-
-        int flags = force_skb ? XDP_FLAGS_SKB_MODE : XDP_FLAGS_DRV_MODE;
-        if (bpf_xdp_attach(ifindex, prog_fd, flags, NULL) < 0) {
-            flags = XDP_FLAGS_SKB_MODE;
-            if (bpf_xdp_attach(ifindex, prog_fd, flags, NULL) < 0) {
-                fprintf(stderr, "ERR: Failed to attach XDP on %s\n", argv[i]);
-                continue;
-            }
-        }
-        
-        fprintf(stderr, "[*] XDP attached on %s: %s (%s)\n", argv[i],
-                (flags & XDP_FLAGS_DRV_MODE) ? "DRV_MODE" : "SKB_MODE",
-                (flags & XDP_FLAGS_DRV_MODE) ? "native" : "generic");
-        
-        ifindexes[num_ifaces++] = ifindex;
+        if (strcmp(argv[i], "skb") == 0) force_skb = 1;
+        if (strcmp(argv[i], "--pcap") == 0 && (i + 1) < argc) pcap_file = argv[++i];
     }
+
+    int *ifindexes = NULL;
+    int num_ifaces = 0;
+
+    if (pcap_file) {
+        fprintf(stderr, "[*] Lynceus Native Injector (bpf_prog_test_run_opts) on: %s\n", pcap_file);
+        char errbuf[PCAP_ERRBUF_SIZE];
+        pcap_t *pcap = pcap_open_offline(pcap_file, errbuf);
+        if (!pcap) {
+            fprintf(stderr, "FATAL: pcap_open_offline failed: %s\n", errbuf);
+            exiting = true;
+        } else {
+            struct pcap_pkthdr *header;
+            const u_char *data;
+            uint64_t pkts_injected = 0;
+
+            fprintf(stderr, "[*] XDP attached (PCAP Native Mode)\n");
+
+            struct timespec ts_start, ts_end;
+            clock_gettime(CLOCK_MONOTONIC, &ts_start);
+            while (!exiting && pcap_next_ex(pcap, &header, &data) == 1) {
+                struct bpf_test_run_opts opts = {
+                    .sz = sizeof(opts),
+                    .data_in = data,
+                    .data_size_in = header->caplen,
+                };
+                int err = bpf_prog_test_run_opts(prog_fd, &opts);
+                if (err < 0) {
+                    fprintf(stderr, "ERR: test_run failed: %s\n", strerror(errno));
+                    break;
+                }
+                pkts_injected++;
+            }
+            clock_gettime(CLOCK_MONOTONIC, &ts_end);
+            double duration = (ts_end.tv_sec - ts_start.tv_sec) + (ts_end.tv_nsec - ts_start.tv_nsec) / 1e9;
+            double pps = (duration > 0) ? ((double)pkts_injected / duration) : 0;
+            pcap_close(pcap);
+            fprintf(stderr, "[*] ---------------------------------------------------------\n");
+            fprintf(stderr, "[*] Benchmark: %lu packets injected natively.\n", pkts_injected);
+            fprintf(stderr, "[*] Duration : %.3f sec\n", duration);
+            fprintf(stderr, "[*] Speed    : %.2f PPS\n", pps);
+            fprintf(stderr, "[*] ---------------------------------------------------------\n");
+            sleep(1); // Wait for ringbuffer drain
+            exiting = true; // Signal workers to flush and exit
+        }
+    } else {
+        ifindexes = calloc(argc, sizeof(int));
+        for (int i = 1; i < argc; i++) {
+            if (strcmp(argv[i], "skb") == 0 || strcmp(argv[i], "--limit") == 0 || strcmp(argv[i-1], "--limit") == 0) continue;
+            int ifindex = if_nametoindex(argv[i]);
+            if (ifindex == 0) continue;
+
+            detach_xdp_links_on_iface(ifindex);
+            bpf_xdp_detach(ifindex, XDP_FLAGS_DRV_MODE, NULL);
+            bpf_xdp_detach(ifindex, XDP_FLAGS_SKB_MODE, NULL);
+
+            int flags = force_skb ? XDP_FLAGS_SKB_MODE : XDP_FLAGS_DRV_MODE;
+            if (bpf_xdp_attach(ifindex, prog_fd, flags, NULL) < 0) {
+                flags = XDP_FLAGS_SKB_MODE;
+                if (bpf_xdp_attach(ifindex, prog_fd, flags, NULL) < 0) {
+                    fprintf(stderr, "ERR: Failed to attach XDP on %s\n", argv[i]);
+                    continue;
+                }
+            }
+
+            fprintf(stderr, "[*] XDP attached on %s: %s (%s)\n", argv[i],
+                    (flags & XDP_FLAGS_DRV_MODE) ? "DRV_MODE" : "SKB_MODE",
+                    (flags & XDP_FLAGS_DRV_MODE) ? "native" : "generic");
+
+            ifindexes[num_ifaces++] = ifindex;
+        }
+    }
+
     for (int i = 0; i < num_workers; i++) {
         pthread_join(workers[i].thread, NULL);
         fprintf(stderr, "[*] Worker %d: %lu events processed\n", i, workers[i].processed_events);
     }
     pthread_join(g_writer_thread, NULL);
-    for (int i = 0; i < num_ifaces; i++) bpf_xdp_detach(ifindexes[i], XDP_FLAGS_SKB_MODE, NULL);
+
+    if (ifindexes) {
+        for (int i = 0; i < num_ifaces; i++) {
+            bpf_xdp_detach(ifindexes[i], XDP_FLAGS_DRV_MODE, NULL);
+            bpf_xdp_detach(ifindexes[i], XDP_FLAGS_SKB_MODE, NULL);
+        }
+    }
+
     int stats_fd = bpf_object__find_map_fd_by_name(obj, "global_stats");
     __u32 stats_key = 0; uint64_t *cpu_stats = calloc(cores, sizeof(uint64_t));
     uint64_t total_ingress = 0;
