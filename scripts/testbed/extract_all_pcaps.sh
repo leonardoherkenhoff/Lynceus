@@ -75,13 +75,20 @@ for PCAP in $FILES; do
     LOADER_PID=$!
     
     echo "    -> Aguardando estabilização dos mapas BPF e attachment XDP..."
-    while ! grep -q "XDP attached on veth1" "$ERR_FILE" 2>/dev/null; do sleep 0.5; done; echo "    -> Motor eBPF Ativo e Operante!"
+    while ! grep -q "XDP attached" "$ERR_FILE" 2>/dev/null; do
+        if ! kill -0 $LOADER_PID 2>/dev/null; then
+            break
+        fi
+        sleep 0.5
+    done
     
     if ! kill -0 $LOADER_PID 2>/dev/null; then
         echo "    [X] ERRO CRÍTICO: O loader eBPF abortou antes da injeção L2!"
         echo "    ---> Relatório de Crash (stderr):"
         cat "$ERR_FILE"
+        exit 1
     fi
+    echo "    -> Motor eBPF Ativo e Operante!"
     
     echo "    -> Disparando tcpreplay em TOPSPEED com reescrita L2 (MAC e DLT)..."
     TMP_PCAP="/tmp/norm_$(basename "$PCAP")"
