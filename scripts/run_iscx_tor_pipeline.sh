@@ -12,7 +12,7 @@
 
 set -e
 
-WORKSPACE="/opt/eBPFNetFlowLyzer"
+WORKSPACE="/opt/lynceus"
 PCAP_DIR="/root/ISCX-Tor-2016"
 RAW_OUT_DIR="$WORKSPACE/data/interim/EBPF_RAW_TOR"
 LABELED_OUT_DIR="$WORKSPACE/data/processed/ISCX_TOR_LABELED"
