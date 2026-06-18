@@ -8,7 +8,7 @@ import json
 import os
 
 # Define the absolute output path on the server
-EBPF_DIR = "/opt/eBPFNetFlowLyzer/data/processed/EBPF"
+EBPF_DIR = "/opt/lynceus/data/processed/EBPF"
 
 results = {
     "Friday-WorkingHours": {
