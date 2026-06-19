@@ -81,9 +81,9 @@ def main(csv_dir):
         ~pl.any_horizontal(pl.all().is_null(), cs.float().is_nan(), cs.float().is_infinite())
     )
     
-    y_vpn = df_pl.select("VPN_Status").to_numpy().flatten()
-    y_app = df_pl.select("Application_Type").to_numpy().flatten()
-    y_unified = np.core.defchararray.add(np.core.defchararray.add(y_vpn, "-"), y_app)
+    y_vpn = df_pl.select("VPN_Status").to_numpy().flatten().astype(str)
+    y_app = df_pl.select("Application_Type").to_numpy().flatten().astype(str)
+    y_unified = np.array([f"{v}-{a}" for v, a in zip(y_vpn, y_app)])
     
     X_full = df_pl.select(time_features).to_numpy()
     
