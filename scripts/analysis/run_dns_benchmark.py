@@ -104,9 +104,7 @@ def main(csv_dir):
     X_malicious = X_full[mask_malicious]
     y_type = y_raw[mask_malicious]
     
-    del df_pl
-    gc.collect()
-    
+
     # Paralelismo contido nas instâncias limitadas a 8 threads para evitar OOM no OpenBLAS/KNN
     classifiers = {
         "ZeroR (Baseline)": DummyClassifier(strategy="most_frequent"),
