@@ -90,8 +90,10 @@ def main(csv_dir):
     del df_pl
     gc.collect()
     
+    y_vpn = np.char.strip(y_vpn)
+    y_app = np.char.strip(y_app)
     mask_nonvpn = (y_vpn == "NonVPN")
-    mask_vpn = (y_vpn == "VPN")
+    mask_vpn = (y_vpn != "NonVPN")
     
 
     
