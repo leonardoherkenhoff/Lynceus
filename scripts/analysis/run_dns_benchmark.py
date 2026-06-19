@@ -109,8 +109,8 @@ def main(csv_dir):
     classifiers = {
         "ZeroR (Baseline)": DummyClassifier(strategy="most_frequent"),
         "C4.5 (J48)": DecisionTreeClassifier(random_state=42),
-        "KNN": KNeighborsClassifier(n_neighbors=5, n_jobs=8),
-        "Random Forest (Lynceus)": RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=8)
+        #"KNN": KNeighborsClassifier(n_neighbors=5, n_jobs=-1), # Comentado devido a complexidade O(N^2) que trava CPU com milhões de instâncias
+        "Random Forest (Lynceus)": RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
     }
     
     print("\n--- [SCENARIO A] Benign vs Malicious (Binary) ---")
