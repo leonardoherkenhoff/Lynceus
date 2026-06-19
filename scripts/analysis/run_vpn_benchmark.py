@@ -106,20 +106,32 @@ def main(csv_dir):
     }
     
     print("\n--- [SCENARIO A.1] VPN vs Non-VPN (Binario) ---")
-    for name, clf in classifiers.items():
-        evaluate_model(X_full, y_vpn, name, clf)
+    if len(np.unique(y_vpn)) > 1:
+        for name, clf in classifiers.items():
+            evaluate_model(X_full, y_vpn, name, clf)
+    else:
+        print("[!] Dataset possui apenas 1 classe de tráfego. Impossível realizar Scenario A.1 (Binário). Pulando...")
         
     print("\n--- [SCENARIO A.2] Application Characterization (Somente Non-VPN) ---")
-    for name, clf in classifiers.items():
-        evaluate_model(X_full[mask_nonvpn], y_app[mask_nonvpn], name, clf)
+    if len(X_full[mask_nonvpn]) > 0:
+        for name, clf in classifiers.items():
+            evaluate_model(X_full[mask_nonvpn], y_app[mask_nonvpn], name, clf)
+    else:
+        print("[!] Nenhum tráfego NonVPN detectado. Pulando Scenario A.2...")
         
     print("\n--- [SCENARIO A.2] Application Characterization (Somente VPN) ---")
-    for name, clf in classifiers.items():
-        evaluate_model(X_full[mask_vpn], y_app[mask_vpn], name, clf)
+    if len(X_full[mask_vpn]) > 0:
+        for name, clf in classifiers.items():
+            evaluate_model(X_full[mask_vpn], y_app[mask_vpn], name, clf)
+    else:
+        print("[!] Nenhum tráfego VPN detectado na base de dados. Pulando Scenario A.2...")
         
     print("\n--- [SCENARIO B] Unified 14-Class Classification ---")
-    for name, clf in classifiers.items():
-        evaluate_model(X_full, y_unified, name, clf)
+    if len(np.unique(y_unified)) > 1:
+        for name, clf in classifiers.items():
+            evaluate_model(X_full, y_unified, name, clf)
+    else:
+        print("[!] Dataset possui apenas 1 classe unificada. Pulando Scenario B...")
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
