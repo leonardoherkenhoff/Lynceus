@@ -101,8 +101,8 @@ def main(csv_dir):
     # Paralelismo contido nas instâncias limitadas a 8 threads para evitar OOM no OpenBLAS/KNN
     classifiers = {
         "C4.5 (J48)": DecisionTreeClassifier(random_state=42),
-        "KNN": KNeighborsClassifier(n_neighbors=5, n_jobs=8),
-        "Random Forest (Lynceus)": RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=8)
+        "KNN": KNeighborsClassifier(n_neighbors=5, n_jobs=-1),
+        "Random Forest (Lynceus)": RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
     }
     
     print("\n--- [SCENARIO A.1] VPN vs Non-VPN (Binario) ---")
