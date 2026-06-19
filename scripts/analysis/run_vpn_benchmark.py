@@ -23,6 +23,7 @@ import polars as pl
 import numpy as np
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.ensemble import RandomForestClassifier
+from joblib import parallel_backend
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import make_scorer, precision_score, recall_score, f1_score
@@ -31,9 +32,10 @@ from pathlib import Path
 
 def evaluate_model(X, y, name, clf):
     cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
-    prec = cross_val_score(clf, X, y, cv=cv, scoring='precision_weighted', n_jobs=1)
-    rec = cross_val_score(clf, X, y, cv=cv, scoring='recall_weighted', n_jobs=1)
-    f1 = cross_val_score(clf, X, y, cv=cv, scoring='f1_weighted', n_jobs=1)
+    with parallel_backend('threading', n_jobs=-1):
+        prec = cross_val_score(clf, X, y, cv=cv, scoring='precision_weighted', n_jobs=1)
+        rec = cross_val_score(clf, X, y, cv=cv, scoring='recall_weighted', n_jobs=1)
+        f1 = cross_val_score(clf, X, y, cv=cv, scoring='f1_weighted', n_jobs=1)
     print(f"[{name}] Precision: {prec.mean():.4f} | Recall: {rec.mean():.4f} | F1: {f1.mean():.4f}")
 
 def main(csv_dir):
@@ -71,18 +73,25 @@ def main(csv_dir):
             
     # Executa a coleta sob demanda com a engine de streaming em Rust
     df_pl = pl.concat(queries).collect(engine="streaming")
+    queries.clear()
+    gc.collect()
+    
     import polars.selectors as cs
     df_pl = df_pl.filter(
         ~pl.any_horizontal(pl.all().is_null(), cs.float().is_nan(), cs.float().is_infinite())
     )
+    
     y_vpn = df_pl.select("VPN_Status").to_numpy().flatten()
     y_app = df_pl.select("Application_Type").to_numpy().flatten()
     y_unified = np.core.defchararray.add(np.core.defchararray.add(y_vpn, "-"), y_app)
+    
     X_full = df_pl.select(time_features).to_numpy()
+    
+    del df_pl
+    gc.collect()
+    
     mask_nonvpn = (y_vpn == "NonVPN")
     mask_vpn = (y_vpn == "VPN")
-    queries.clear()
-    gc.collect()
     
 
     
