@@ -23,6 +23,7 @@ import polars as pl
 import numpy as np
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.ensemble import RandomForestClassifier
+from joblib import parallel_backend
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.dummy import DummyClassifier
@@ -32,9 +33,10 @@ from pathlib import Path
 def evaluate_model(X, y, name, clf):
     # Paper usa 10-fold CV
     cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
-    prec = cross_val_score(clf, X, y, cv=cv, scoring='precision_weighted', n_jobs=1)
-    rec = cross_val_score(clf, X, y, cv=cv, scoring='recall_weighted', n_jobs=1)
-    f1 = cross_val_score(clf, X, y, cv=cv, scoring='f1_weighted', n_jobs=1)
+    with parallel_backend('threading', n_jobs=-1):
+        prec = cross_val_score(clf, X, y, cv=cv, scoring='precision_weighted', n_jobs=1)
+        rec = cross_val_score(clf, X, y, cv=cv, scoring='recall_weighted', n_jobs=1)
+        f1 = cross_val_score(clf, X, y, cv=cv, scoring='f1_weighted', n_jobs=1)
     print(f"[{name}] Precision: {prec.mean():.4f} | Recall: {rec.mean():.4f} | F1: {f1.mean():.4f}")
 
 def main(csv_dir):

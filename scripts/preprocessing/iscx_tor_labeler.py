@@ -26,7 +26,7 @@ def determine_labels(filepath_str):
     path_lower = filepath_str.lower()
     
     # 1. Tor Status (Scenario A)
-    tor_status = "NonTor" if "nontor" in path_lower else "Tor"
+    tor_status = "Tor" if "tor" in path_lower else "NonTor"
     
     # 2. Application Type (Scenario B)
     app_type = "Unknown"
