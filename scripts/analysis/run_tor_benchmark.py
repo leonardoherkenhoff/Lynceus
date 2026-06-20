@@ -21,7 +21,7 @@ import sys
 import gc
 import polars as pl
 import numpy as np
-from sklearn.model_selection import cross_val_score, StratifiedKFold
+from sklearn.model_selection import cross_validate, StratifiedKFold
 from sklearn.ensemble import RandomForestClassifier
 from joblib import parallel_backend
 from sklearn.tree import DecisionTreeClassifier
@@ -33,11 +33,16 @@ from pathlib import Path
 def evaluate_model(X, y, name, clf):
     # Paper usa 10-fold CV
     cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
-    with parallel_backend('threading', n_jobs=-1):
-        prec = cross_val_score(clf, X, y, cv=cv, scoring='precision_weighted', n_jobs=1)
-        rec = cross_val_score(clf, X, y, cv=cv, scoring='recall_weighted', n_jobs=1)
-        f1 = cross_val_score(clf, X, y, cv=cv, scoring='f1_weighted', n_jobs=1)
-    print(f"[{name}] Precision: {prec.mean():.4f} | Recall: {rec.mean():.4f} | F1: {f1.mean():.4f}")
+    scoring = ['precision_weighted', 'recall_weighted', 'f1_weighted']
+    
+    # Validação cruzada sem wrappers restritivos. Scikit-Learn decidirá o backend (loky/openmp)
+    scores = cross_validate(clf, X, y, cv=cv, scoring=scoring, n_jobs=1)
+    
+    prec = scores['test_precision_weighted'].mean()
+    rec = scores['test_recall_weighted'].mean()
+    f1 = scores['test_f1_weighted'].mean()
+    
+    print(f"[{name}] Precision: {prec:.4f} | Recall: {rec:.4f} | F1: {f1:.4f}")
 
 def main(csv_dir):
     print("==========================================================")
