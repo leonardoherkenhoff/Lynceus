@@ -33,8 +33,9 @@ def evaluate_model(X, y, name, clf):
     cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
     scoring = ['precision_weighted', 'recall_weighted', 'f1_weighted']
     
-    # Validação cruzada sem wrappers restritivos. Scikit-Learn decidirá o backend (loky/openmp)
-    scores = cross_validate(clf, X, y, cv=cv, scoring=scoring, n_jobs=1)
+    # Forçando o backend 'threading' para bloquear o OOM do 'loky' em partições massivas
+    with parallel_backend('threading', n_jobs=-1):
+        scores = cross_validate(clf, X, y, cv=cv, scoring=scoring, n_jobs=1)
     
     prec = scores['test_precision_weighted'].mean()
     rec = scores['test_recall_weighted'].mean()
