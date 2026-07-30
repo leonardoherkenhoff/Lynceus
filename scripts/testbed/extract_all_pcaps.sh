@@ -57,9 +57,12 @@ for PCAP in $FILES; do
     
     # O motor eBPF processará de forma nativa e síncrona
     ERR_FILE="$OUT_DIR/${CSV_NAME}.err"
-    
-    # Executa o daemon do Lynceus no modo nativo (bpf_prog_test_run_opts) síncrono.
-    ./build/loader --pcap "$PCAP" > "$OUT_DIR/$CSV_NAME" 2> "$ERR_FILE"
+    PERF_FILE="$OUT_DIR/${CSV_NAME%.csv}.perf"
+
+    # Executa o daemon do Lynceus instrumentado com /usr/bin/time -v.
+    # stdout -> CSV de features; stderr (loader + time) -> .perf para auditoria de CPU/RSS/wall-clock.
+    /usr/bin/time -v ./build/loader --pcap "$PCAP" > "$OUT_DIR/$CSV_NAME" 2>"$PERF_FILE"
+    cp "$PERF_FILE" "$ERR_FILE"
     
     # Como a execução é síncrona, a extração termina quando o comando retorna.
     
