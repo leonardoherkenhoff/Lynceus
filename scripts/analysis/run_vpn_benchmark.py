@@ -68,9 +68,12 @@ def main(csv_dir):
     queries = []
     for f in files:
         try:
-            q = pl.scan_csv(str(f), infer_schema_length=10000).select(cols_to_use).with_columns([
+            is_vpn = "VPN" if f.name.lower().startswith("vpn_") else "NonVPN"
+            q = pl.scan_csv(str(f), infer_schema_length=10000).select(time_features + ['Application_Type']).with_columns([
                 pl.col(c).cast(pl.Float32) for c in time_features
-            ])
+            ]).with_columns(
+                pl.lit(is_vpn).alias("VPN_Status")
+            )
             queries.append(q)
         except Exception as e:
             print(f"Erro scaneando {f}: {e}")
