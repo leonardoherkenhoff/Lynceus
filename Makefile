@@ -27,7 +27,7 @@ DAEMON_BIN = $(BUILD_DIR)/loader
 
 # --- Compilation Flags ---
 # User-Space: Standard C99/GNU11 with libbpf and math linkage
-CFLAGS = -g -O2 -Wall -Wextra -std=gnu11
+CFLAGS = -g -O3 -march=native -flto -Wall -Wextra -std=gnu11
 # Kernel-Space: BPF architecture target with BTF alignment
 BPF_CFLAGS = -g -O2 -target bpf -D__TARGET_ARCH_x86 -I$(EBPF_DIR) \
              -Wall -Wno-missing-declarations -Wno-compare-distinct-pointer-types
@@ -46,17 +46,17 @@ $(BUILD_DIR):
 # Target: Data Plane Interceptor
 # Compiles the XDP program into BPF Bytecode for kernel injection.
 $(EBPF_OBJ): $(EBPF_DIR)/main.bpf.c $(EBPF_DIR)/vmlinux.h
-	@echo "🔧 Compiling eBPF Data Plane: $<"
+	@echo "[*] Compiling eBPF Data Plane: $<"
 	$(CLANG) $(BPF_CFLAGS) -c $< -o $@
 
 # Target: Control Plane Orchestrator
 # Compiles the C daemon that manages RingBuffers and statistical aggregation.
 $(DAEMON_BIN): $(DAEMON_DIR)/loader.c
-	@echo "🚀 Compiling User-Space Control Plane: $<"
+	@echo "[*] Compiling User-Space Control Plane: $<"
 	$(CLANG) $(CFLAGS) $< -o $@ $(LDFLAGS)
 
 clean:
-	@echo "🧹 Cleaning research build artifacts..."
+	@echo "[*] Cleaning build artifacts..."
 	rm -rf $(BUILD_DIR)
 
 .PHONY: all clean

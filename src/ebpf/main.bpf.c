@@ -1,13 +1,13 @@
 /**
  * @file main.bpf.c
- * @brief Kernel-Space Data Plane - XDP Feature Extractor.
+ * @brief Lynceus Data Plane (XDP).
  *
  * @details
- * Performs recursive packet dissection and flow state tracking.
- * Implements RingBuffer-based event export for L4/L7 metadata.
- * Optimised for high-fidelity extraction on kernels >= 5.15 (LTS).
+ * Recursive packet dissection and flow tracking.
+ * Multi-core RingBuffer architecture for zero-copy telemetry export.
+ * Optimized for throughput targets on XDP_DRV/XDP_HW.
  *
- * @version 1.0 (The Definitive Foundation)
+ * @version 1.1
  */
 
 #include "vmlinux.h"
@@ -25,6 +25,13 @@ struct {
     __type(key, flow_id_t);
     __type(value, flow_record_t);
 } flow_table SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 2);
+    __type(key, __u32);
+    __type(value, __u64);
+} global_stats SEC(".maps");
 
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
@@ -80,7 +87,6 @@ static __always_inline void parse_snmp(void *data, void *data_end, flow_record_t
     if (ptr + 2 > (__u8 *)data_end) return;
     /* ASN.1 BER/DER Dissection: Sequence(0x30) -> Len -> Version(0x02) -> Len -> Value */
     if (ptr[0] != 0x30) return;
-    __u8 seq_len = ptr[1];
     ptr += 2;
     if (ptr + 3 > (__u8 *)data_end) return;
     if (ptr[0] != 0x02) return; /* Integer tag for version */
@@ -101,6 +107,9 @@ int xdp_prog(struct xdp_md *ctx) {
     void *data_end = (void *)(long)ctx->data_end;
     void *data = (void *)(long)ctx->data;
     __u32 cpu_id = bpf_get_smp_processor_id();
+    __u32 stats_key = 0;
+    __u64 *total_pkts = bpf_map_lookup_elem(&global_stats, &stats_key);
+    if (total_pkts) __sync_fetch_and_add(total_pkts, 1);
 
     struct ethhdr *eth = data;
     if ((void *)(eth + 1) > data_end) return XDP_PASS;
@@ -272,16 +281,8 @@ int xdp_prog(struct xdp_md *ctx) {
             }
         }
 
-        /* [Payload Hint Extraction]
-         * VERIFIER OPTIMIZATION: We use a single boundary check before copying
-         * the 64-byte block. This avoids state explosion (E2BIG) in the 
-         * kernel verifier by reducing branches from O(N) to O(1). */
-        if (p_ptr + 64 <= data_end) {
-            #pragma unroll
-            for (int i = 0; i < 64; i++) {
-                new_rec.payload_hint[i] = ((__u8 *)p_ptr)[i];
-            }
-        }
+        /* payload_hint: field retained in struct for future use but
+         * not copied here — entropy is computed on IPs in user-space. */
 
         bpf_map_update_elem(&flow_table, &key, &new_rec, BPF_ANY);
         
@@ -293,6 +294,10 @@ int xdp_prog(struct xdp_md *ctx) {
                 event->rec = new_rec;
                 event->timestamp_ns = bpf_ktime_get_ns();
                 bpf_ringbuf_submit(event, 0);
+            } else {
+                __u32 drop_key = 1;
+                __u64 *drop_pkts = bpf_map_lookup_elem(&global_stats, &drop_key);
+                if (drop_pkts) __sync_fetch_and_add(drop_pkts, 1);
             }
         }
     } else {
@@ -304,6 +309,10 @@ int xdp_prog(struct xdp_md *ctx) {
                 event->rec = new_rec; 
                 event->timestamp_ns = bpf_ktime_get_ns();
                 bpf_ringbuf_submit(event, 0);
+            } else {
+                __u32 drop_key = 1;
+                __u64 *drop_pkts = bpf_map_lookup_elem(&global_stats, &drop_key);
+                if (drop_pkts) __sync_fetch_and_add(drop_pkts, 1);
             }
         }
         rec->pkts_count++;

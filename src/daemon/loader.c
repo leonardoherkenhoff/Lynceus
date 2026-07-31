@@ -1,13 +1,13 @@
 /**
  * @file loader.c
- * @brief User-Space Control Plane - General Purpose Network Feature Extractor.
+ * @brief Lynceus Control Plane.
  *
  * @details
- * High-performance extraction engine for MAPE-K (Monitor) loops.
- * Features: Welford Moments, P² Medians, L7 Metadata, and Payload Histograms.
- * Built for high-fidelity network introspection and autonomous security.
+ * Multi-threaded event ingestion and flow aggregation.
+ * Online 4th-order statistical computation and behavioral histogramming.
+ * Dynamic hardware resource scaling (CPU/RAM).
  *
- * @version 1.0
+ * @version 1.1
  */
 
 #define _GNU_SOURCE
@@ -24,68 +24,79 @@
 #include <signal.h>
 #include <arpa/inet.h>
 #include <net/if.h>
-#include <linux/if_link.h>
 #define PCAP_DONT_INCLUDE_PCAP_BPF_H
-#include <pcap/pcap.h>
+#include <pcap.h>
+#include <linux/if_link.h>
 #include <time.h>
 #include <math.h>
 #include <pthread.h>
 #include <sched.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <sys/mman.h>
+#include <fcntl.h>
 
 #include "../ebpf/lynceus.h"
 
-#define FLOW_HASH_SIZE      131072
 #define IDLE_THRESHOLD      1.0
 #define HIST_BINS           80
+#ifndef IPPROTO_ICMPV6
+#define IPPROTO_ICMPV6 58
+#endif
 #define HIST_STEP           20
 #define BULK_THRESHOLD      1.0
-#define IDLE_FLOW_TIMEOUT_S 60.0
+#define IDLE_FLOW_TIMEOUT_S 5.0
 #define IDLE_SCAN_BATCH     10000
 
-/* [Lock-Free Concurrency] Single-Producer Single-Consumer (SPSC) Rings */
-#define SPSC_SLOTS    1024     /* per-worker queue depth (power of 2) */
-#define MAX_RECORD    16384    /* max serialized record size (incl. histograms) */
+#define SPSC_SLOTS    1024
+#define MAX_RECORD    8192
+
+/* Computed at startup based on available RAM */
+static uint32_t g_flow_table_size = 65536;
+static uint32_t g_flow_table_mask = 65535;
+static size_t   g_rb_size = 16 * 1024 * 1024;
 
 struct spsc_queue {
     char     data[SPSC_SLOTS][MAX_RECORD];
     size_t   lens[SPSC_SLOTS];
-    _Atomic uint32_t head;  /* writer advances head (consumer) */
-    _Atomic uint32_t tail;  /* worker advances tail (producer)  */
-} __attribute__((aligned(64))); /* cache-line align to prevent false sharing */
-
-/* [Core Analytics] Numerical Moment Tracking & P² Quantiles */
+    _Atomic uint32_t head;
+    _Atomic uint32_t tail;
+} __attribute__((aligned(64)));
 
 struct welford_stat {
     uint64_t n; double M1, M2, M3, M4; uint32_t max, min;
-    /* P² online median estimator (Jain & Chlamtac 1985).
-     * 5 markers: q0=min q1=p25 q2=median q3=p75 q4=max.
-     * Memory: 5×double + 5×int = 60 bytes per suite. */
-    double pq[5]; /* marker heights */
-    int    pn[5]; /* marker positions */
+    double pq[5]; int pn[5];
 };
 
 static void w_init(struct welford_stat *w) {
     memset(w, 0, sizeof(*w));
     w->min = 0xFFFFFFFF;
-    /* P²: initial marker positions 1..5 */
     w->pn[0]=1; w->pn[1]=2; w->pn[2]=3; w->pn[3]=4; w->pn[4]=5;
 }
+
 static inline void w_update(struct welford_stat *w, double x) {
-    /* Online Welford Algorithm: Higher-Order Statistical Moments (Kurtosis/Skewness) */
+    if (w->n >= 5 && x == w->M1 && w->min == w->max) {
+        w->n++;
+        return;
+    }
+    if (w->n >= 5 && w->min == w->max && x != w->M1) {
+        w->pn[1] = 1 + w->n / 4;
+        w->pn[2] = 1 + w->n / 2;
+        w->pn[3] = 1 + 3 * w->n / 4;
+        w->pn[4] = w->n;
+    }
     uint64_t n1 = w->n; w->n++;
-    double delta = x - w->M1, delta_n = delta / w->n, delta_n2 = delta_n * delta_n, term1 = delta * delta_n * n1;
+    double inv_n = 1.0 / (double)w->n;
+    double delta = x - w->M1, delta_n = delta * inv_n, delta_n2 = delta_n * delta_n, term1 = delta * delta_n * n1;
     w->M1 += delta_n;
     w->M4 += term1 * delta_n2 * (w->n * w->n - 3 * w->n + 3) + 6 * delta_n2 * w->M2 - 4 * delta_n * w->M3;
     w->M3 += term1 * delta_n * (w->n - 2) - 3 * delta_n * w->M2;
     w->M2 += term1;
-    if (x > w->max) w->max = (uint32_t)x; if (x < w->min) w->min = (uint32_t)x;
-    /* P² (Piecewise-Parabolic) Online Quantile Estimation (Jain & Chlamtac) */
-    uint64_t cnt = w->n; /* already incremented */
+    if (x > (double)w->max) w->max = (uint32_t)x; if (x < (double)w->min) w->min = (uint32_t)x;
+    uint64_t cnt = w->n;
     if (cnt <= 5) {
         w->pq[cnt-1] = x;
-        if (cnt == 5) { /* insertion-sort first 5 observations */
+        if (cnt == 5) {
             for (int i=1; i<5; i++) {
                 double tmp=w->pq[i]; int j=i-1;
                 while (j>=0 && w->pq[j]>tmp) { w->pq[j+1]=w->pq[j]; j--; }
@@ -94,19 +105,16 @@ static inline void w_update(struct welford_stat *w, double x) {
         }
         return;
     }
-    /* find cell k such that pq[k] <= x < pq[k+1] */
     int k;
-    if      (x < w->pq[0]) { w->pq[0]=x; k=0; }
+    if (x < w->pq[0]) { w->pq[0]=x; k=0; }
     else if (x < w->pq[1]) { k=0; }
     else if (x < w->pq[2]) { k=1; }
     else if (x < w->pq[3]) { k=2; }
     else if (x <=w->pq[4]) { k=3; }
-    else                   { w->pq[4]=x; k=3; }
+    else { w->pq[4]=x; k=3; }
     for (int i=k+1; i<5; i++) w->pn[i]++;
-    /* desired positions for quartile markers */
     double np[5]; double fc=(double)cnt;
-    np[0]=1.0; np[1]=1.0+fc/4.0; np[2]=1.0+fc/2.0; np[3]=1.0+3.0*fc/4.0; np[4]=fc;
-    /* adjust middle markers */
+    np[0]=1.0; np[1]=1.0+fc*0.25; np[2]=1.0+fc*0.5; np[3]=1.0+fc*0.75; np[4]=fc;
     for (int i=1; i<=3; i++) {
         double d = np[i] - w->pn[i];
         if ((d>=1.0 && w->pn[i+1]-w->pn[i]>1)||(d<=-1.0 && w->pn[i-1]-w->pn[i]<-1)) {
@@ -115,29 +123,41 @@ static inline void w_update(struct welford_stat *w, double x) {
             double q_par = w->pq[i] + (double)s/denom1 *
                 (((double)(w->pn[i]-w->pn[i-1]+s))*(w->pq[i+1]-w->pq[i])/(double)(w->pn[i+1]-w->pn[i]) +
                  ((double)(w->pn[i+1]-w->pn[i]-s))*(w->pq[i]-w->pq[i-1])/(double)(w->pn[i]-w->pn[i-1]));
-            if (w->pq[i-1] < q_par && q_par < w->pq[i+1])
-                w->pq[i] = q_par;
-            else
-                w->pq[i] += (double)s*(w->pq[i+s]-w->pq[i])/(double)(w->pn[i+s]-w->pn[i]);
+            if (w->pq[i-1] < q_par && q_par < w->pq[i+1]) w->pq[i] = q_par;
+            else w->pq[i] += (double)s*(w->pq[i+s]-w->pq[i])/(double)(w->pn[i+s]-w->pn[i]);
             w->pn[i] += s;
         }
     }
 }
 
-static inline double w_mean(struct welford_stat *w) { return w->M1; }
-static inline double w_std(struct welford_stat *w)  { return (w->n > 1) ? sqrt(w->M2 / (w->n - 1)) : 0; }
+static inline double w_mean(struct welford_stat *w) { return w->n > 0 ? w->M1 : 0; }
 static inline double w_var(struct welford_stat *w)  { return (w->n > 1) ? w->M2 / (w->n - 1) : 0; }
+static inline double w_std(struct welford_stat *w)  { return sqrt(w_var(w)); }
 static inline double w_skew(struct welford_stat *w) { return (w->M2 > 1e-9) ? sqrt(w->n) * w->M3 / pow(w->M2, 1.5) : 0; }
 static inline double w_kurt(struct welford_stat *w) { return (w->M2 > 1e-9) ? (double)w->n * w->M4 / (w->M2 * w->M2) - 3.0 : 0; }
-static inline double w_p2_median(struct welford_stat *w) {
-    if (w->n == 0) return 0.0;
-    if (w->n < 5) { /* sort partial buffer and return middle element */
-        double tmp[5]; int k=(int)w->n;
-        for(int i=0;i<k;i++) tmp[i]=w->pq[i];
-        for(int i=1;i<k;i++){double t=tmp[i];int j=i-1;while(j>=0&&tmp[j]>t){tmp[j+1]=tmp[j];j--;}tmp[j+1]=t;}
-        return tmp[k/2];
+static inline double w_median(struct welford_stat *w) { return (w->n < 5 || w->min == w->max) ? w->M1 : w->pq[2]; }
+
+static double log2_table[257];
+static void init_log2_table() {
+    log2_table[0] = 0;
+    for (int i = 1; i <= 256; i++) {
+        double p = (double)i / 256.0;
+        log2_table[i] = -p * log2(p);
     }
-    return w->pq[2]; /* P² median marker */
+}
+
+static inline double calculate_entropy(const uint8_t *data, size_t len) {
+    if (len == 0) return 0;
+    uint32_t counts[256] = {0};
+    for (size_t i = 0; i < len; i++) counts[data[i]]++;
+    double entropy = 0, inv_len = 1.0 / (double)len;
+    for (int i = 0; i < 256; i++) {
+        if (counts[i] > 0) {
+            double p = (double)counts[i] * inv_len;
+            entropy -= p * log2(p);
+        }
+    }
+    return entropy;
 }
 
 static uint64_t boot_time_ns = 0;
@@ -145,15 +165,14 @@ static void init_boot_time() {
     struct timespec ts, tk;
     clock_gettime(CLOCK_REALTIME, &ts);
     clock_gettime(CLOCK_MONOTONIC, &tk);
-    boot_time_ns = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec - 
-                   ((uint64_t)tk.tv_sec * 1000000000ULL + tk.tv_nsec);
+    boot_time_ns = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec - ((uint64_t)tk.tv_sec * 1000000000ULL + tk.tv_nsec);
 }
 
 struct flow_state {
     flow_id_t key;
     uint8_t ip_ver; uint16_t eth_proto;
     uint8_t traffic_class; uint32_t flow_label;
-    uint8_t src_mac[6]; uint8_t dst_mac[6];
+    uint8_t src_mac[6], dst_mac[6];
     struct welford_stat t_pay, f_pay, b_pay, t_hdr, f_hdr, b_hdr, t_iat, f_iat, b_iat, t_delta, f_delta, b_delta, active_s, idle_s, win_s, ip_id_s, frag_s, ttl_s;
     uint64_t t_hist[HIST_BINS], f_hist[HIST_BINS], b_hist[HIST_BINS];
     uint64_t f_bytes, b_bytes, f_last, b_last, t_last;
@@ -162,38 +181,114 @@ struct flow_state {
     uint64_t f_bulk_bytes, b_bulk_bytes, f_bulk_pkts, b_bulk_pkts, f_bulk_cnt, b_bulk_cnt;
     uint64_t active_start;
     uint32_t last_f_pay, last_b_pay, last_t_pay;
-    uint8_t last_icmp_type; uint8_t last_icmp_code; uint8_t last_ttl;
-    uint16_t last_icmp_id;   
-    uint16_t dns_answer_count;
-    uint16_t dns_qtype;      
-    uint16_t dns_qclass;     
-    uint32_t tunnel_id;      /* VXLAN VNI / GRE Key */
-    uint8_t tunnel_type;     /* 0: None, 1: GRE, 2: VXLAN */
-    uint8_t ntp_mode; uint8_t ntp_stratum;
-    uint8_t snmp_pdu_type; uint8_t ssdp_method;
+    uint8_t last_icmp_type, last_icmp_code, last_ttl;
+    uint16_t last_icmp_id, dns_answer_count, dns_qtype, dns_qclass;
+    uint32_t tunnel_id; uint8_t tunnel_type, ntp_mode, ntp_stratum, snmp_pdu_type, ssdp_method;
     int active;
 };
 
 struct worker_t {
     pthread_t thread; int rb_fd; struct ring_buffer *rb;
     struct flow_state *flow_table;
-    int id; uint64_t processed_events;
-    uint32_t scan_ptr; /* rolling index for idle-timeout scan */
+    int id; uint64_t processed_events; uint32_t scan_ptr;
 };
+
+static volatile bool exiting = false;
+static int allowed_cpus[256];
+static int num_allowed_cpus = 0;
+
+static void init_cpu_topology(void) {
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    if (sched_getaffinity(0, sizeof(cpu_set_t), &set) == 0) {
+        for (int i = 0; i < CPU_SETSIZE && i < 256; i++) {
+            if (CPU_ISSET(i, &set)) {
+                allowed_cpus[num_allowed_cpus++] = i;
+            }
+        }
+    }
+    if (num_allowed_cpus == 0) {
+        int c = sysconf(_SC_NPROCESSORS_ONLN);
+        for (int i = 0; i < c && i < 256; i++) {
+            allowed_cpus[num_allowed_cpus++] = i;
+        }
+    }
+    fprintf(stderr, "[*] Topology: %d CPUs available in active affinity mask\n", num_allowed_cpus);
+}
+
+struct pcap_pkt_ptr {
+    const uint8_t *data;
+    uint32_t len;
+};
+
+struct injector_ctx {
+    int id;
+    int prog_fd;
+    pthread_t thread;
+    struct pcap_pkt_ptr *pkts;
+    uint32_t max_pkts;
+    uint32_t count;
+    uint64_t injected;
+};
+
+static inline uint32_t rss_hash(const uint8_t *data, uint32_t len) {
+    if (len < 34) return 0;
+    uint16_t eth_proto = (data[12] << 8) | data[13];
+    if (eth_proto == 0x0800) {
+        uint32_t src, dst;
+        memcpy(&src, data + 26, 4);
+        memcpy(&dst, data + 30, 4);
+        return src ^ dst;
+    } else if (eth_proto == 0x86DD) {
+        if (len < 54) return 0;
+        uint32_t src = 0, dst = 0;
+        for (int i=0; i<4; i++) {
+            uint32_t s, d;
+            memcpy(&s, data + 22 + i*4, 4);
+            memcpy(&d, data + 38 + i*4, 4);
+            src ^= s;
+            dst ^= d;
+        }
+        return src ^ dst;
+    }
+    return 0;
+}
+
+static void *injector_fn(void *arg) {
+    struct injector_ctx *ctx = arg;
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    int cpu = (num_allowed_cpus > 0) ? allowed_cpus[ctx->id % num_allowed_cpus] : (ctx->id % 256);
+    CPU_SET(cpu, &cpuset);
+    pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+
+    for (uint32_t i = 0; i < ctx->count; i++) {
+        if (exiting) break;
+        struct bpf_test_run_opts opts = {
+            .sz = sizeof(opts),
+            .data_in = ctx->pkts[i].data,
+            .data_size_in = ctx->pkts[i].len,
+        };
+        bpf_prog_test_run_opts(ctx->prog_fd, &opts);
+        ctx->injected++;
+    }
+    return NULL;
+}
 
 static struct worker_t *workers;
 static int num_workers = 1;
-static volatile bool exiting = false;
+static _Atomic uint64_t g_flushed_flows = 0;
+static _Atomic uint64_t g_active_flows = 0;
+static uint64_t g_max_events = 0; // 0 = unlimited
+
 static void sig_handler(int sig) { (void)sig; exiting = true; }
 
-/* [Agnostic Data Export] Unified Lock-Free Pipe (v2.0 SHM Ready) */
-static FILE            *g_out_f  = NULL;
-static struct spsc_queue *g_queues = NULL;   /* one per worker */
-static pthread_t        g_writer_thread;
+static FILE *g_out_f = NULL;
+static struct spsc_queue *g_queues = NULL;
+static pthread_t g_writer_thread;
 
 static void *writer_fn(void *arg) {
-    (void)arg;
-    bool flushed;
+    (void)arg; bool flushed;
     do {
         flushed = false;
         for (int i = 0; i < num_workers; i++) {
@@ -203,93 +298,215 @@ static void *writer_fn(void *arg) {
             while (h != t) {
                 uint32_t idx = h & (SPSC_SLOTS - 1);
                 fwrite(q->data[idx], 1, q->lens[idx], g_out_f);
-                h++;
-                flushed = true;
+                h++; flushed = true;
                 atomic_store_explicit(&q->head, h, memory_order_release);
             }
         }
-        if (!flushed && !exiting) {
-            struct timespec ts = {0, 1000000}; /* 1ms sleep to save CPU if idle */
-            nanosleep(&ts, NULL);
-        }
+        if (!flushed && !exiting) { struct timespec ts = {0, 1000000}; nanosleep(&ts, NULL); }
     } while (!exiting || flushed);
-    /* Final drain */
-    for (int i = 0; i < num_workers; i++) {
-        struct spsc_queue *q = &g_queues[i];
-        uint32_t h = atomic_load_explicit(&q->head, memory_order_relaxed);
-        uint32_t t = atomic_load_explicit(&q->tail, memory_order_acquire);
-        while (h != t) {
-            uint32_t idx = h & (SPSC_SLOTS - 1);
-            fwrite(q->data[idx], 1, q->lens[idx], g_out_f);
-            h++;
-            atomic_store_explicit(&q->head, h, memory_order_release);
-        }
-    }
-    fflush(g_out_f);
     return NULL;
 }
 
-static double calculate_entropy(const uint8_t *data, size_t len) {
-    if (len == 0) return 0;
-    uint64_t counts[256] = {0};
-    for (size_t i = 0; i < len; i++) counts[data[i]]++;
-    double ent = 0;
-    for (int i = 0; i < 256; i++) {
-        if (counts[i] > 0) {
-            double p = (double)counts[i] / len;
-            ent -= p * log2(p);
-        }
-    }
-    return ent;
-}
-
-/* Numerical Estimation: Histogram-based Median via Linear Interpolation */
-static double median_from_hist(const uint64_t *hist, int bins, int step, uint64_t n) {
+static inline double median_from_hist(const uint64_t *hist, uint64_t n) {
     if (n == 0) return 0.0;
-    uint64_t half = (n + 1) / 2, acc = 0;
-    for (int i = 0; i < bins; i++) {
-        if (hist[i] == 0) continue;
-        uint64_t prev = acc;
+    uint64_t half = (n + 1) >> 1, acc = 0;
+    for (int i = 0; i < HIST_BINS; i++) {
         acc += hist[i];
-        if (acc >= half)
-            return (double)(i * step) + (double)step * (double)(half - prev) / (double)hist[i];
+        if (acc >= half) return (double)(i * HIST_STEP);
     }
-    return (double)((bins - 1) * step);
+    return (double)((HIST_BINS - 1) * HIST_STEP);
 }
 
-/* Forward declaration */
-struct worker_t;
-static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t now_ns);
+static inline int fast_itoa(uint64_t val, char *buf) {
+    if (val == 0) { buf[0] = '0'; return 1; }
+    char temp[20]; int i = 0;
+    while (val > 0) { temp[i++] = (val % 10) + '0'; val /= 10; }
+    int len = i;
+    while (i > 0) { buf[len - i] = temp[i - 1]; i--; }
+    return len;
+}
 
-/* Emit one Welford suite (10 stats). Median/Mode hardcoded to 0.00 — legacy fallback. */
-#define FMT_W_EXACT(w_ptr, fp) fprintf((fp), "%.2f,%.2f,%.2f,%.2f,%.2f,0.00,%.2f,%.2f,%.2f,0.00,", \
-    (double)(w_ptr).max, (double)(w_ptr).min, w_mean(&(w_ptr)), w_std(&(w_ptr)), w_var(&(w_ptr)), \
-    w_skew(&(w_ptr)), w_kurt(&(w_ptr)), (w_mean(&(w_ptr))>0?w_std(&(w_ptr))/w_mean(&(w_ptr)):0))
+static inline int fast_mac_to_str(const uint8_t *mac, char *buf) {
+    const char *hex = "0123456789abcdef";
+    for (int i = 0; i < 6; i++) {
+        buf[i*3] = hex[mac[i] >> 4];
+        buf[i*3+1] = hex[mac[i] & 0x0F];
+        if (i < 5) buf[i*3+2] = ':';
+    }
+    return 17;
+}
 
-/* Payload suites: median from histogram (higher resolution than P² for bounded distributions). */
-#define FMT_W_MED(w_ptr, med, fp) fprintf((fp), "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,0.00,", \
-    (double)(w_ptr).max, (double)(w_ptr).min, w_mean(&(w_ptr)), w_std(&(w_ptr)), w_var(&(w_ptr)), \
-    (double)(med), w_skew(&(w_ptr)), w_kurt(&(w_ptr)), (w_mean(&(w_ptr))>0?w_std(&(w_ptr))/w_mean(&(w_ptr)):0))
+static inline int fast_dtoa(double val, char *buf) {
+    if (isnan(val)) { memcpy(buf, "0.0000", 6); return 6; }
+    if (val < 0) { *buf++ = '-'; return 1 + fast_dtoa(-val, buf); }
+    uint64_t integral = (uint64_t)val;
+    int len = fast_itoa(integral, buf);
+    buf[len++] = '.';
+    uint32_t fractional = (uint32_t)((val - (double)integral) * 10000 + 0.5);
+    if (fractional >= 10000) fractional = 9999;
+    
+    // Padding zeros
+    if (fractional < 1000) buf[len++] = '0';
+    if (fractional < 100) buf[len++] = '0';
+    if (fractional < 10) buf[len++] = '0';
+    
+    len += fast_itoa(fractional, buf + len);
+    return len;
+}
 
-/* P² (Piecewise-Parabolic) Suite: Quartile and Moment Convergence Tracking */
-#define FMT_W_P2(w_ptr, fp) fprintf((fp), "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,0.00,", \
-    (double)(w_ptr).max, (double)(w_ptr).min, w_mean(&(w_ptr)), w_std(&(w_ptr)), w_var(&(w_ptr)), \
-    w_p2_median(&(w_ptr)), w_skew(&(w_ptr)), w_kurt(&(w_ptr)), (w_mean(&(w_ptr))>0?w_std(&(w_ptr))/w_mean(&(w_ptr)):0))
+static inline void fast_ip_to_str(char *buf, int *off, uint8_t ver, const uint8_t *addr) {
+    if (ver == 4) {
+        *off += fast_itoa(addr[12], buf + *off); buf[(*off)++] = '.';
+        *off += fast_itoa(addr[13], buf + *off); buf[(*off)++] = '.';
+        *off += fast_itoa(addr[14], buf + *off); buf[(*off)++] = '.';
+        *off += fast_itoa(addr[15], buf + *off);
+    } else {
+        *off += snprintf(buf + *off, 40, "%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
+            addr[0], addr[1], addr[2], addr[3], addr[4], addr[5], addr[6], addr[7],
+            addr[8], addr[9], addr[10], addr[11], addr[12], addr[13], addr[14], addr[15]);
+    }
+}
+
+static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t now_ns) {
+    if (!s->active || s->t_pay.n == 0) return;
+    
+    atomic_fetch_add_explicit(&g_flushed_flows, 1, memory_order_relaxed);
+    atomic_fetch_sub_explicit(&g_active_flows, 1, memory_order_relaxed);
+
+    struct spsc_queue *q = &g_queues[w->id];
+    uint32_t t = atomic_load_explicit(&q->tail, memory_order_relaxed);
+    uint32_t h = atomic_load_explicit(&q->head, memory_order_acquire);
+    if ((t - h) >= SPSC_SLOTS) return;
+    uint32_t idx = t & (SPSC_SLOTS - 1);
+    char *buf = (char *)q->data[idx]; int off = 0;
+    uint64_t norm_now = (now_ns > 1700000000000000000ULL) ? (now_ns - boot_time_ns) : now_ns;
+    uint64_t norm_start = (s->active_start > 1700000000000000000ULL) ? (s->active_start - boot_time_ns) : s->active_start;
+    double ts_val = (double)(norm_now + boot_time_ns) / 1e9, duration = (norm_now > norm_start) ? (double)(norm_now - norm_start) / 1e9 : 0.001;
+
+    /* Part 1: IP & Base Flow (Fast) */
+    fast_ip_to_str(buf, &off, s->ip_ver, s->key.src_ip); buf[off++] = '-';
+    fast_ip_to_str(buf, &off, s->ip_ver, s->key.dst_ip);
+    buf[off++] = '-'; off += fast_itoa(ntohs(s->key.src_port), buf + off);
+    buf[off++] = '-'; off += fast_itoa(ntohs(s->key.dst_port), buf + off);
+    buf[off++] = '-'; off += fast_itoa(s->key.protocol, buf + off); buf[off++] = ',';
+    
+    fast_ip_to_str(buf, &off, s->ip_ver, s->key.src_ip); buf[off++] = ',';
+    fast_ip_to_str(buf, &off, s->ip_ver, s->key.dst_ip); buf[off++] = ',';
+    off += fast_itoa(ntohs(s->key.src_port), buf + off); buf[off++] = ',';
+    off += fast_itoa(ntohs(s->key.dst_port), buf + off); buf[off++] = ',';
+    off += fast_itoa(s->key.protocol, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->ip_ver, buf + off); buf[off++] = ',';
+    off += fast_itoa(ntohs(s->eth_proto), buf + off); buf[off++] = ',';
+    off += fast_itoa(s->traffic_class, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->flow_label, buf + off); buf[off++] = ',';
+    off += fast_mac_to_str(s->src_mac, buf + off); buf[off++] = ',';
+    off += fast_mac_to_str(s->dst_mac, buf + off); buf[off++] = ',';
+    off += fast_dtoa(ts_val, buf + off); buf[off++] = ',';
+    off += fast_dtoa(duration, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->t_pay.n, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->f_pay.n, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->b_pay.n, buf + off); buf[off++] = ',';
+    off += fast_itoa((uint64_t)(s->f_bytes + s->b_bytes), buf + off); buf[off++] = ',';
+    off += fast_itoa((uint64_t)s->f_bytes, buf + off); buf[off++] = ',';
+    off += fast_itoa((uint64_t)s->b_bytes, buf + off); buf[off++] = ',';
+    off += fast_dtoa((s->b_pay.n > 0 ? (double)s->f_pay.n/s->b_pay.n : (double)s->f_pay.n), buf + off); buf[off++] = ',';
+    off += fast_dtoa((s->b_bytes > 0 ? (double)s->f_bytes/s->b_bytes : (double)s->f_bytes), buf + off); buf[off++] = ',';
+
+    /* Part 2: Statistical Metrics (Heavy) */
+    struct welford_stat *st[] = {&s->t_pay,&s->f_pay,&s->b_pay,&s->t_hdr,&s->f_hdr,&s->b_hdr,&s->t_iat,&s->f_iat,&s->b_iat,&s->t_delta,&s->f_delta,&s->b_delta,&s->win_s,&s->ip_id_s,&s->frag_s,&s->ttl_s};
+    for (int i=0; i<16; i++) {
+        double med = (i < 3) ? median_from_hist((i==0?s->t_hist:(i==1?s->f_hist:s->b_hist)), st[i]->n) : w_median(st[i]);
+        off += fast_dtoa((double)st[i]->max, buf + off); buf[off++] = ',';
+        off += fast_dtoa((double)st[i]->min, buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_mean(st[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_std(st[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_var(st[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa(med, buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_skew(st[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_kurt(st[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa((w_mean(st[i])>0?w_std(st[i])/w_mean(st[i]):0), buf + off); buf[off++] = ',';
+        buf[off++] = '0'; buf[off++] = '.'; buf[off++] = '0'; buf[off++] = '0'; buf[off++] = ',';
+    }
+
+    /* Part 3: Rest of Features */
+    off += fast_itoa(s->f_win_init, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->b_win_init, buf + off); buf[off++] = ',';
+    for (int i=0; i<8; i++) {
+        off += fast_itoa(s->flags[i], buf + off); buf[off++] = ',';
+        off += fast_itoa(s->f_flags[i], buf + off); buf[off++] = ',';
+        off += fast_itoa(s->b_flags[i], buf + off); buf[off++] = ',';
+    }
+    off += fast_dtoa(calculate_entropy(s->ip_ver == 4 ? &s->key.src_ip[12] : s->key.src_ip, s->ip_ver == 4 ? 4 : 16), buf + off); buf[off++] = ',';
+    off += fast_itoa(s->last_icmp_type, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->last_icmp_code, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->last_ttl, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->last_icmp_id, buf + off); buf[off++] = ',';
+    struct welford_stat *ext[] = {&s->active_s, &s->idle_s};
+    for (int i=0; i<2; i++) {
+        off += fast_dtoa((double)ext[i]->max, buf + off); buf[off++] = ',';
+        off += fast_dtoa((double)ext[i]->min, buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_mean(ext[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_std(ext[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_var(ext[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_median(ext[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_skew(ext[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa(w_kurt(ext[i]), buf + off); buf[off++] = ',';
+        off += fast_dtoa((w_mean(ext[i])>0?w_std(ext[i])/w_mean(ext[i]):0), buf + off); buf[off++] = ',';
+        buf[off++] = '0'; buf[off++] = '.'; buf[off++] = '0'; buf[off++] = '0'; buf[off++] = ',';
+    }
+    off += fast_dtoa((duration > 0 ? (double)(s->f_bytes+s->b_bytes)/duration : 0), buf + off); buf[off++] = ',';
+    off += fast_dtoa((duration > 0 ? (double)s->f_bytes/duration : 0), buf + off); buf[off++] = ',';
+    off += fast_dtoa((duration > 0 ? (double)s->b_bytes/duration : 0), buf + off); buf[off++] = ',';
+    off += fast_dtoa((duration > 0 ? (double)s->t_pay.n/duration : 0), buf + off); buf[off++] = ',';
+    off += fast_dtoa((duration > 0 ? (double)s->f_pay.n/duration : 0), buf + off); buf[off++] = ',';
+    off += fast_dtoa((duration > 0 ? (double)s->b_pay.n/duration : 0), buf + off); buf[off++] = ',';
+    off += fast_dtoa((s->f_pay.n > 0 ? (double)s->b_pay.n/s->f_pay.n : 0), buf + off); buf[off++] = ',';
+    off += fast_itoa(s->f_bulk_bytes, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->f_bulk_pkts, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->f_bulk_cnt, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->b_bulk_bytes, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->b_bulk_pkts, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->b_bulk_cnt, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->dns_answer_count, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->dns_qtype, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->dns_qclass, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->tunnel_id, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->tunnel_type, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->ntp_mode, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->ntp_stratum, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->snmp_pdu_type, buf + off); buf[off++] = ',';
+    off += fast_itoa(s->ssdp_method, buf + off); buf[off++] = ',';
+    for (int i=0; i<HIST_BINS; i++) { off += fast_itoa(s->t_hist[i], buf + off); buf[off++] = ','; }
+    for (int i=0; i<HIST_BINS; i++) { off += fast_itoa(s->f_hist[i], buf + off); buf[off++] = ','; }
+    for (int i=0; i<HIST_BINS; i++) { off += fast_itoa(s->b_hist[i], buf + off); if (i < HIST_BINS-1) buf[off++] = ','; }
+    buf[off++] = '\n'; q->lens[idx] = off; atomic_store_explicit(&q->tail, t + 1, memory_order_release);
+}
+
+static inline uint32_t fnv1a(const uint8_t *p, size_t len) {
+    uint32_t h = 2166136261u;
+    for (size_t i = 0; i < len; i++) h = (h ^ p[i]) * 16777619u;
+    return h;
+}
 
 static int handle_event(void *ctx, void *data, size_t data_sz) {
     (void)data_sz; struct worker_t *w = ctx; const packet_event_t *e = data;
-    uint32_t h = 0; const uint8_t *p = (const uint8_t *)&e->key;
-    for (size_t i = 0; i < sizeof(flow_id_t); i++) h = h * 31 + p[i];
-    uint32_t idx = h % FLOW_HASH_SIZE, probes = 0;
+    uint32_t h = fnv1a((const uint8_t *)&e->key, sizeof(flow_id_t));
+    uint32_t idx = h & g_flow_table_mask, probes = 0;
     while (w->flow_table[idx].active && memcmp(&w->flow_table[idx].key, &e->key, sizeof(flow_id_t)) != 0) {
-        idx = (idx + 1) % FLOW_HASH_SIZE;
-        if (++probes > 4096) return 0;
+        idx = (idx + 1) & g_flow_table_mask; if (++probes > 4096) return 0;
     }
-
     struct flow_state *s = &w->flow_table[idx];
     if (!s->active) {
-        memset(s, 0, sizeof(*s));
-        s->key = e->key; s->active = 1;
+        if (g_max_events > 0) {
+            uint64_t active = atomic_load_explicit(&g_active_flows, memory_order_relaxed);
+            uint64_t flushed = atomic_load_explicit(&g_flushed_flows, memory_order_relaxed);
+            if (active + flushed >= g_max_events) {
+                exiting = true;
+                return -1;
+            }
+        }
+        atomic_fetch_add_explicit(&g_active_flows, 1, memory_order_relaxed);
+        memset(s, 0, sizeof(*s)); s->key = e->key; s->active = 1;
         s->active_start = e->rec.start_ts ? e->rec.start_ts : e->timestamp_ns;
         s->ip_ver = e->rec.ip_ver; s->eth_proto = e->rec.eth_proto;
         s->traffic_class = e->rec.traffic_class; s->flow_label = e->rec.flow_label;
@@ -299,274 +516,200 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
         w_init(&s->t_iat); w_init(&s->f_iat); w_init(&s->b_iat);
         w_init(&s->t_delta); w_init(&s->f_delta); w_init(&s->b_delta);
         w_init(&s->win_s); w_init(&s->ip_id_s); w_init(&s->frag_s); w_init(&s->ttl_s);
-        w_init(&s->active_s); w_init(&s->idle_s);
-        s->f_win_init = e->rec.window_size;
+        w_init(&s->active_s); w_init(&s->idle_s); s->f_win_init = e->rec.window_size;
     }
-    s->last_icmp_type = e->rec.icmp_type; s->last_icmp_code = e->rec.icmp_code;
-    s->last_icmp_id = e->rec.icmp_id; s->last_ttl = e->rec.ttl;
-
-
+    s->last_icmp_type = e->rec.icmp_type; s->last_icmp_code = e->rec.icmp_code; s->last_icmp_id = e->rec.icmp_id; s->last_ttl = e->rec.ttl;
     if (s->t_last > 0) {
-        double iat = (double)(e->timestamp_ns - s->t_last) / 1e9;
-        w_update(&s->t_iat, iat);
-        if (iat > IDLE_THRESHOLD) {
-            w_update(&s->active_s, (double)(s->t_last - s->active_start) / 1e9);
-            w_update(&s->idle_s, iat);
-            s->active_start = e->timestamp_ns;
-        }
+        double iat = (double)(e->timestamp_ns - s->t_last) / 1e9; w_update(&s->t_iat, iat);
+        if (iat > IDLE_THRESHOLD) { w_update(&s->active_s, (double)(s->t_last - s->active_start) / 1e9); w_update(&s->idle_s, iat); s->active_start = e->timestamp_ns; }
     }
     s->t_last = e->timestamp_ns;
     w_update(&s->t_pay, e->rec.payload_len); w_update(&s->t_hdr, e->rec.header_len); w_update(&s->win_s, e->rec.window_size);
     w_update(&s->ip_id_s, e->rec.ip_id); w_update(&s->frag_s, e->rec.frag_off); w_update(&s->ttl_s, e->rec.ttl);
     if (s->t_pay.n > 1) w_update(&s->t_delta, abs((int)e->rec.payload_len - (int)s->last_t_pay));
-    s->last_t_pay = e->rec.payload_len;
-
-    /* L7 Metadata Update (Agnostic) */
-    s->dns_answer_count = e->rec.dns_answer_count;
-    s->dns_qtype = e->rec.dns_qtype;
-    s->dns_qclass = e->rec.dns_qclass;
-    s->tunnel_id = e->rec.tunnel_id;
-    s->tunnel_type = e->rec.tunnel_type;
-    s->ntp_mode = e->rec.ntp_mode;
-    s->ntp_stratum = e->rec.ntp_stratum;
-    s->snmp_pdu_type = e->rec.snmp_pdu_type;
-    s->ssdp_method = e->rec.ssdp_method;
-
-    uint32_t b_idx = e->rec.payload_len / HIST_STEP;
-    if (b_idx >= HIST_BINS) b_idx = HIST_BINS - 1;
+    s->last_t_pay = e->rec.payload_len; s->dns_answer_count = e->rec.dns_answer_count; s->dns_qtype = e->rec.dns_qtype; s->dns_qclass = e->rec.dns_qclass;
+    s->tunnel_id = e->rec.tunnel_id; s->tunnel_type = e->rec.tunnel_type; s->ntp_mode = e->rec.ntp_mode; s->ntp_stratum = e->rec.ntp_stratum;
+    s->snmp_pdu_type = e->rec.snmp_pdu_type; s->ssdp_method = e->rec.ssdp_method;
+    uint32_t b_idx = e->rec.payload_len / HIST_STEP; if (b_idx >= HIST_BINS) b_idx = HIST_BINS - 1;
     s->t_hist[b_idx]++;
-
     if (e->rec.is_fwd) {
         if (s->f_last > 0) {
-            double iat = (double)(e->timestamp_ns - s->f_last) / 1e9;
-            w_update(&s->f_iat, iat);
+            double iat = (double)(e->timestamp_ns - s->f_last) / 1e9; w_update(&s->f_iat, iat);
             if (iat < BULK_THRESHOLD) { s->f_bulk_bytes += e->rec.payload_len; s->f_bulk_pkts++; }
             else { if (s->f_bulk_pkts >= 3) s->f_bulk_cnt++; s->f_bulk_bytes = e->rec.payload_len; s->f_bulk_pkts = 1; }
         }
         s->f_last = e->timestamp_ns; w_update(&s->f_pay, e->rec.payload_len); w_update(&s->f_hdr, e->rec.header_len);
         if (s->f_pay.n > 1) w_update(&s->f_delta, abs((int)e->rec.payload_len - (int)s->last_f_pay));
-        s->last_f_pay = e->rec.payload_len; s->f_hist[b_idx]++;
-        s->f_bytes += e->rec.payload_len;
+        s->last_f_pay = e->rec.payload_len; s->f_hist[b_idx]++; s->f_bytes += e->rec.payload_len;
         for (int i=0; i<8; i++) if (e->rec.tcp_flags & (1<<i)) { s->flags[i]++; s->f_flags[i]++; }
     } else {
         if (s->b_last > 0) {
-            double iat = (double)(e->timestamp_ns - s->b_last) / 1e9;
-            w_update(&s->b_iat, iat);
+            double iat = (double)(e->timestamp_ns - s->b_last) / 1e9; w_update(&s->b_iat, iat);
             if (iat < BULK_THRESHOLD) { s->b_bulk_bytes += e->rec.payload_len; s->b_bulk_pkts++; }
             else { if (s->b_bulk_pkts >= 3) s->b_bulk_cnt++; s->b_bulk_bytes = e->rec.payload_len; s->b_bulk_pkts = 1; }
         }
         s->b_last = e->timestamp_ns; w_update(&s->b_pay, e->rec.payload_len); w_update(&s->b_hdr, e->rec.header_len);
         if (s->b_pay.n > 1) w_update(&s->b_delta, abs((int)e->rec.payload_len - (int)s->last_b_pay));
-        s->last_b_pay = e->rec.payload_len; s->b_hist[b_idx]++;
-        s->b_bytes += e->rec.payload_len;
+        s->last_b_pay = e->rec.payload_len; s->b_hist[b_idx]++; s->b_bytes += e->rec.payload_len;
         for (int i=0; i<8; i++) if (e->rec.tcp_flags & (1<<i)) { s->flags[i]++; s->b_flags[i]++; }
     }
-
-    /* Instant Flush for high-volume flows or TCP completion */
-    if (s->t_pay.n >= 50 || (e->rec.tcp_flags & 0x05)) {
-        flush_flow_record(w, s, e->timestamp_ns);
-        s->active = 0; /* Reset state after flush */
-    }
-    w->processed_events++;
-    return 0;
-}
-
-static void flush_flow_record(struct worker_t *w, struct flow_state *s, uint64_t now_ns) {
-    if (!s->active || s->t_pay.n == 0) return;
-
-    /* SPSC Slot Allocation (Lock-free) */
-    struct spsc_queue *q = &g_queues[w->id];
-    uint32_t t = atomic_load_explicit(&q->tail, memory_order_relaxed);
-    uint32_t h = atomic_load_explicit(&q->head, memory_order_acquire);
-    if ((t - h) >= SPSC_SLOTS) return; /* Queue full (backpressure) */
-    uint32_t idx = t & (SPSC_SLOTS - 1);
-    
-    /* Serialization into memory buffer using fmemopen to preserve macro compatibility */
-    FILE *mem_f = fmemopen(q->data[idx], MAX_RECORD, "w");
-    if (!mem_f) return;
-
-    uint64_t norm_now = (now_ns > 1700000000000000000ULL) ? (now_ns - boot_time_ns) : now_ns;
-    uint64_t norm_start = (s->active_start > 1700000000000000000ULL) ? (s->active_start - boot_time_ns) : s->active_start;
-    double ts = (double)(norm_now + boot_time_ns) / 1e9;
-    double duration = (norm_now > norm_start) ? (double)(norm_now - norm_start) / 1e9 : 0.001;
-    char sip[64], dip[64];
-    if (s->ip_ver == 4) { inet_ntop(AF_INET, &s->key.src_ip[12], sip, 64); inet_ntop(AF_INET, &s->key.dst_ip[12], dip, 64); }
-    else { inet_ntop(AF_INET6, s->key.src_ip, sip, 64); inet_ntop(AF_INET6, s->key.dst_ip, dip, 64); }
-    char smac[20], dmac[20];
-    sprintf(smac, "%02x:%02x:%02x:%02x:%02x:%02x", s->src_mac[0], s->src_mac[1], s->src_mac[2], s->src_mac[3], s->src_mac[4], s->src_mac[5]);
-    sprintf(dmac, "%02x:%02x:%02x:%02x:%02x:%02x", s->dst_mac[0], s->dst_mac[1], s->dst_mac[2], s->dst_mac[3], s->dst_mac[4], s->dst_mac[5]);
-
-    fprintf(mem_f, "%s-%s-%u-%u-%u,%s,%s,%u,%u,%u,%u,%u,%u,%u,%s,%s,%.6f,%.6f,%lu,%lu,%lu,%lu,%lu,%lu,%.2f,%.2f,",
-            sip, dip, ntohs(s->key.src_port), ntohs(s->key.dst_port), s->key.protocol,
-            sip, dip, ntohs(s->key.src_port), ntohs(s->key.dst_port), s->key.protocol,
-            s->ip_ver, ntohs(s->eth_proto), s->traffic_class, s->flow_label, smac, dmac, ts, duration,
-            s->t_pay.n, s->f_pay.n, s->b_pay.n, s->f_bytes + s->b_bytes, s->f_bytes, s->b_bytes,
-            (s->b_pay.n > 0 ? (double)s->f_pay.n/s->b_pay.n : (double)s->f_pay.n),
-            (s->b_bytes > 0 ? (double)s->f_bytes/s->b_bytes : (double)s->f_bytes));
-
-    FMT_W_MED(s->t_pay, median_from_hist(s->t_hist, HIST_BINS, HIST_STEP, s->t_pay.n), mem_f);
-    FMT_W_MED(s->f_pay, median_from_hist(s->f_hist, HIST_BINS, HIST_STEP, s->f_pay.n), mem_f);
-    FMT_W_MED(s->b_pay, median_from_hist(s->b_hist, HIST_BINS, HIST_STEP, s->b_pay.n), mem_f);
-    FMT_W_P2(s->t_hdr, mem_f); FMT_W_P2(s->f_hdr, mem_f); FMT_W_P2(s->b_hdr, mem_f);
-    FMT_W_P2(s->t_iat, mem_f); FMT_W_P2(s->f_iat, mem_f); FMT_W_P2(s->b_iat, mem_f);
-    FMT_W_P2(s->t_delta, mem_f); FMT_W_P2(s->f_delta, mem_f); FMT_W_P2(s->b_delta, mem_f);
-    FMT_W_P2(s->win_s, mem_f);
-    FMT_W_P2(s->ip_id_s, mem_f); FMT_W_P2(s->frag_s, mem_f); FMT_W_P2(s->ttl_s, mem_f);
-    fprintf(mem_f, "%u,%u,", s->f_win_init, s->b_win_init);
-    for (int i=0; i<8; i++) fprintf(mem_f, "%lu,%lu,%lu,", s->flags[i], s->f_flags[i], s->b_flags[i]);
-    fprintf(mem_f, "0.00,%u,%u,%u,%u,", s->last_icmp_type, s->last_icmp_code, s->last_ttl, s->last_icmp_id);
-    FMT_W_P2(s->active_s, mem_f); FMT_W_P2(s->idle_s, mem_f);
-    fprintf(mem_f, "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,",
-            (duration > 0 ? (s->f_bytes+s->b_bytes)/duration : 0),
-            (duration > 0 ? s->f_bytes/duration : 0),
-            (duration > 0 ? s->b_bytes/duration : 0),
-            (duration > 0 ? s->t_pay.n/duration : 0),
-            (duration > 0 ? s->f_pay.n/duration : 0),
-            (duration > 0 ? s->b_pay.n/duration : 0),
-            (s->f_pay.n > 0 ? (double)s->b_pay.n/s->f_pay.n : 0));
-    fprintf(mem_f, "%lu,%lu,%lu,%lu,%lu,%lu,%u,%u,%u,%u,%u,%u,%u,%u,%u,",
-            s->f_bulk_bytes, s->f_bulk_pkts, s->f_bulk_cnt,
-            s->b_bulk_bytes, s->b_bulk_pkts, s->b_bulk_cnt,
-            s->dns_answer_count, s->dns_qtype, s->dns_qclass,
-            s->tunnel_id, s->tunnel_type, s->ntp_mode, s->ntp_stratum,
-            s->snmp_pdu_type, s->ssdp_method);
-    for (int i=0; i<HIST_BINS; i++) fprintf(mem_f, "%lu,", s->t_hist[i]);
-    for (int i=0; i<HIST_BINS; i++) fprintf(mem_f, "%lu,", s->f_hist[i]);
-    for (int i=0; i<HIST_BINS; i++) fprintf(mem_f, "%lu%s", s->b_hist[i], (i == HIST_BINS - 1 ? "" : ","));
-    fprintf(mem_f, "\n");
-    
-    q->lens[idx] = ftell(mem_f);
-    fclose(mem_f);
-    atomic_store_explicit(&q->tail, t + 1, memory_order_release);
+    if ((e->rec.tcp_flags & 0x05)) { flush_flow_record(w, s, e->timestamp_ns); s->active = 0; }
+    if (exiting) return -1;
+    w->processed_events++; return 0;
 }
 
 void *worker_fn(void *arg) {
-    struct worker_t *w = arg; cpu_set_t cpuset; CPU_ZERO(&cpuset); CPU_SET(w->id % 256, &cpuset);
+    struct worker_t *w = arg; cpu_set_t cpuset; CPU_ZERO(&cpuset);
+    int cpu = (num_allowed_cpus > 0) ? allowed_cpus[w->id % num_allowed_cpus] : (w->id % 256);
+    CPU_SET(cpu, &cpuset);
     pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
-    /* CSV Header is written once by main() into g_out_f before threads start */
-
-    w->flow_table = calloc(FLOW_HASH_SIZE, sizeof(struct flow_state));
+    w->flow_table = calloc(g_flow_table_size, sizeof(struct flow_state));
+    if (!w->flow_table) { fprintf(stderr, "FATAL: worker %d: calloc failed\n", w->id); return NULL; }
     w->rb = ring_buffer__new(w->rb_fd, handle_event, w, NULL);
-
-    /* [Main Execution Loop] Async RingBuffer Polling + Amortized Idle Flow Sweeping */
     const uint64_t timeout_ns = (uint64_t)(IDLE_FLOW_TIMEOUT_S * 1e9);
     while (!exiting) {
-        ring_buffer__poll(w->rb, 100);
-        /* Amortised idle scan: IDLE_SCAN_BATCH entries per poll cycle.
-         * At 100ms poll + 10k batch, full 1M table covered in ~10s.     */
+        int n = ring_buffer__consume(w->rb);
+        if (n > 0) continue;
+        ring_buffer__poll(w->rb, 10);
         struct timespec ts_idle; clock_gettime(CLOCK_REALTIME, &ts_idle);
         uint64_t now_idle = (uint64_t)ts_idle.tv_sec * 1000000000ULL + ts_idle.tv_nsec;
         for (int k = 0; k < IDLE_SCAN_BATCH; k++) {
-            uint32_t idx = w->scan_ptr;
-            w->scan_ptr = (w->scan_ptr + 1) % FLOW_HASH_SIZE;
+            uint32_t idx = w->scan_ptr; w->scan_ptr = (w->scan_ptr + 1) & g_flow_table_mask;
             struct flow_state *fs = &w->flow_table[idx];
-            if (fs->active && fs->t_last > 0 && (now_idle - fs->t_last) > timeout_ns) {
-                flush_flow_record(w, fs, now_idle);
-                fs->active = 0;
-            }
+            if (fs->active && fs->t_last > 0 && (now_idle - fs->t_last) > timeout_ns) { flush_flow_record(w, fs, now_idle); fs->active = 0; }
         }
     }
-
-    /* Terminal flush: dump all remaining active flows on SIGINT */
     struct timespec ts_now; clock_gettime(CLOCK_REALTIME, &ts_now);
     uint64_t now_ns = (uint64_t)ts_now.tv_sec * 1000000000ULL + ts_now.tv_nsec;
-    for (int i = 0; i < FLOW_HASH_SIZE; i++) flush_flow_record(w, &w->flow_table[i], now_ns);
-
-    free(w->flow_table); ring_buffer__free(w->rb);
-    return NULL;
+    for (uint32_t i = 0; i < g_flow_table_size; i++) flush_flow_record(w, &w->flow_table[i], now_ns);
+    free(w->flow_table); ring_buffer__free(w->rb); return NULL;
 }
 
-/* Detach any BPF XDP *link objects* on an interface.
- * bpf_xdp_detach() only removes direct XDP attachments; XDP links (created
- * via bpf_xdp_link_create / ip link set xdp object ...) must be destroyed
- * through the link API. We iterate all system links, match by type+ifindex,
- * and call bpf_link_detach to release them before re-attaching. */
 static void detach_xdp_links_on_iface(int ifindex) {
     __u32 id = 0, next_id;
     while (bpf_link_get_next_id(id, &next_id) == 0) {
-        id = next_id;
-        int lfd = bpf_link_get_fd_by_id(id);
-        if (lfd < 0) continue;
-        struct bpf_link_info info = {};
-        __u32 info_len = sizeof(info);
+        id = next_id; int lfd = bpf_link_get_fd_by_id(id); if (lfd < 0) continue;
+        struct bpf_link_info info = {}; __u32 info_len = sizeof(info);
         if (bpf_obj_get_info_by_fd(lfd, &info, &info_len) == 0) {
-            if (info.type == BPF_LINK_TYPE_XDP &&
-                (int)info.xdp.ifindex == ifindex) {
-                int r = bpf_link_detach(lfd);
-                fprintf(stderr, "[detach] XDP link id=%u on ifindex=%d: %s\n",
-                        id, ifindex, r == 0 ? "OK" : strerror(errno));
-            }
+            if (info.type == BPF_LINK_TYPE_XDP && (int)info.xdp.ifindex == ifindex) bpf_link_detach(lfd);
         }
         close(lfd);
     }
 }
 
+static uint32_t next_pow2(uint32_t v) {
+    v--; v |= v >> 1; v |= v >> 2; v |= v >> 4; v |= v >> 8; v |= v >> 16; v++;
+    return v;
+}
+
+static void auto_tune(int cores) {
+    long pages = sysconf(_SC_PHYS_PAGES);
+    long page_sz = sysconf(_SC_PAGE_SIZE);
+    size_t total_ram = (size_t)pages * page_sz;
+    size_t usable_ram = total_ram * 3 / 4; /* reserve 25% for OS/kernel */
+
+    size_t flow_state_sz = sizeof(struct flow_state);
+    size_t spsc_sz = sizeof(struct spsc_queue);
+
+    /* Determine max workers that fit in RAM */
+    /* Per worker: flow_table + SPSC queue + RingBuffer */
+    size_t min_ft_entries = 4096;
+    size_t per_worker_fixed = spsc_sz + 16 * 1024 * 1024; /* SPSC + min RB 16MB */
+    int max_workers = (int)(usable_ram / (min_ft_entries * flow_state_sz + per_worker_fixed));
+    if (max_workers < 1) max_workers = 1;
+    if (max_workers > cores) max_workers = cores;
+    if (max_workers > 256) max_workers = 256;
+    num_workers = max_workers;
+
+    /* Size flow table to use remaining RAM budget per worker */
+    size_t ram_per_worker = usable_ram / num_workers;
+    size_t ft_budget = ram_per_worker - per_worker_fixed;
+    uint32_t ft_entries = (uint32_t)(ft_budget / flow_state_sz);
+
+    /* Clamp to [4096, 524288] and round down to power of 2 */
+    if (ft_entries > 524288) ft_entries = 524288;
+    if (ft_entries < 4096) ft_entries = 4096;
+    ft_entries = next_pow2(ft_entries) >> 1; /* round down */
+    if (ft_entries < 4096) ft_entries = 4096;
+
+    g_flow_table_size = ft_entries;
+    g_flow_table_mask = ft_entries - 1;
+
+    /* Scale RingBuffer: 16MB base, up to 128MB if RAM allows */
+    size_t rb_budget = ram_per_worker - (size_t)ft_entries * flow_state_sz - spsc_sz;
+    g_rb_size = 16 * 1024 * 1024;
+    if (rb_budget > 128 * 1024 * 1024) g_rb_size = 128 * 1024 * 1024;
+    else if (rb_budget > 64 * 1024 * 1024) g_rb_size = 64 * 1024 * 1024;
+    else if (rb_budget > 32 * 1024 * 1024) g_rb_size = 32 * 1024 * 1024;
+
+    fprintf(stderr, "[auto-tune] RAM: %.1f GB, Cores: %d\n",
+            (double)total_ram / (1024*1024*1024), cores);
+    fprintf(stderr, "[auto-tune] Workers: %d, FlowTable: %u entries (%.0f MB/worker), RB: %zu MB\n",
+            num_workers, g_flow_table_size,
+            (double)g_flow_table_size * flow_state_sz / (1024*1024),
+            g_rb_size / (1024*1024));
+    fprintf(stderr, "[auto-tune] Total RAM footprint: %.1f GB\n",
+            (double)num_workers * ((double)g_flow_table_size * flow_state_sz + spsc_sz + g_rb_size) / (1024*1024*1024));
+}
+
 int main(int argc, char **argv) {
     init_boot_time();
+    init_log2_table();
     if (argc < 2) return 1;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--limit") == 0 && (i + 1) < argc) {
+            g_max_events = strtoull(argv[i+1], NULL, 10);
+            fprintf(stderr, "[*] Event limit set to %lu\n", g_max_events);
+        }
+    }
+
     struct rlimit r = {RLIM_INFINITY, RLIM_INFINITY}; setrlimit(RLIMIT_MEMLOCK, &r);
     signal(SIGINT, sig_handler); signal(SIGTERM, sig_handler);
-    mkdir("worker_telemetry", 0777);
-    int cores = sysconf(_SC_NPROCESSORS_ONLN); num_workers = cores;
+    int cores = sysconf(_SC_NPROCESSORS_ONLN);
+    init_cpu_topology();
+    if (num_allowed_cpus > 0 && num_allowed_cpus < cores) {
+        cores = num_allowed_cpus;
+    }
+    auto_tune(cores);
     workers = calloc(num_workers, sizeof(struct worker_t));
     struct bpf_object *obj = bpf_object__open_file("build/main.bpf.o", NULL);
     if (!obj || bpf_object__load(obj)) { fprintf(stderr, "FATAL: BPF load failed\n"); return 1; }
-
     int outer_fd = bpf_object__find_map_fd_by_name(obj, "pkt_ringbuf_map");
-    if (outer_fd < 0) { fprintf(stderr, "FATAL: pkt_ringbuf_map not found\n"); return 1; }
-
     for (int i = 0; i < num_workers; i++) {
         workers[i].id = i;
-        /* BPF_F_INNER_MAP is NOT in RINGBUF_CREATE_FLAG_MASK on Linux >= 6.x
-         * (kernel/bpf/ringbuf.c), causing bpf_map_create to return EINVAL.
-         * The flag was needed on 5.10–5.14 where bpf_map_update_elem rejected
-         * unlabeled inner maps; kernels >= 5.15 dropped that restriction and
-         * accept any matching-type ringbuf FD in ARRAY_OF_MAPS without the flag. */
-        workers[i].rb_fd = bpf_map_create(BPF_MAP_TYPE_RINGBUF, NULL, 0, 0, 32 * 1024 * 1024, NULL);
-        if (workers[i].rb_fd < 0) { fprintf(stderr, "FATAL: ringbuf create failed for cpu %d: %s\n", i, strerror(errno)); return 1; }
-        int ret = bpf_map_update_elem(outer_fd, &i, &workers[i].rb_fd, BPF_ANY);
-        if (ret) fprintf(stderr, "FATAL: failed to register ringbuf for cpu %d: %s\n", i, strerror(errno));
+        workers[i].rb_fd = bpf_map_create(BPF_MAP_TYPE_RINGBUF, NULL, 0, 0, g_rb_size, NULL);
+        if (workers[i].rb_fd < 0) { fprintf(stderr, "ERR: RB create failed for worker %d\n", i); continue; }
     }
-
-    /* CSV output to stdout for total decoupling and pipeline integration.
-     * This prepares for v2.0 SHM/HugePages transition. */
-    g_out_f = stdout;
-    setvbuf(g_out_f, NULL, _IOFBF, 4 * 1024 * 1024); /* 4MB write buffer */
+    for (int i = 0; i < 256; i++) {
+        int zero_fd = workers[0].rb_fd;
+        for (int j = 0; j < num_workers; j++) {
+            if (num_allowed_cpus > 0 && allowed_cpus[j % num_allowed_cpus] == i) {
+                zero_fd = workers[j].rb_fd;
+                break;
+            }
+        }
+        bpf_map_update_elem(outer_fd, &i, &zero_fd, BPF_ANY);
+    }
+    g_out_f = stdout; setvbuf(g_out_f, NULL, _IOFBF, 4 * 1024 * 1024);
     fprintf(g_out_f, "flow_id,src_ip,dst_ip,src_port,dst_port,protocol,ip_ver,eth_proto,traffic_class,flow_label,src_mac,dst_mac,timestamp,duration,"
                      "PacketsCount,FwdPacketsCount,BwdPacketsCount,TotalBytes,FwdBytes,BwdBytes,FwdBwdPktRatio,FwdBwdByteRatio,");
-    const char *metrics[] = {"Tot_Pay","Fwd_Pay","Bwd_Pay","Tot_Hdr","Fwd_Hdr","Bwd_Hdr",
-                              "Tot_IAT","Fwd_IAT","Bwd_IAT","Tot_DeltaLen","Fwd_DeltaLen","Bwd_DeltaLen","Win",
-                              "IpId","Frag","TTL_Var"};
-    for (int i=0; i<16; i++)
-        fprintf(g_out_f, "%s_Max,%s_Min,%s_Mean,%s_Std,%s_Var,%s_Median,%s_Skew,%s_Kurt,%s_CoV,%s_Mode,",
-                metrics[i],metrics[i],metrics[i],metrics[i],metrics[i],
-                metrics[i],metrics[i],metrics[i],metrics[i],metrics[i]);
+    const char *metrics[] = {"Tot_Pay","Fwd_Pay","Bwd_Pay","Tot_Hdr","Fwd_Hdr","Bwd_Hdr","Tot_IAT","Fwd_IAT","Bwd_IAT","Tot_DeltaLen","Fwd_DeltaLen","Bwd_DeltaLen","Win","IpId","Frag","TTL_Var"};
+    for (int i=0; i<16; i++) fprintf(g_out_f, "%s_Max,%s_Min,%s_Mean,%s_Std,%s_Var,%s_Median,%s_Skew,%s_Kurt,%s_CoV,%s_Mode,", metrics[i],metrics[i],metrics[i],metrics[i],metrics[i],metrics[i],metrics[i],metrics[i],metrics[i],metrics[i]);
     fprintf(g_out_f, "FwdInitWinBytes,BwdInitWinBytes,");
     const char *flags[] = {"FIN","SYN","RST","PSH","ACK","URG","ECE","CWR"};
     for (int i=0; i<8; i++) fprintf(g_out_f, "%s_Cnt,%s_Fwd_Cnt,%s_Bwd_Cnt,", flags[i],flags[i],flags[i]);
     fprintf(g_out_f, "PayloadEntropy,IcmpType,IcmpCode,TTL,IcmpEchoId,");
     const char *ext[] = {"Active","Idle"};
-    for (int i=0; i<2; i++)
-        fprintf(g_out_f, "%s_Max,%s_Min,%s_Mean,%s_Std,%s_Var,%s_Median,%s_Skew,%s_Kurt,%s_CoV,%s_Mode,",
-                ext[i],ext[i],ext[i],ext[i],ext[i],ext[i],ext[i],ext[i],ext[i],ext[i]);
-    fprintf(g_out_f, "BytesRate,FwdBytesRate,BwdBytesRate,PacketsRate,FwdPacketsRate,BwdPacketsRate,DownUpRatio,"
-                     "FwdBulkBytes,FwdBulkPkts,FwdBulkCnt,BwdBulkBytes,BwdBulkPkts,BwdBulkCnt,"
-                     "DNSAnswerCount,DNSQueryType,DNSQueryClass,"
-                     "TunnelId,TunnelType,NTP_Mode,NTP_Stratum,SNMP_PDU_Type,SSDP_Method,");
+    for (int i=0; i<2; i++) fprintf(g_out_f, "%s_Max,%s_Min,%s_Mean,%s_Std,%s_Var,%s_Median,%s_Skew,%s_Kurt,%s_CoV,%s_Mode,", ext[i],ext[i],ext[i],ext[i],ext[i],ext[i],ext[i],ext[i],ext[i],ext[i]);
+    fprintf(g_out_f, "BytesRate,FwdBytesRate,BwdBytesRate,PacketsRate,FwdPacketsRate,BwdPacketsRate,DownUpRatio,FwdBulkBytes,FwdBulkPkts,FwdBulkCnt,BwdBulkBytes,BwdBulkPkts,BwdBulkCnt,DNSAnswerCount,DNSQueryType,DNSQueryClass,TunnelId,TunnelType,NTP_Mode,NTP_Stratum,SNMP_PDU_Type,SSDP_Method,");
     for (int i=0; i<HIST_BINS; i++) fprintf(g_out_f, "Hist_Tot_%d,", i);
     for (int i=0; i<HIST_BINS; i++) fprintf(g_out_f, "Hist_Fwd_%d,", i);
     for (int i=0; i<HIST_BINS; i++) fprintf(g_out_f, "Hist_Bwd_%d%s", i, (i == HIST_BINS-1 ? "" : ","));
-    fprintf(g_out_f, "\n");
-    fflush(g_out_f);
-
+    fprintf(g_out_f, "\n"); fflush(g_out_f);
     g_queues = calloc(num_workers, sizeof(struct spsc_queue));
-    if (!g_queues) { fprintf(stderr, "FATAL: cannot allocate queues\n"); return 1; }
     pthread_create(&g_writer_thread, NULL, writer_fn, NULL);
-
     for (int i = 0; i < num_workers; i++) pthread_create(&workers[i].thread, NULL, worker_fn, &workers[i]);
-
-
-
     struct bpf_program *prog = bpf_object__find_program_by_name(obj, "xdp_prog");
     int prog_fd = bpf_program__fd(prog);
     int force_skb = 0;
@@ -580,53 +723,151 @@ int main(int argc, char **argv) {
     int num_ifaces = 0;
 
     if (pcap_file) {
-        fprintf(stderr, "[*] Lynceus Native Injector (bpf_prog_test_run_opts) on: %s\n", pcap_file);
-        char errbuf[PCAP_ERRBUF_SIZE];
-        pcap_t *pcap = pcap_open_offline(pcap_file, errbuf);
-        if (!pcap) {
-            fprintf(stderr, "FATAL: pcap_open_offline failed: %s\n", errbuf);
+        fprintf(stderr, "[*] Lynceus Native Injector (mmap + bpf_prog_test_run_opts) on: %s\n", pcap_file);
+        
+        int fd = open(pcap_file, O_RDONLY);
+        if (fd < 0) {
+            fprintf(stderr, "FATAL: Could not open pcap file %s\n", pcap_file);
             exiting = true;
-        } else {
-            struct pcap_pkthdr *header;
-            const u_char *data;
-            uint64_t pkts_injected = 0;
-
-            fprintf(stderr, "[*] XDP attached (PCAP Native Mode)\n");
-
-            struct timespec ts_start, ts_end;
-            clock_gettime(CLOCK_MONOTONIC, &ts_start);
-            while (!exiting && pcap_next_ex(pcap, &header, &data) == 1) {
-                struct bpf_test_run_opts opts = {
-                    .sz = sizeof(opts),
-                    .data_in = data,
-                    .data_size_in = header->caplen,
-                };
-                int err = bpf_prog_test_run_opts(prog_fd, &opts);
-                if (err < 0) {
-                    fprintf(stderr, "ERR: test_run failed: %s\n", strerror(errno));
-                    break;
-                }
-                pkts_injected++;
-            }
-            clock_gettime(CLOCK_MONOTONIC, &ts_end);
-            double duration = (ts_end.tv_sec - ts_start.tv_sec) + (ts_end.tv_nsec - ts_start.tv_nsec) / 1e9;
-            double pps = (duration > 0) ? ((double)pkts_injected / duration) : 0;
-            pcap_close(pcap);
-            fprintf(stderr, "[*] ---------------------------------------------------------\n");
-            fprintf(stderr, "[*] Benchmark: %lu packets injected natively.\n", pkts_injected);
-            fprintf(stderr, "[*] Duration : %.3f sec\n", duration);
-            fprintf(stderr, "[*] Speed    : %.2f PPS\n", pps);
-            fprintf(stderr, "[*] ---------------------------------------------------------\n");
-            sleep(1); // Wait for ringbuffer drain
-            exiting = true; // Signal workers to flush and exit
+            goto skip_pcap;
         }
+        struct stat st;
+        fstat(fd, &st);
+        uint8_t *map = mmap(NULL, st.st_size, PROT_READ, MAP_SHARED, fd, 0);
+        if (map == MAP_FAILED) {
+            fprintf(stderr, "FATAL: mmap failed\n");
+            exiting = true;
+            close(fd);
+            goto skip_pcap;
+        }
+        
+        struct injector_ctx *injectors = calloc(num_workers, sizeof(struct injector_ctx));
+        uint32_t init_capacity = 10000000 / num_workers + 1000000;
+        for (int i = 0; i < num_workers; i++) {
+            injectors[i].id = i;
+            injectors[i].prog_fd = prog_fd;
+            injectors[i].max_pkts = init_capacity;
+            injectors[i].pkts = malloc(init_capacity * sizeof(struct pcap_pkt_ptr));
+            injectors[i].count = 0;
+            injectors[i].injected = 0;
+        }
+
+        fprintf(stderr, "[*] Pre-parsing PCAP into memory arrays...\n");
+        uint64_t total_parsed = 0;
+        
+        uint32_t magic;
+        if (st.st_size >= 24) {
+            memcpy(&magic, map, 4);
+        } else {
+            magic = 0;
+        }
+
+        if (magic == 0xa1b2c3d4 || magic == 0xd4c3b2a1) {
+            // Classic PCAP
+            uint8_t *ptr = map + 24; 
+            while (ptr + 16 <= map + st.st_size) {
+                uint32_t incl_len;
+                memcpy(&incl_len, ptr + 8, 4);
+                ptr += 16;
+                
+                if (ptr + incl_len > map + st.st_size) break;
+                
+                uint32_t hash = rss_hash(ptr, incl_len);
+                int wid = hash % num_workers;
+                struct injector_ctx *ictx = &injectors[wid];
+                
+                if (ictx->count >= ictx->max_pkts) {
+                    ictx->max_pkts *= 2;
+                    ictx->pkts = realloc(ictx->pkts, ictx->max_pkts * sizeof(struct pcap_pkt_ptr));
+                }
+                ictx->pkts[ictx->count].data = ptr;
+                ictx->pkts[ictx->count].len = incl_len;
+                ictx->count++;
+                
+                ptr += incl_len;
+                total_parsed++;
+                if (g_max_events > 0 && total_parsed >= g_max_events) break;
+            }
+        } else if (magic == 0x0a0d0d0a) {
+            // PCAPNG
+            uint8_t *ptr = map;
+            while (ptr + 8 <= map + st.st_size) {
+                uint32_t block_type, block_len;
+                memcpy(&block_type, ptr, 4);
+                memcpy(&block_len, ptr + 4, 4);
+                
+                if (block_len < 12 || ptr + block_len > map + st.st_size) break;
+                
+                if (block_type == 6) { // Enhanced Packet Block
+                    uint32_t caplen;
+                    memcpy(&caplen, ptr + 20, 4);
+                    if (caplen > 0 && caplen <= block_len - 32) {
+                        uint8_t *pkt_data = ptr + 28;
+                        uint32_t hash = rss_hash(pkt_data, caplen);
+                        int wid = hash % num_workers;
+                        struct injector_ctx *ictx = &injectors[wid];
+                        
+                        if (ictx->count >= ictx->max_pkts) {
+                            ictx->max_pkts *= 2;
+                            ictx->pkts = realloc(ictx->pkts, ictx->max_pkts * sizeof(struct pcap_pkt_ptr));
+                        }
+                        ictx->pkts[ictx->count].data = pkt_data;
+                        ictx->pkts[ictx->count].len = caplen;
+                        ictx->count++;
+                        total_parsed++;
+                    }
+                }
+                ptr += block_len;
+                if (g_max_events > 0 && total_parsed >= g_max_events) break;
+            }
+        } else {
+            fprintf(stderr, "FATAL: Unknown PCAP magic: 0x%08x\n", magic);
+            exiting = true;
+            munmap(map, st.st_size);
+            close(fd);
+            goto skip_pcap;
+        }
+        
+        fprintf(stderr, "[*] XDP attached (PCAP Native Mode)\n");
+        fprintf(stderr, "[*] Pre-parsing complete. Launching %d parallel injectors...\n", num_workers);
+        struct timespec ts_start, ts_end;
+        clock_gettime(CLOCK_MONOTONIC, &ts_start);
+        
+        for (int i = 0; i < num_workers; i++) {
+            pthread_create(&injectors[i].thread, NULL, injector_fn, &injectors[i]);
+        }
+        
+        uint64_t pkts_injected = 0;
+        for (int i = 0; i < num_workers; i++) {
+            pthread_join(injectors[i].thread, NULL);
+            pkts_injected += injectors[i].injected;
+            free(injectors[i].pkts);
+        }
+        free(injectors);
+        munmap(map, st.st_size);
+        close(fd);
+        
+        clock_gettime(CLOCK_MONOTONIC, &ts_end);
+        double duration = (ts_end.tv_sec - ts_start.tv_sec) + (ts_end.tv_nsec - ts_start.tv_nsec) / 1e9;
+        double pps = (duration > 0) ? ((double)pkts_injected / duration) : 0;
+        
+        fprintf(stderr, "[*] ---------------------------------------------------------\n");
+        fprintf(stderr, "[*] Benchmark: %lu packets injected natively in %d cores.\n", pkts_injected, num_workers);
+        fprintf(stderr, "[*] Duration : %.3f sec\n", duration);
+        fprintf(stderr, "[*] Speed    : %.2f PPS\n", pps);
+        fprintf(stderr, "[*] ---------------------------------------------------------\n");
+        sleep(2); // Wait for ringbuffer drain
+        exiting = true; // Signal workers to flush and exit
+        
+skip_pcap:
+        ; // label must be followed by statement
     } else {
         ifindexes = calloc(argc, sizeof(int));
         for (int i = 1; i < argc; i++) {
             if (strcmp(argv[i], "skb") == 0 || strcmp(argv[i], "--limit") == 0 || strcmp(argv[i-1], "--limit") == 0) continue;
             int ifindex = if_nametoindex(argv[i]);
             if (ifindex == 0) continue;
-
+            
             detach_xdp_links_on_iface(ifindex);
             bpf_xdp_detach(ifindex, XDP_FLAGS_DRV_MODE, NULL);
             bpf_xdp_detach(ifindex, XDP_FLAGS_SKB_MODE, NULL);
@@ -639,11 +880,11 @@ int main(int argc, char **argv) {
                     continue;
                 }
             }
-
+            
             fprintf(stderr, "[*] XDP attached on %s: %s (%s)\n", argv[i],
                     (flags & XDP_FLAGS_DRV_MODE) ? "DRV_MODE" : "SKB_MODE",
                     (flags & XDP_FLAGS_DRV_MODE) ? "native" : "generic");
-
+            
             ifindexes[num_ifaces++] = ifindex;
         }
     }
@@ -653,14 +894,25 @@ int main(int argc, char **argv) {
         fprintf(stderr, "[*] Worker %d: %lu events processed\n", i, workers[i].processed_events);
     }
     pthread_join(g_writer_thread, NULL);
-
     if (ifindexes) {
         for (int i = 0; i < num_ifaces; i++) {
             bpf_xdp_detach(ifindexes[i], XDP_FLAGS_DRV_MODE, NULL);
             bpf_xdp_detach(ifindexes[i], XDP_FLAGS_SKB_MODE, NULL);
         }
     }
-
-    /* Final flush and cleanup. We don't fclose(stdout). */
+    int stats_fd = bpf_object__find_map_fd_by_name(obj, "global_stats");
+    __u32 stats_key = 0; uint64_t *cpu_stats = calloc(cores, sizeof(uint64_t));
+    uint64_t total_ingress = 0, total_drops = 0;
+    if (bpf_map_lookup_elem(stats_fd, &stats_key, cpu_stats) == 0) {
+        for (int i = 0; i < cores; i++) total_ingress += cpu_stats[i];
+    }
+    __u32 drop_key = 1;
+    if (bpf_map_lookup_elem(stats_fd, &drop_key, cpu_stats) == 0) {
+        for (int i = 0; i < cores; i++) total_drops += cpu_stats[i];
+    }
+    double loss_pct = (total_ingress > 0) ? ((double)total_drops / (double)total_ingress) * 100.0 : 0.0;
+    fprintf(stderr, "[*] Kernel-Space Total Ingress: %lu packets\n", total_ingress);
+    fprintf(stderr, "[*] Telemetry Drops (RingBuf Overflows): %lu events (%.4f%% loss)\n", total_drops, loss_pct);
+    free(cpu_stats);
     fflush(g_out_f); free(ifindexes); bpf_object__close(obj); return 0;
 }
