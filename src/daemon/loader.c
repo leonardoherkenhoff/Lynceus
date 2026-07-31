@@ -887,11 +887,17 @@ skip_pcap:
     }
     int stats_fd = bpf_object__find_map_fd_by_name(obj, "global_stats");
     __u32 stats_key = 0; uint64_t *cpu_stats = calloc(cores, sizeof(uint64_t));
-    uint64_t total_ingress = 0;
+    uint64_t total_ingress = 0, total_drops = 0;
     if (bpf_map_lookup_elem(stats_fd, &stats_key, cpu_stats) == 0) {
         for (int i = 0; i < cores; i++) total_ingress += cpu_stats[i];
     }
+    __u32 drop_key = 1;
+    if (bpf_map_lookup_elem(stats_fd, &drop_key, cpu_stats) == 0) {
+        for (int i = 0; i < cores; i++) total_drops += cpu_stats[i];
+    }
+    double loss_pct = (total_ingress > 0) ? ((double)total_drops / (double)total_ingress) * 100.0 : 0.0;
     fprintf(stderr, "[*] Kernel-Space Total Ingress: %lu packets\n", total_ingress);
+    fprintf(stderr, "[*] Telemetry Drops (RingBuf Overflows): %lu events (%.4f%% loss)\n", total_drops, loss_pct);
     free(cpu_stats);
     fflush(g_out_f); free(ifindexes); bpf_object__close(obj); return 0;
 }

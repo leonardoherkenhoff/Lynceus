@@ -68,6 +68,18 @@ def run_offline_benchmark():
     except Exception as e:
         print(f"[-] Lynceus failed: {e}")
 
+def get_rx_stats(iface="rustiflow-t0"):
+    try:
+        res = subprocess.check_output(f"ip -s -s link show {iface}", shell=True).decode()
+        lines = res.strip().split("\n")
+        for idx, line in enumerate(lines):
+            if "RX:" in line and "packets" in line and "dropped" in line:
+                parts = lines[idx+1].split()
+                return int(parts[1]), int(parts[3])
+    except Exception as e:
+        pass
+    return 0, 0
+
 def run_pktgen_benchmark(target_mac):
     print("\n" + "="*50)
     print("=== SCENARIO 2: NETWORK PKTGEN UPPER BOUND ===")
@@ -75,7 +87,6 @@ def run_pktgen_benchmark(target_mac):
 
     pktgen_script = f"""
 modprobe pktgen
-# Remove all devices
 for f in /proc/net/pktgen/kpktgend_*; do
     echo "rem_device_all" > $f 2>/dev/null
 done
@@ -86,6 +97,9 @@ for i in $(seq 0 47); do
     if [ ! -f "$dev" ]; then
         dev="/proc/net/pktgen/rustiflow-p0"
     fi
+    echo "flag QUEUE_MAP_CPU" > $dev 2>/dev/null
+    echo "queue_map_min $i" > $dev 2>/dev/null
+    echo "queue_map_max $i" > $dev 2>/dev/null
     echo "count 5000000" > $dev 2>/dev/null
     echo "clone_skb 1000" > $dev 2>/dev/null
     echo "pkt_size 60" > $dev 2>/dev/null
@@ -113,18 +127,40 @@ done
             print(f"    [PktGen] Error reading stats: {e}")
 
     print("\n[*] Running RustiFlow Network Upper Bound...")
+    pkts0, drops0 = get_rx_stats("rustiflow-t0")
     rf_proc = subprocess.Popen(f"sudo {RUSTIFLOW_BIN} -f rustiflow -o print realtime rustiflow-t0 > /dev/null", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(2)
     run_pktgen()
-    subprocess.run("sudo pkill rustiflow", shell=True)
+    subprocess.run("sudo pkill -INT rustiflow", shell=True)
     time.sleep(2)
+    pkts1, drops1 = get_rx_stats("rustiflow-t0")
+    tot_pkts = pkts1 - pkts0
+    tot_drops = drops1 - drops0
+    drop_pct = (tot_drops / (tot_pkts + tot_drops)) * 100.0 if (tot_pkts + tot_drops) > 0 else 0.0
+    print(f"    [Interface Stats] RX Packets Delivered: {tot_pkts:,} | Kernel Interface Drops: {tot_drops:,} ({drop_pct:.4f}% loss)")
 
     print("\n[*] Running Lynceus Network Upper Bound...")
-    lyn_proc = subprocess.Popen(f"cd /home/leonardo.herkenhoff/Lynceus && sudo {LYNCEUS_BIN} rustiflow-t0 > /dev/null", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run("sudo ip netns exec rustiflow-peer ip link set rustiflow-p0 xdp object /home/leonardo.herkenhoff/Lynceus/build/main.bpf.o section xdp 2>/dev/null", shell=True)
+    pkts0, drops0 = get_rx_stats("rustiflow-t0")
+    if os.path.exists("/tmp/lyn_net.log"):
+        os.remove("/tmp/lyn_net.log")
+    lyn_proc = subprocess.Popen(f"cd /home/leonardo.herkenhoff/Lynceus && sudo {LYNCEUS_BIN} rustiflow-t0 > /dev/null 2> /tmp/lyn_net.log", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(2)
     run_pktgen()
-    subprocess.run("sudo pkill loader", shell=True)
+    subprocess.run("sudo pkill -INT loader", shell=True)
     time.sleep(2)
+    pkts1, drops1 = get_rx_stats("rustiflow-t0")
+    tot_pkts = pkts1 - pkts0
+    tot_drops = drops1 - drops0
+    drop_pct = (tot_drops / (tot_pkts + tot_drops)) * 100.0 if (tot_pkts + tot_drops) > 0 else 0.0
+    print(f"    [Interface Stats] RX Packets Delivered: {tot_pkts:,} | Kernel Interface Drops: {tot_drops:,} ({drop_pct:.4f}% loss)")
+    if os.path.exists("/tmp/lyn_net.log"):
+        with open("/tmp/lyn_net.log", "r") as logf:
+            for l in logf:
+                if any(x in l for x in ["Kernel-Space", "Telemetry Drops", "Speed:", "Topology:"]):
+                    print("    [Lynceus Engine] " + l.strip())
+    subprocess.run("sudo ip netns exec rustiflow-peer ip link set rustiflow-p0 xdp off 2>/dev/null", shell=True)
+    time.sleep(1)
 
 
 if __name__ == "__main__":

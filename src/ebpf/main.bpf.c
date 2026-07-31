@@ -28,7 +28,7 @@ struct {
 
 struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-    __uint(max_entries, 1);
+    __uint(max_entries, 2);
     __type(key, __u32);
     __type(value, __u64);
 } global_stats SEC(".maps");
@@ -294,6 +294,10 @@ int xdp_prog(struct xdp_md *ctx) {
                 event->rec = new_rec;
                 event->timestamp_ns = bpf_ktime_get_ns();
                 bpf_ringbuf_submit(event, 0);
+            } else {
+                __u32 drop_key = 1;
+                __u64 *drop_pkts = bpf_map_lookup_elem(&global_stats, &drop_key);
+                if (drop_pkts) __sync_fetch_and_add(drop_pkts, 1);
             }
         }
     } else {
@@ -305,6 +309,10 @@ int xdp_prog(struct xdp_md *ctx) {
                 event->rec = new_rec; 
                 event->timestamp_ns = bpf_ktime_get_ns();
                 bpf_ringbuf_submit(event, 0);
+            } else {
+                __u32 drop_key = 1;
+                __u64 *drop_pkts = bpf_map_lookup_elem(&global_stats, &drop_key);
+                if (drop_pkts) __sync_fetch_and_add(drop_pkts, 1);
             }
         }
         rec->pkts_count++;
