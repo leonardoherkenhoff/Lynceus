@@ -23,12 +23,20 @@ class Benchmark:
         self.target = target
         self.output_file = output_file
         self.results = []
+        self.ensure_network_setup()
         
         # Ensure output file has headers if new
         if not os.path.exists(self.output_file):
             with open(self.output_file, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(['Timestamp', 'Scenario', 'Target', 'Duration', 'Achieved_Bitrate', 'Dropped_Packets', 'Notes'])
+
+    def ensure_network_setup(self):
+        print("Checking and enforcing testbed VETH IP configuration...")
+        subprocess.run(f"sudo ip addr add {IPERF_SERVER_IP}/30 dev {VETH_INTF} 2>/dev/null", shell=True)
+        subprocess.run(f"sudo ip netns exec rustiflow-peer ip addr add {IPERF_CLIENT_IP}/30 dev {PEER_INTF} 2>/dev/null", shell=True)
+        subprocess.run(f"sudo ip link set {VETH_INTF} up", shell=True)
+        subprocess.run(f"sudo ip netns exec rustiflow-peer ip link set {PEER_INTF} up", shell=True)
 
     def log_result(self, scenario, duration, bitrate, dropped, notes=""):
         with open(self.output_file, 'a', newline='') as f:
