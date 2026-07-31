@@ -61,6 +61,13 @@ class Benchmark:
 
     def run_iperf_scenario(self, scenario_id, duration, bitrate, length, protocol="-u"):
         print(f"--- Running {scenario_id} ---")
+        # Ensure no stale servers
+        subprocess.run("sudo pkill iperf3", shell=True, stderr=subprocess.DEVNULL)
+        # Start server
+        server_cmd = f"sudo ip netns exec rustiflow-peer taskset -c {GEN_CPUS} iperf3 -s -B {IPERF_SERVER_IP} -p 5201 --daemon"
+        subprocess.run(server_cmd, shell=True)
+        time.sleep(1)
+        
         extractor_proc = self.start_extractor(scenario_id)
         time.sleep(2) # Give extractor time to hook
 
@@ -74,6 +81,7 @@ class Benchmark:
             print("iperf3 failed:", e)
 
         drops = self.stop_extractor(extractor_proc)
+        subprocess.run("sudo pkill iperf3", shell=True, stderr=subprocess.DEVNULL)
         self.log_result(scenario_id, f"{duration}s", achieved_bitrate, drops)
 
     def parse_iperf_output(self, output):
