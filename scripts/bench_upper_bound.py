@@ -128,7 +128,9 @@ done
 
     print("\n[*] Running RustiFlow Network Upper Bound...")
     pkts0, drops0 = get_rx_stats("rustiflow-t0")
-    rf_proc = subprocess.Popen(f"sudo {RUSTIFLOW_BIN} -f rustiflow -o print realtime rustiflow-t0 > /dev/null", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if os.path.exists("/tmp/rf_net.log"):
+        os.remove("/tmp/rf_net.log")
+    rf_proc = subprocess.Popen(f"sudo RUST_LOG=info {RUSTIFLOW_BIN} -f rustiflow -o print realtime rustiflow-t0 > /dev/null 2> /tmp/rf_net.log", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(2)
     run_pktgen()
     subprocess.run("sudo pkill -INT rustiflow", shell=True)
@@ -138,9 +140,26 @@ done
     tot_drops = drops1 - drops0
     drop_pct = (tot_drops / (tot_pkts + tot_drops)) * 100.0 if (tot_pkts + tot_drops) > 0 else 0.0
     print(f"    [Interface Stats] RX Packets Delivered: {tot_pkts:,} | Kernel Interface Drops: {tot_drops:,} ({drop_pct:.4f}% loss)")
+    if os.path.exists("/tmp/rf_net.log"):
+        rf_matched, rf_submitted, rf_dropped = 0, 0, 0
+        with open("/tmp/rf_net.log", "r") as logf:
+            for l in logf:
+                if "eBPF counters" in l and "matched_packets=" in l:
+                    print("    [RustiFlow Engine] " + l.strip().split("INFO")[-1].strip())
+                    try:
+                        m = re.search(r"matched_packets=(\d+), submitted_events=(\d+), dropped_packets=(\d+)", l)
+                        if m:
+                            rf_matched += int(m.group(1))
+                            rf_submitted += int(m.group(2))
+                            rf_dropped += int(m.group(3))
+                    except: pass
+                elif "Total dropped packets before exit:" in l:
+                    print("    [RustiFlow Engine] " + l.strip().split("INFO")[-1].strip())
+        tot_rf = rf_matched + rf_dropped
+        rf_loss_pct = (rf_dropped / tot_rf) * 100.0 if tot_rf > 0 else 0.0
+        print(f"    [RustiFlow Telemetry] Matched: {rf_matched:,} | Submitted: {rf_submitted:,} | Dropped: {rf_dropped:,} ({rf_loss_pct:.4f}% loss)")
 
     print("\n[*] Running Lynceus Network Upper Bound...")
-    subprocess.run("sudo ip netns exec rustiflow-peer ip link set rustiflow-p0 xdp object /home/leonardo.herkenhoff/Lynceus/build/main.bpf.o section xdp 2>/dev/null", shell=True)
     pkts0, drops0 = get_rx_stats("rustiflow-t0")
     if os.path.exists("/tmp/lyn_net.log"):
         os.remove("/tmp/lyn_net.log")
@@ -159,7 +178,6 @@ done
             for l in logf:
                 if any(x in l for x in ["Kernel-Space", "Telemetry Drops", "Speed:", "Topology:"]):
                     print("    [Lynceus Engine] " + l.strip())
-    subprocess.run("sudo ip netns exec rustiflow-peer ip link set rustiflow-p0 xdp off 2>/dev/null", shell=True)
     time.sleep(1)
 
 
