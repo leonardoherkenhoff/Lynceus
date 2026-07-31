@@ -102,7 +102,7 @@ class Benchmark:
         extractor_proc = self.start_extractor("B8")
         time.sleep(2)
         
-        cmd = f"sudo ip netns exec rustiflow-peer taskset -c {GEN_CPUS} tcpreplay --intf1={PEER_INTF} --topspeed --loop=1 {pcap_file}"
+        cmd = f"sudo ip netns exec rustiflow-peer taskset -c {GEN_CPUS} tcpreplay --intf1={PEER_INTF} --topspeed -W --loop=1 {pcap_file}"
         try:
             subprocess.run(cmd, shell=True, check=True)
             achieved = "Topspeed Replay"
