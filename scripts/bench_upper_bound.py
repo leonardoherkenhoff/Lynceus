@@ -155,8 +155,7 @@ done
                     except: pass
                 elif "Total dropped packets before exit:" in l:
                     print("    [RustiFlow Engine] " + l.strip().split("INFO")[-1].strip())
-        tot_rf = rf_matched + rf_dropped
-        rf_loss_pct = (rf_dropped / tot_rf) * 100.0 if tot_rf > 0 else 0.0
+        rf_loss_pct = (rf_dropped / rf_matched) * 100.0 if rf_matched > 0 else 0.0
         print(f"    [RustiFlow Telemetry] Matched: {rf_matched:,} | Submitted: {rf_submitted:,} | Dropped: {rf_dropped:,} ({rf_loss_pct:.4f}% loss)")
 
     print("\n[*] Running Lynceus Network Upper Bound...")
