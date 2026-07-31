@@ -16,7 +16,7 @@ def setup_veth():
     subprocess.run("sudo ip netns del rustiflow-peer", shell=True, stderr=subprocess.DEVNULL)
     
     subprocess.run("sudo ip netns add rustiflow-peer", shell=True)
-    subprocess.run("sudo ip link add rustiflow-t0 numtxqueues 16 numrxqueues 16 type veth peer name rustiflow-p0 numtxqueues 16 numrxqueues 16 netns rustiflow-peer", shell=True)
+    subprocess.run("sudo ip link add rustiflow-t0 numtxqueues 48 numrxqueues 48 type veth peer name rustiflow-p0 numtxqueues 48 numrxqueues 48 netns rustiflow-peer", shell=True)
     subprocess.run("sudo ip link set rustiflow-t0 up", shell=True)
     subprocess.run("sudo ip netns exec rustiflow-peer ip link set lo up", shell=True)
     subprocess.run("sudo ip netns exec rustiflow-peer ip link set rustiflow-p0 up", shell=True)
@@ -37,7 +37,7 @@ def run_offline_benchmark():
 
     # 1. RustiFlow
     print("\n[*] Running RustiFlow Offline PCAP...")
-    cmd = f"sudo taskset -c 8-23 {RUSTIFLOW_BIN} -f rustiflow -o print pcap {PCAP_PATH} > /dev/null"
+    cmd = f"sudo {RUSTIFLOW_BIN} -f rustiflow -o print pcap {PCAP_PATH} > /dev/null"
     t0 = time.time()
     try:
         res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
@@ -52,7 +52,7 @@ def run_offline_benchmark():
 
     # 2. Lynceus
     print("\n[*] Running Lynceus Offline PCAP...")
-    cmd = f"cd /home/leonardo.herkenhoff/Lynceus && sudo taskset -c 8-23 {LYNCEUS_BIN} --pcap {PCAP_PATH} > /dev/null"
+    cmd = f"cd /home/leonardo.herkenhoff/Lynceus && sudo {LYNCEUS_BIN} --pcap {PCAP_PATH} > /dev/null"
     t0 = time.time()
     try:
         res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
@@ -80,14 +80,13 @@ for f in /proc/net/pktgen/kpktgend_*; do
     echo "rem_device_all" > $f 2>/dev/null
 done
 
-for i in $(seq 0 15); do
-    core=$((8 + i))
-    echo "add_device rustiflow-p0@$i" > /proc/net/pktgen/kpktgend_$core 2>/dev/null
+for i in $(seq 0 47); do
+    echo "add_device rustiflow-p0@$i" > /proc/net/pktgen/kpktgend_$i 2>/dev/null
     dev="/proc/net/pktgen/rustiflow-p0@$i"
     if [ ! -f "$dev" ]; then
         dev="/proc/net/pktgen/rustiflow-p0"
     fi
-    echo "count 10000000" > $dev 2>/dev/null
+    echo "count 5000000" > $dev 2>/dev/null
     echo "clone_skb 1000" > $dev 2>/dev/null
     echo "pkt_size 60" > $dev 2>/dev/null
     echo "delay 0" > $dev 2>/dev/null
@@ -114,13 +113,14 @@ done
             print(f"    [PktGen] Error reading stats: {e}")
 
     print("\n[*] Running RustiFlow Network Upper Bound...")
+    rf_proc = subprocess.Popen(f"sudo {RUSTIFLOW_BIN} -f rustiflow -o print realtime rustiflow-t0 > /dev/null", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(2)
     run_pktgen()
     subprocess.run("sudo pkill rustiflow", shell=True)
     time.sleep(2)
 
     print("\n[*] Running Lynceus Network Upper Bound...")
-    lyn_proc = subprocess.Popen(f"cd /home/leonardo.herkenhoff/Lynceus && sudo taskset -c 8-23 {LYNCEUS_BIN} rustiflow-t0 > /dev/null", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    lyn_proc = subprocess.Popen(f"cd /home/leonardo.herkenhoff/Lynceus && sudo {LYNCEUS_BIN} rustiflow-t0 > /dev/null", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(2)
     run_pktgen()
     subprocess.run("sudo pkill loader", shell=True)
