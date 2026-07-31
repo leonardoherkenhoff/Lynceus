@@ -182,6 +182,8 @@ struct worker_t {
     int id; uint64_t processed_events; uint32_t scan_ptr;
 };
 
+static volatile bool exiting = false;
+
 struct pcap_pkt_ptr {
     const uint8_t *data;
     uint32_t len;
@@ -242,7 +244,6 @@ static void *injector_fn(void *arg) {
 
 static struct worker_t *workers;
 static int num_workers = 1;
-static volatile bool exiting = false;
 static _Atomic uint64_t g_flushed_flows = 0;
 static _Atomic uint64_t g_active_flows = 0;
 static uint64_t g_max_events = 0; // 0 = unlimited
