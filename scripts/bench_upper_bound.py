@@ -37,14 +37,12 @@ def run_offline_benchmark():
 
     # 1. RustiFlow
     print("\n[*] Running RustiFlow Offline PCAP...")
-    cmd = f"sudo taskset -c 8-23 {RUSTIFLOW_BIN} pcap {PCAP_PATH}"
+    cmd = f"sudo taskset -c 8-23 {RUSTIFLOW_BIN} -f rustiflow -o print pcap {PCAP_PATH} > /dev/null"
     t0 = time.time()
     try:
         res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
         t1 = time.time()
         print(f"[+] RustiFlow completed in {t1-t0:.2f} seconds.")
-        if res.stdout:
-            print("    [STDOUT] " + res.stdout.strip()[:200])
         if res.stderr:
             print("    [STDERR] " + res.stderr.strip()[:200])
     except Exception as e:
@@ -55,7 +53,8 @@ def run_offline_benchmark():
     # 2. Lynceus
     print("\n[*] Running Lynceus Offline PCAP...")
     # Run from the Lynceus root directory so it finds build/main.bpf.o
-    cmd = f"cd /home/leonardo.herkenhoff/Lynceus && sudo taskset -c 8-23 {LYNCEUS_BIN} --pcap {PCAP_PATH}"
+    # Redirect stdout to /dev/null to avoid Python OOM, summary is on stderr
+    cmd = f"cd /home/leonardo.herkenhoff/Lynceus && sudo taskset -c 8-23 {LYNCEUS_BIN} --pcap {PCAP_PATH} > /dev/null"
     t0 = time.time()
     try:
         res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
@@ -93,11 +92,12 @@ echo "clone_skb 100000" > /proc/net/pktgen/rustiflow-p0
 echo "pkt_size 60" > /proc/net/pktgen/rustiflow-p0
 echo "delay 0" > /proc/net/pktgen/rustiflow-p0
 """
-    with open("/tmp/setup_pktgen.sh", "w") as f:
+    script_path = "/home/leonardo.herkenhoff/setup_pktgen.sh"
+    with open(script_path, "w") as f:
         f.write(pktgen_script)
     
     def run_pktgen():
-        subprocess.run("sudo ip netns exec rustiflow-peer bash /tmp/setup_pktgen.sh", shell=True)
+        subprocess.run(f"sudo ip netns exec rustiflow-peer bash {script_path}", shell=True)
         subprocess.Popen("sudo ip netns exec rustiflow-peer bash -c 'echo start > /proc/net/pktgen/pgctrl'", shell=True)
         time.sleep(10)
         subprocess.run("sudo ip netns exec rustiflow-peer bash -c 'echo stop > /proc/net/pktgen/pgctrl'", shell=True)
@@ -109,14 +109,14 @@ echo "delay 0" > /proc/net/pktgen/rustiflow-p0
             print("    [PktGen] Failed to parse PPS")
 
     print("\n[*] Running RustiFlow Network Upper Bound...")
-    rf_proc = subprocess.Popen(f"sudo taskset -c 8-23 {RUSTIFLOW_BIN} interface -i rustiflow-t0", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    rf_proc = subprocess.Popen(f"sudo taskset -c 8-23 {RUSTIFLOW_BIN} -f rustiflow -o print realtime rustiflow-t0 > /dev/null", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(2)
     run_pktgen()
     subprocess.run("sudo pkill rustiflow", shell=True)
     time.sleep(2)
 
     print("\n[*] Running Lynceus Network Upper Bound...")
-    lyn_proc = subprocess.Popen(f"cd /home/leonardo.herkenhoff/Lynceus && sudo taskset -c 8-23 {LYNCEUS_BIN} rustiflow-t0", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    lyn_proc = subprocess.Popen(f"cd /home/leonardo.herkenhoff/Lynceus && sudo taskset -c 8-23 {LYNCEUS_BIN} rustiflow-t0 > /dev/null", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(2)
     run_pktgen()
     subprocess.run("sudo pkill loader", shell=True)
