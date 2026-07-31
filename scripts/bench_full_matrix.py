@@ -65,7 +65,8 @@ class Benchmark:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
             
             # TODO: Parse stderr/stdout for dropped packets based on tool output
-            return "0" # Placeholder for dropped packets
+            return "0"
+        return "N/A" # For control or no-op target
 
     def run_iperf_scenario(self, scenario_id, duration, bitrate, length, protocol="-u"):
         print(f"--- Running {scenario_id} ---")
@@ -93,16 +94,21 @@ class Benchmark:
         self.log_result(scenario_id, f"{duration}s", achieved_bitrate, drops)
 
     def parse_iperf_output(self, output):
-        # Extremely basic parser for iperf3 sender/receiver bitrates
-        for line in output.split('\n'):
-            if "sender" in line and "bits/sec" in line:
+        # Robust parser looking for receiver sum or individual receiver/sender summary
+        best_rate = "Unknown"
+        for line in reversed(output.strip().split('\n')):
+            if ("receiver" in line or "sender" in line) and any(unit in line for unit in ["Gbits/sec", "Mbits/sec", "Kbits/sec", "bits/sec"]):
                 parts = line.split()
-                try:
-                    idx = parts.index("bits/sec")
-                    return f"{parts[idx-2]} {parts[idx-1]} bps"
-                except ValueError:
-                    pass
-        return "Unknown"
+                for unit in ["Gbits/sec", "Mbits/sec", "Kbits/sec", "bits/sec"]:
+                    if unit in parts:
+                        idx = parts.index(unit)
+                        if idx >= 1:
+                            best_rate = f"{parts[idx-1]} {unit}"
+                            if "[SUM]" in line and "receiver" in line:
+                                return best_rate
+                if "[SUM]" in line and best_rate != "Unknown":
+                    return best_rate
+        return best_rate
 
     def run_b1(self):
         self.run_iperf_scenario("B1", duration=30, bitrate="20G", length=1400)
