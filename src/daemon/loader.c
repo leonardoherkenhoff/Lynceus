@@ -183,6 +183,27 @@ struct worker_t {
 };
 
 static volatile bool exiting = false;
+static int allowed_cpus[256];
+static int num_allowed_cpus = 0;
+
+static void init_cpu_topology(void) {
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    if (sched_getaffinity(0, sizeof(cpu_set_t), &set) == 0) {
+        for (int i = 0; i < CPU_SETSIZE && i < 256; i++) {
+            if (CPU_ISSET(i, &set)) {
+                allowed_cpus[num_allowed_cpus++] = i;
+            }
+        }
+    }
+    if (num_allowed_cpus == 0) {
+        int c = sysconf(_SC_NPROCESSORS_ONLN);
+        for (int i = 0; i < c && i < 256; i++) {
+            allowed_cpus[num_allowed_cpus++] = i;
+        }
+    }
+    fprintf(stderr, "[*] Topology: %d CPUs available in active affinity mask\n", num_allowed_cpus);
+}
 
 struct pcap_pkt_ptr {
     const uint8_t *data;
@@ -226,7 +247,8 @@ static void *injector_fn(void *arg) {
     struct injector_ctx *ctx = arg;
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
-    CPU_SET(ctx->id % 256, &cpuset);
+    int cpu = (num_allowed_cpus > 0) ? allowed_cpus[ctx->id % num_allowed_cpus] : (ctx->id % 256);
+    CPU_SET(cpu, &cpuset);
     pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
 
     for (uint32_t i = 0; i < ctx->count; i++) {
@@ -526,7 +548,9 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
 }
 
 void *worker_fn(void *arg) {
-    struct worker_t *w = arg; cpu_set_t cpuset; CPU_ZERO(&cpuset); CPU_SET(w->id % 256, &cpuset);
+    struct worker_t *w = arg; cpu_set_t cpuset; CPU_ZERO(&cpuset);
+    int cpu = (num_allowed_cpus > 0) ? allowed_cpus[w->id % num_allowed_cpus] : (w->id % 256);
+    CPU_SET(cpu, &cpuset);
     pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
     w->flow_table = calloc(g_flow_table_size, sizeof(struct flow_state));
     if (!w->flow_table) { fprintf(stderr, "FATAL: worker %d: calloc failed\n", w->id); return NULL; }
@@ -628,6 +652,10 @@ int main(int argc, char **argv) {
     struct rlimit r = {RLIM_INFINITY, RLIM_INFINITY}; setrlimit(RLIMIT_MEMLOCK, &r);
     signal(SIGINT, sig_handler); signal(SIGTERM, sig_handler);
     int cores = sysconf(_SC_NPROCESSORS_ONLN);
+    init_cpu_topology();
+    if (num_allowed_cpus > 0 && num_allowed_cpus < cores) {
+        cores = num_allowed_cpus;
+    }
     auto_tune(cores);
     workers = calloc(num_workers, sizeof(struct worker_t));
     struct bpf_object *obj = bpf_object__open_file("build/main.bpf.o", NULL);
@@ -637,10 +665,15 @@ int main(int argc, char **argv) {
         workers[i].id = i;
         workers[i].rb_fd = bpf_map_create(BPF_MAP_TYPE_RINGBUF, NULL, 0, 0, g_rb_size, NULL);
         if (workers[i].rb_fd < 0) { fprintf(stderr, "ERR: RB create failed for worker %d\n", i); continue; }
-        bpf_map_update_elem(outer_fd, &i, &workers[i].rb_fd, BPF_ANY);
     }
-    for (int i = num_workers; i < 256; i++) {
+    for (int i = 0; i < 256; i++) {
         int zero_fd = workers[0].rb_fd;
+        for (int j = 0; j < num_workers; j++) {
+            if (num_allowed_cpus > 0 && allowed_cpus[j % num_allowed_cpus] == i) {
+                zero_fd = workers[j].rb_fd;
+                break;
+            }
+        }
         bpf_map_update_elem(outer_fd, &i, &zero_fd, BPF_ANY);
     }
     g_out_f = stdout; setvbuf(g_out_f, NULL, _IOFBF, 4 * 1024 * 1024);

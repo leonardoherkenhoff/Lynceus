@@ -16,7 +16,7 @@ def setup_veth():
     subprocess.run("sudo ip netns del rustiflow-peer", shell=True, stderr=subprocess.DEVNULL)
     
     subprocess.run("sudo ip netns add rustiflow-peer", shell=True)
-    subprocess.run("sudo ip link add rustiflow-t0 type veth peer name rustiflow-p0 netns rustiflow-peer", shell=True)
+    subprocess.run("sudo ip link add rustiflow-t0 numtxqueues 16 numrxqueues 16 type veth peer name rustiflow-p0 numtxqueues 16 numrxqueues 16 netns rustiflow-peer", shell=True)
     subprocess.run("sudo ip link set rustiflow-t0 up", shell=True)
     subprocess.run("sudo ip netns exec rustiflow-peer ip link set lo up", shell=True)
     subprocess.run("sudo ip netns exec rustiflow-peer ip link set rustiflow-p0 up", shell=True)
@@ -52,14 +52,11 @@ def run_offline_benchmark():
 
     # 2. Lynceus
     print("\n[*] Running Lynceus Offline PCAP...")
-    # Run from the Lynceus root directory so it finds build/main.bpf.o
-    # Redirect stdout to /dev/null to avoid Python OOM, summary is on stderr
     cmd = f"cd /home/leonardo.herkenhoff/Lynceus && sudo taskset -c 8-23 {LYNCEUS_BIN} --pcap {PCAP_PATH} > /dev/null"
     t0 = time.time()
     try:
         res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
         t1 = time.time()
-        # Parse Lynceus output for PPS
         pps_match = re.search(r"Speed\s*:\s*([\d\.]+)\s*PPS", res.stderr)
         pkts_match = re.search(r"(\d+) packets injected", res.stderr)
         if pps_match and pkts_match:
@@ -80,17 +77,21 @@ def run_pktgen_benchmark(target_mac):
 modprobe pktgen
 # Remove all devices
 for f in /proc/net/pktgen/kpktgend_*; do
-    echo "rem_device_all" > $f
+    echo "rem_device_all" > $f 2>/dev/null
 done
 
-# Add device to thread 0
-echo "add_device rustiflow-p0" > /proc/net/pktgen/kpktgend_0
-
-# Configure device
-echo "count 50000000" > /proc/net/pktgen/rustiflow-p0
-echo "clone_skb 100000" > /proc/net/pktgen/rustiflow-p0
-echo "pkt_size 60" > /proc/net/pktgen/rustiflow-p0
-echo "delay 0" > /proc/net/pktgen/rustiflow-p0
+for i in $(seq 0 15); do
+    core=$((8 + i))
+    echo "add_device rustiflow-p0@$i" > /proc/net/pktgen/kpktgend_$core 2>/dev/null
+    dev="/proc/net/pktgen/rustiflow-p0@$i"
+    if [ ! -f "$dev" ]; then
+        dev="/proc/net/pktgen/rustiflow-p0"
+    fi
+    echo "count 10000000" > $dev 2>/dev/null
+    echo "clone_skb 1000" > $dev 2>/dev/null
+    echo "pkt_size 60" > $dev 2>/dev/null
+    echo "delay 0" > $dev 2>/dev/null
+done
 """
     script_path = "/home/leonardo.herkenhoff/setup_pktgen.sh"
     with open(script_path, "w") as f:
@@ -101,15 +102,18 @@ echo "delay 0" > /proc/net/pktgen/rustiflow-p0
         subprocess.Popen("sudo ip netns exec rustiflow-peer bash -c 'echo start > /proc/net/pktgen/pgctrl'", shell=True)
         time.sleep(10)
         subprocess.run("sudo ip netns exec rustiflow-peer bash -c 'echo stop > /proc/net/pktgen/pgctrl'", shell=True)
-        res = subprocess.check_output("sudo ip netns exec rustiflow-peer cat /proc/net/pktgen/rustiflow-p0", shell=True).decode()
-        pps_match = re.search(r"(\d+)pps", res)
-        if pps_match:
-            print(f"    [PktGen] Injected at {pps_match.group(1)} PPS")
-        else:
-            print("    [PktGen] Failed to parse PPS")
+        try:
+            res = subprocess.check_output("sudo ip netns exec rustiflow-peer bash -c 'cat /proc/net/pktgen/rustiflow-p0*'", shell=True).decode()
+            pps_matches = re.findall(r"(\d+)pps", res)
+            if pps_matches:
+                total_pps = sum(int(p) for p in pps_matches)
+                print(f"    [PktGen] Injected at {total_pps} PPS across {len(pps_matches)} threads")
+            else:
+                print("    [PktGen] Failed to parse PPS")
+        except Exception as e:
+            print(f"    [PktGen] Error reading stats: {e}")
 
     print("\n[*] Running RustiFlow Network Upper Bound...")
-    rf_proc = subprocess.Popen(f"sudo taskset -c 8-23 {RUSTIFLOW_BIN} -f rustiflow -o print realtime rustiflow-t0 > /dev/null", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(2)
     run_pktgen()
     subprocess.run("sudo pkill rustiflow", shell=True)
