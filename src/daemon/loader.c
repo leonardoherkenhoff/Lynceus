@@ -705,30 +705,79 @@ int main(int argc, char **argv) {
         }
 
         fprintf(stderr, "[*] Pre-parsing PCAP into memory arrays...\n");
-        uint8_t *ptr = map + 24; 
         uint64_t total_parsed = 0;
-        while (ptr + 16 <= map + st.st_size) {
-            uint32_t incl_len;
-            memcpy(&incl_len, ptr + 8, 4);
-            ptr += 16;
-            
-            if (ptr + incl_len > map + st.st_size) break;
-            
-            uint32_t hash = rss_hash(ptr, incl_len);
-            int wid = hash % num_workers;
-            struct injector_ctx *ictx = &injectors[wid];
-            
-            if (ictx->count >= ictx->max_pkts) {
-                ictx->max_pkts *= 2;
-                ictx->pkts = realloc(ictx->pkts, ictx->max_pkts * sizeof(struct pcap_pkt_ptr));
+        
+        uint32_t magic;
+        if (st.st_size >= 24) {
+            memcpy(&magic, map, 4);
+        } else {
+            magic = 0;
+        }
+
+        if (magic == 0xa1b2c3d4 || magic == 0xd4c3b2a1) {
+            // Classic PCAP
+            uint8_t *ptr = map + 24; 
+            while (ptr + 16 <= map + st.st_size) {
+                uint32_t incl_len;
+                memcpy(&incl_len, ptr + 8, 4);
+                ptr += 16;
+                
+                if (ptr + incl_len > map + st.st_size) break;
+                
+                uint32_t hash = rss_hash(ptr, incl_len);
+                int wid = hash % num_workers;
+                struct injector_ctx *ictx = &injectors[wid];
+                
+                if (ictx->count >= ictx->max_pkts) {
+                    ictx->max_pkts *= 2;
+                    ictx->pkts = realloc(ictx->pkts, ictx->max_pkts * sizeof(struct pcap_pkt_ptr));
+                }
+                ictx->pkts[ictx->count].data = ptr;
+                ictx->pkts[ictx->count].len = incl_len;
+                ictx->count++;
+                
+                ptr += incl_len;
+                total_parsed++;
+                if (g_max_events > 0 && total_parsed >= g_max_events) break;
             }
-            ictx->pkts[ictx->count].data = ptr;
-            ictx->pkts[ictx->count].len = incl_len;
-            ictx->count++;
-            
-            ptr += incl_len;
-            total_parsed++;
-            if (g_max_events > 0 && total_parsed >= g_max_events) break;
+        } else if (magic == 0x0a0d0d0a) {
+            // PCAPNG
+            uint8_t *ptr = map;
+            while (ptr + 8 <= map + st.st_size) {
+                uint32_t block_type, block_len;
+                memcpy(&block_type, ptr, 4);
+                memcpy(&block_len, ptr + 4, 4);
+                
+                if (block_len < 12 || ptr + block_len > map + st.st_size) break;
+                
+                if (block_type == 6) { // Enhanced Packet Block
+                    uint32_t caplen;
+                    memcpy(&caplen, ptr + 20, 4);
+                    if (caplen > 0 && caplen <= block_len - 32) {
+                        uint8_t *pkt_data = ptr + 28;
+                        uint32_t hash = rss_hash(pkt_data, caplen);
+                        int wid = hash % num_workers;
+                        struct injector_ctx *ictx = &injectors[wid];
+                        
+                        if (ictx->count >= ictx->max_pkts) {
+                            ictx->max_pkts *= 2;
+                            ictx->pkts = realloc(ictx->pkts, ictx->max_pkts * sizeof(struct pcap_pkt_ptr));
+                        }
+                        ictx->pkts[ictx->count].data = pkt_data;
+                        ictx->pkts[ictx->count].len = caplen;
+                        ictx->count++;
+                        total_parsed++;
+                    }
+                }
+                ptr += block_len;
+                if (g_max_events > 0 && total_parsed >= g_max_events) break;
+            }
+        } else {
+            fprintf(stderr, "FATAL: Unknown PCAP magic: 0x%08x\n", magic);
+            exiting = true;
+            munmap(map, st.st_size);
+            close(fd);
+            goto skip_pcap;
         }
         
         fprintf(stderr, "[*] XDP attached (PCAP Native Mode)\n");
