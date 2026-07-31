@@ -75,8 +75,19 @@ static void w_init(struct welford_stat *w) {
 }
 
 static inline void w_update(struct welford_stat *w, double x) {
+    if (w->n >= 5 && x == w->M1 && w->min == w->max) {
+        w->n++;
+        return;
+    }
+    if (w->n >= 5 && w->min == w->max && x != w->M1) {
+        w->pn[1] = 1 + w->n / 4;
+        w->pn[2] = 1 + w->n / 2;
+        w->pn[3] = 1 + 3 * w->n / 4;
+        w->pn[4] = w->n;
+    }
     uint64_t n1 = w->n; w->n++;
-    double delta = x - w->M1, delta_n = delta / w->n, delta_n2 = delta_n * delta_n, term1 = delta * delta_n * n1;
+    double inv_n = 1.0 / (double)w->n;
+    double delta = x - w->M1, delta_n = delta * inv_n, delta_n2 = delta_n * delta_n, term1 = delta * delta_n * n1;
     w->M1 += delta_n;
     w->M4 += term1 * delta_n2 * (w->n * w->n - 3 * w->n + 3) + 6 * delta_n2 * w->M2 - 4 * delta_n * w->M3;
     w->M3 += term1 * delta_n * (w->n - 2) - 3 * delta_n * w->M2;
@@ -103,7 +114,7 @@ static inline void w_update(struct welford_stat *w, double x) {
     else { w->pq[4]=x; k=3; }
     for (int i=k+1; i<5; i++) w->pn[i]++;
     double np[5]; double fc=(double)cnt;
-    np[0]=1.0; np[1]=1.0+fc/4.0; np[2]=1.0+fc/2.0; np[3]=1.0+3.0*fc/4.0; np[4]=fc;
+    np[0]=1.0; np[1]=1.0+fc*0.25; np[2]=1.0+fc*0.5; np[3]=1.0+fc*0.75; np[4]=fc;
     for (int i=1; i<=3; i++) {
         double d = np[i] - w->pn[i];
         if ((d>=1.0 && w->pn[i+1]-w->pn[i]>1)||(d<=-1.0 && w->pn[i-1]-w->pn[i]<-1)) {
@@ -124,7 +135,7 @@ static inline double w_var(struct welford_stat *w)  { return (w->n > 1) ? w->M2 
 static inline double w_std(struct welford_stat *w)  { return sqrt(w_var(w)); }
 static inline double w_skew(struct welford_stat *w) { return (w->M2 > 1e-9) ? sqrt(w->n) * w->M3 / pow(w->M2, 1.5) : 0; }
 static inline double w_kurt(struct welford_stat *w) { return (w->M2 > 1e-9) ? (double)w->n * w->M4 / (w->M2 * w->M2) - 3.0 : 0; }
-static inline double w_median(struct welford_stat *w) { return (w->n < 5) ? w->M1 : w->pq[2]; }
+static inline double w_median(struct welford_stat *w) { return (w->n < 5 || w->min == w->max) ? w->M1 : w->pq[2]; }
 
 static double log2_table[257];
 static void init_log2_table() {
@@ -542,7 +553,7 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
         s->last_b_pay = e->rec.payload_len; s->b_hist[b_idx]++; s->b_bytes += e->rec.payload_len;
         for (int i=0; i<8; i++) if (e->rec.tcp_flags & (1<<i)) { s->flags[i]++; s->b_flags[i]++; }
     }
-    if (s->t_pay.n >= 1000 || (e->rec.tcp_flags & 0x05)) { flush_flow_record(w, s, e->timestamp_ns); s->active = 0; }
+    if ((e->rec.tcp_flags & 0x05)) { flush_flow_record(w, s, e->timestamp_ns); s->active = 0; }
     if (exiting) return -1;
     w->processed_events++; return 0;
 }
@@ -557,7 +568,9 @@ void *worker_fn(void *arg) {
     w->rb = ring_buffer__new(w->rb_fd, handle_event, w, NULL);
     const uint64_t timeout_ns = (uint64_t)(IDLE_FLOW_TIMEOUT_S * 1e9);
     while (!exiting) {
-        ring_buffer__poll(w->rb, 100);
+        int n = ring_buffer__consume(w->rb);
+        if (n > 0) continue;
+        ring_buffer__poll(w->rb, 10);
         struct timespec ts_idle; clock_gettime(CLOCK_REALTIME, &ts_idle);
         uint64_t now_idle = (uint64_t)ts_idle.tv_sec * 1000000000ULL + ts_idle.tv_nsec;
         for (int k = 0; k < IDLE_SCAN_BATCH; k++) {
@@ -622,10 +635,12 @@ static void auto_tune(int cores) {
     g_flow_table_size = ft_entries;
     g_flow_table_mask = ft_entries - 1;
 
-    /* Scale RingBuffer: 16MB base, up to 32MB if RAM allows */
+    /* Scale RingBuffer: 16MB base, up to 128MB if RAM allows */
     size_t rb_budget = ram_per_worker - (size_t)ft_entries * flow_state_sz - spsc_sz;
     g_rb_size = 16 * 1024 * 1024;
-    if (rb_budget > 32 * 1024 * 1024) g_rb_size = 32 * 1024 * 1024;
+    if (rb_budget > 128 * 1024 * 1024) g_rb_size = 128 * 1024 * 1024;
+    else if (rb_budget > 64 * 1024 * 1024) g_rb_size = 64 * 1024 * 1024;
+    else if (rb_budget > 32 * 1024 * 1024) g_rb_size = 32 * 1024 * 1024;
 
     fprintf(stderr, "[auto-tune] RAM: %.1f GB, Cores: %d\n",
             (double)total_ram / (1024*1024*1024), cores);
