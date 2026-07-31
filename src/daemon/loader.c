@@ -33,6 +33,8 @@
 #include <sched.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <sys/mman.h>
+#include <fcntl.h>
 
 #include "../ebpf/lynceus.h"
 
@@ -179,6 +181,64 @@ struct worker_t {
     struct flow_state *flow_table;
     int id; uint64_t processed_events; uint32_t scan_ptr;
 };
+
+struct pcap_pkt_ptr {
+    const uint8_t *data;
+    uint32_t len;
+};
+
+struct injector_ctx {
+    int id;
+    int prog_fd;
+    pthread_t thread;
+    struct pcap_pkt_ptr *pkts;
+    uint32_t max_pkts;
+    uint32_t count;
+    uint64_t injected;
+};
+
+static inline uint32_t rss_hash(const uint8_t *data, uint32_t len) {
+    if (len < 34) return 0;
+    uint16_t eth_proto = (data[12] << 8) | data[13];
+    if (eth_proto == 0x0800) {
+        uint32_t src, dst;
+        memcpy(&src, data + 26, 4);
+        memcpy(&dst, data + 30, 4);
+        return src ^ dst;
+    } else if (eth_proto == 0x86DD) {
+        if (len < 54) return 0;
+        uint32_t src = 0, dst = 0;
+        for (int i=0; i<4; i++) {
+            uint32_t s, d;
+            memcpy(&s, data + 22 + i*4, 4);
+            memcpy(&d, data + 38 + i*4, 4);
+            src ^= s;
+            dst ^= d;
+        }
+        return src ^ dst;
+    }
+    return 0;
+}
+
+static void *injector_fn(void *arg) {
+    struct injector_ctx *ctx = arg;
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(ctx->id % 256, &cpuset);
+    pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+
+    for (uint32_t i = 0; i < ctx->count; i++) {
+        if (exiting) break;
+        struct bpf_test_run_opts opts = {
+            .sz = sizeof(opts),
+            .data_in = ctx->pkts[i].data,
+            .data_size_in = ctx->pkts[i].len,
+        };
+        bpf_prog_test_run_opts(ctx->prog_fd, &opts);
+        ctx->injected++;
+    }
+    return NULL;
+}
 
 static struct worker_t *workers;
 static int num_workers = 1;
@@ -614,48 +674,95 @@ int main(int argc, char **argv) {
     int num_ifaces = 0;
 
     if (pcap_file) {
-        fprintf(stderr, "[*] Lynceus Native Injector (bpf_prog_test_run_opts) on: %s\n", pcap_file);
-        char errbuf[PCAP_ERRBUF_SIZE];
-        pcap_t *pcap = pcap_open_offline(pcap_file, errbuf);
-        if (!pcap) {
-            fprintf(stderr, "FATAL: pcap_open_offline failed: %s\n", errbuf);
+        fprintf(stderr, "[*] Lynceus Native Injector (mmap + bpf_prog_test_run_opts) on: %s\n", pcap_file);
+        
+        int fd = open(pcap_file, O_RDONLY);
+        if (fd < 0) {
+            fprintf(stderr, "FATAL: Could not open pcap file %s\n", pcap_file);
             exiting = true;
-        } else {
-            struct pcap_pkthdr *header;
-            const u_char *data;
-            uint64_t pkts_injected = 0;
-            
-            // Sinaliza para o script de fora que a engine está operante (mesma string esperada)
-            fprintf(stderr, "[*] XDP attached (PCAP Native Mode)\n");
-
-            struct timespec ts_start, ts_end;
-            clock_gettime(CLOCK_MONOTONIC, &ts_start);
-            while (!exiting && pcap_next_ex(pcap, &header, &data) == 1) {
-                struct bpf_test_run_opts opts = {
-                    .sz = sizeof(opts),
-                    .data_in = data,
-                    .data_size_in = header->caplen,
-                };
-                int err = bpf_prog_test_run_opts(prog_fd, &opts);
-                if (err < 0) {
-                    fprintf(stderr, "ERR: test_run failed: %s\n", strerror(errno));
-                    break;
-                }
-                pkts_injected++;
-                if (g_max_events > 0 && pkts_injected >= g_max_events) break;
-            }
-            clock_gettime(CLOCK_MONOTONIC, &ts_end);
-            double duration = (ts_end.tv_sec - ts_start.tv_sec) + (ts_end.tv_nsec - ts_start.tv_nsec) / 1e9;
-            double pps = (duration > 0) ? ((double)pkts_injected / duration) : 0;
-            pcap_close(pcap);
-            fprintf(stderr, "[*] ---------------------------------------------------------\n");
-            fprintf(stderr, "[*] Benchmark: %lu packets injected natively.\n", pkts_injected);
-            fprintf(stderr, "[*] Duration : %.3f sec\n", duration);
-            fprintf(stderr, "[*] Speed    : %.2f PPS\n", pps);
-            fprintf(stderr, "[*] ---------------------------------------------------------\n");
-            sleep(1); // Wait for ringbuffer drain
-            exiting = true; // Signal workers to flush and exit
+            goto skip_pcap;
         }
+        struct stat st;
+        fstat(fd, &st);
+        uint8_t *map = mmap(NULL, st.st_size, PROT_READ, MAP_SHARED, fd, 0);
+        if (map == MAP_FAILED) {
+            fprintf(stderr, "FATAL: mmap failed\n");
+            exiting = true;
+            close(fd);
+            goto skip_pcap;
+        }
+        
+        struct injector_ctx *injectors = calloc(num_workers, sizeof(struct injector_ctx));
+        uint32_t init_capacity = 10000000 / num_workers + 1000000;
+        for (int i = 0; i < num_workers; i++) {
+            injectors[i].id = i;
+            injectors[i].prog_fd = prog_fd;
+            injectors[i].max_pkts = init_capacity;
+            injectors[i].pkts = malloc(init_capacity * sizeof(struct pcap_pkt_ptr));
+            injectors[i].count = 0;
+            injectors[i].injected = 0;
+        }
+
+        fprintf(stderr, "[*] Pre-parsing PCAP into memory arrays...\n");
+        uint8_t *ptr = map + 24; 
+        uint64_t total_parsed = 0;
+        while (ptr + 16 <= map + st.st_size) {
+            uint32_t incl_len;
+            memcpy(&incl_len, ptr + 8, 4);
+            ptr += 16;
+            
+            if (ptr + incl_len > map + st.st_size) break;
+            
+            uint32_t hash = rss_hash(ptr, incl_len);
+            int wid = hash % num_workers;
+            struct injector_ctx *ictx = &injectors[wid];
+            
+            if (ictx->count >= ictx->max_pkts) {
+                ictx->max_pkts *= 2;
+                ictx->pkts = realloc(ictx->pkts, ictx->max_pkts * sizeof(struct pcap_pkt_ptr));
+            }
+            ictx->pkts[ictx->count].data = ptr;
+            ictx->pkts[ictx->count].len = incl_len;
+            ictx->count++;
+            
+            ptr += incl_len;
+            total_parsed++;
+            if (g_max_events > 0 && total_parsed >= g_max_events) break;
+        }
+        
+        fprintf(stderr, "[*] XDP attached (PCAP Native Mode)\n");
+        fprintf(stderr, "[*] Pre-parsing complete. Launching %d parallel injectors...\n", num_workers);
+        struct timespec ts_start, ts_end;
+        clock_gettime(CLOCK_MONOTONIC, &ts_start);
+        
+        for (int i = 0; i < num_workers; i++) {
+            pthread_create(&injectors[i].thread, NULL, injector_fn, &injectors[i]);
+        }
+        
+        uint64_t pkts_injected = 0;
+        for (int i = 0; i < num_workers; i++) {
+            pthread_join(injectors[i].thread, NULL);
+            pkts_injected += injectors[i].injected;
+            free(injectors[i].pkts);
+        }
+        free(injectors);
+        munmap(map, st.st_size);
+        close(fd);
+        
+        clock_gettime(CLOCK_MONOTONIC, &ts_end);
+        double duration = (ts_end.tv_sec - ts_start.tv_sec) + (ts_end.tv_nsec - ts_start.tv_nsec) / 1e9;
+        double pps = (duration > 0) ? ((double)pkts_injected / duration) : 0;
+        
+        fprintf(stderr, "[*] ---------------------------------------------------------\n");
+        fprintf(stderr, "[*] Benchmark: %lu packets injected natively in %d cores.\n", pkts_injected, num_workers);
+        fprintf(stderr, "[*] Duration : %.3f sec\n", duration);
+        fprintf(stderr, "[*] Speed    : %.2f PPS\n", pps);
+        fprintf(stderr, "[*] ---------------------------------------------------------\n");
+        sleep(2); // Wait for ringbuffer drain
+        exiting = true; // Signal workers to flush and exit
+        
+skip_pcap:
+        ; // label must be followed by statement
     } else {
         ifindexes = calloc(argc, sizeof(int));
         for (int i = 1; i < argc; i++) {
