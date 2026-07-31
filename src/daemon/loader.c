@@ -33,6 +33,8 @@
 #include <sched.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <sys/mman.h>
+#include <fcntl.h>
 
 #include "../ebpf/lynceus.h"
 
@@ -73,8 +75,19 @@ static void w_init(struct welford_stat *w) {
 }
 
 static inline void w_update(struct welford_stat *w, double x) {
+    if (w->n >= 5 && x == w->M1 && w->min == w->max) {
+        w->n++;
+        return;
+    }
+    if (w->n >= 5 && w->min == w->max && x != w->M1) {
+        w->pn[1] = 1 + w->n / 4;
+        w->pn[2] = 1 + w->n / 2;
+        w->pn[3] = 1 + 3 * w->n / 4;
+        w->pn[4] = w->n;
+    }
     uint64_t n1 = w->n; w->n++;
-    double delta = x - w->M1, delta_n = delta / w->n, delta_n2 = delta_n * delta_n, term1 = delta * delta_n * n1;
+    double inv_n = 1.0 / (double)w->n;
+    double delta = x - w->M1, delta_n = delta * inv_n, delta_n2 = delta_n * delta_n, term1 = delta * delta_n * n1;
     w->M1 += delta_n;
     w->M4 += term1 * delta_n2 * (w->n * w->n - 3 * w->n + 3) + 6 * delta_n2 * w->M2 - 4 * delta_n * w->M3;
     w->M3 += term1 * delta_n * (w->n - 2) - 3 * delta_n * w->M2;
@@ -101,7 +114,7 @@ static inline void w_update(struct welford_stat *w, double x) {
     else { w->pq[4]=x; k=3; }
     for (int i=k+1; i<5; i++) w->pn[i]++;
     double np[5]; double fc=(double)cnt;
-    np[0]=1.0; np[1]=1.0+fc/4.0; np[2]=1.0+fc/2.0; np[3]=1.0+3.0*fc/4.0; np[4]=fc;
+    np[0]=1.0; np[1]=1.0+fc*0.25; np[2]=1.0+fc*0.5; np[3]=1.0+fc*0.75; np[4]=fc;
     for (int i=1; i<=3; i++) {
         double d = np[i] - w->pn[i];
         if ((d>=1.0 && w->pn[i+1]-w->pn[i]>1)||(d<=-1.0 && w->pn[i-1]-w->pn[i]<-1)) {
@@ -122,7 +135,7 @@ static inline double w_var(struct welford_stat *w)  { return (w->n > 1) ? w->M2 
 static inline double w_std(struct welford_stat *w)  { return sqrt(w_var(w)); }
 static inline double w_skew(struct welford_stat *w) { return (w->M2 > 1e-9) ? sqrt(w->n) * w->M3 / pow(w->M2, 1.5) : 0; }
 static inline double w_kurt(struct welford_stat *w) { return (w->M2 > 1e-9) ? (double)w->n * w->M4 / (w->M2 * w->M2) - 3.0 : 0; }
-static inline double w_median(struct welford_stat *w) { return (w->n < 5) ? w->M1 : w->pq[2]; }
+static inline double w_median(struct welford_stat *w) { return (w->n < 5 || w->min == w->max) ? w->M1 : w->pq[2]; }
 
 static double log2_table[257];
 static void init_log2_table() {
@@ -180,9 +193,90 @@ struct worker_t {
     int id; uint64_t processed_events; uint32_t scan_ptr;
 };
 
+static volatile bool exiting = false;
+static int allowed_cpus[256];
+static int num_allowed_cpus = 0;
+
+static void init_cpu_topology(void) {
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    if (sched_getaffinity(0, sizeof(cpu_set_t), &set) == 0) {
+        for (int i = 0; i < CPU_SETSIZE && i < 256; i++) {
+            if (CPU_ISSET(i, &set)) {
+                allowed_cpus[num_allowed_cpus++] = i;
+            }
+        }
+    }
+    if (num_allowed_cpus == 0) {
+        int c = sysconf(_SC_NPROCESSORS_ONLN);
+        for (int i = 0; i < c && i < 256; i++) {
+            allowed_cpus[num_allowed_cpus++] = i;
+        }
+    }
+    fprintf(stderr, "[*] Topology: %d CPUs available in active affinity mask\n", num_allowed_cpus);
+}
+
+struct pcap_pkt_ptr {
+    const uint8_t *data;
+    uint32_t len;
+};
+
+struct injector_ctx {
+    int id;
+    int prog_fd;
+    pthread_t thread;
+    struct pcap_pkt_ptr *pkts;
+    uint32_t max_pkts;
+    uint32_t count;
+    uint64_t injected;
+};
+
+static inline uint32_t rss_hash(const uint8_t *data, uint32_t len) {
+    if (len < 34) return 0;
+    uint16_t eth_proto = (data[12] << 8) | data[13];
+    if (eth_proto == 0x0800) {
+        uint32_t src, dst;
+        memcpy(&src, data + 26, 4);
+        memcpy(&dst, data + 30, 4);
+        return src ^ dst;
+    } else if (eth_proto == 0x86DD) {
+        if (len < 54) return 0;
+        uint32_t src = 0, dst = 0;
+        for (int i=0; i<4; i++) {
+            uint32_t s, d;
+            memcpy(&s, data + 22 + i*4, 4);
+            memcpy(&d, data + 38 + i*4, 4);
+            src ^= s;
+            dst ^= d;
+        }
+        return src ^ dst;
+    }
+    return 0;
+}
+
+static void *injector_fn(void *arg) {
+    struct injector_ctx *ctx = arg;
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    int cpu = (num_allowed_cpus > 0) ? allowed_cpus[ctx->id % num_allowed_cpus] : (ctx->id % 256);
+    CPU_SET(cpu, &cpuset);
+    pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+
+    for (uint32_t i = 0; i < ctx->count; i++) {
+        if (exiting) break;
+        struct bpf_test_run_opts opts = {
+            .sz = sizeof(opts),
+            .data_in = ctx->pkts[i].data,
+            .data_size_in = ctx->pkts[i].len,
+        };
+        bpf_prog_test_run_opts(ctx->prog_fd, &opts);
+        ctx->injected++;
+    }
+    return NULL;
+}
+
 static struct worker_t *workers;
 static int num_workers = 1;
-static volatile bool exiting = false;
 static _Atomic uint64_t g_flushed_flows = 0;
 static _Atomic uint64_t g_active_flows = 0;
 static uint64_t g_max_events = 0; // 0 = unlimited
@@ -459,20 +553,24 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
         s->last_b_pay = e->rec.payload_len; s->b_hist[b_idx]++; s->b_bytes += e->rec.payload_len;
         for (int i=0; i<8; i++) if (e->rec.tcp_flags & (1<<i)) { s->flags[i]++; s->b_flags[i]++; }
     }
-    if (s->t_pay.n >= 1000 || (e->rec.tcp_flags & 0x05)) { flush_flow_record(w, s, e->timestamp_ns); s->active = 0; }
+    if ((e->rec.tcp_flags & 0x05)) { flush_flow_record(w, s, e->timestamp_ns); s->active = 0; }
     if (exiting) return -1;
     w->processed_events++; return 0;
 }
 
 void *worker_fn(void *arg) {
-    struct worker_t *w = arg; cpu_set_t cpuset; CPU_ZERO(&cpuset); CPU_SET(w->id % 256, &cpuset);
+    struct worker_t *w = arg; cpu_set_t cpuset; CPU_ZERO(&cpuset);
+    int cpu = (num_allowed_cpus > 0) ? allowed_cpus[w->id % num_allowed_cpus] : (w->id % 256);
+    CPU_SET(cpu, &cpuset);
     pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
     w->flow_table = calloc(g_flow_table_size, sizeof(struct flow_state));
     if (!w->flow_table) { fprintf(stderr, "FATAL: worker %d: calloc failed\n", w->id); return NULL; }
     w->rb = ring_buffer__new(w->rb_fd, handle_event, w, NULL);
     const uint64_t timeout_ns = (uint64_t)(IDLE_FLOW_TIMEOUT_S * 1e9);
     while (!exiting) {
-        ring_buffer__poll(w->rb, 100);
+        int n = ring_buffer__consume(w->rb);
+        if (n > 0) continue;
+        ring_buffer__poll(w->rb, 10);
         struct timespec ts_idle; clock_gettime(CLOCK_REALTIME, &ts_idle);
         uint64_t now_idle = (uint64_t)ts_idle.tv_sec * 1000000000ULL + ts_idle.tv_nsec;
         for (int k = 0; k < IDLE_SCAN_BATCH; k++) {
@@ -537,10 +635,12 @@ static void auto_tune(int cores) {
     g_flow_table_size = ft_entries;
     g_flow_table_mask = ft_entries - 1;
 
-    /* Scale RingBuffer: 16MB base, up to 32MB if RAM allows */
+    /* Scale RingBuffer: 16MB base, up to 128MB if RAM allows */
     size_t rb_budget = ram_per_worker - (size_t)ft_entries * flow_state_sz - spsc_sz;
     g_rb_size = 16 * 1024 * 1024;
-    if (rb_budget > 32 * 1024 * 1024) g_rb_size = 32 * 1024 * 1024;
+    if (rb_budget > 128 * 1024 * 1024) g_rb_size = 128 * 1024 * 1024;
+    else if (rb_budget > 64 * 1024 * 1024) g_rb_size = 64 * 1024 * 1024;
+    else if (rb_budget > 32 * 1024 * 1024) g_rb_size = 32 * 1024 * 1024;
 
     fprintf(stderr, "[auto-tune] RAM: %.1f GB, Cores: %d\n",
             (double)total_ram / (1024*1024*1024), cores);
@@ -567,6 +667,10 @@ int main(int argc, char **argv) {
     struct rlimit r = {RLIM_INFINITY, RLIM_INFINITY}; setrlimit(RLIMIT_MEMLOCK, &r);
     signal(SIGINT, sig_handler); signal(SIGTERM, sig_handler);
     int cores = sysconf(_SC_NPROCESSORS_ONLN);
+    init_cpu_topology();
+    if (num_allowed_cpus > 0 && num_allowed_cpus < cores) {
+        cores = num_allowed_cpus;
+    }
     auto_tune(cores);
     workers = calloc(num_workers, sizeof(struct worker_t));
     struct bpf_object *obj = bpf_object__open_file("build/main.bpf.o", NULL);
@@ -576,10 +680,15 @@ int main(int argc, char **argv) {
         workers[i].id = i;
         workers[i].rb_fd = bpf_map_create(BPF_MAP_TYPE_RINGBUF, NULL, 0, 0, g_rb_size, NULL);
         if (workers[i].rb_fd < 0) { fprintf(stderr, "ERR: RB create failed for worker %d\n", i); continue; }
-        bpf_map_update_elem(outer_fd, &i, &workers[i].rb_fd, BPF_ANY);
     }
-    for (int i = num_workers; i < 256; i++) {
+    for (int i = 0; i < 256; i++) {
         int zero_fd = workers[0].rb_fd;
+        for (int j = 0; j < num_workers; j++) {
+            if (num_allowed_cpus > 0 && allowed_cpus[j % num_allowed_cpus] == i) {
+                zero_fd = workers[j].rb_fd;
+                break;
+            }
+        }
         bpf_map_update_elem(outer_fd, &i, &zero_fd, BPF_ANY);
     }
     g_out_f = stdout; setvbuf(g_out_f, NULL, _IOFBF, 4 * 1024 * 1024);
@@ -614,48 +723,144 @@ int main(int argc, char **argv) {
     int num_ifaces = 0;
 
     if (pcap_file) {
-        fprintf(stderr, "[*] Lynceus Native Injector (bpf_prog_test_run_opts) on: %s\n", pcap_file);
-        char errbuf[PCAP_ERRBUF_SIZE];
-        pcap_t *pcap = pcap_open_offline(pcap_file, errbuf);
-        if (!pcap) {
-            fprintf(stderr, "FATAL: pcap_open_offline failed: %s\n", errbuf);
+        fprintf(stderr, "[*] Lynceus Native Injector (mmap + bpf_prog_test_run_opts) on: %s\n", pcap_file);
+        
+        int fd = open(pcap_file, O_RDONLY);
+        if (fd < 0) {
+            fprintf(stderr, "FATAL: Could not open pcap file %s\n", pcap_file);
             exiting = true;
-        } else {
-            struct pcap_pkthdr *header;
-            const u_char *data;
-            uint64_t pkts_injected = 0;
-            
-            // Sinaliza para o script de fora que a engine está operante (mesma string esperada)
-            fprintf(stderr, "[*] XDP attached (PCAP Native Mode)\n");
-
-            struct timespec ts_start, ts_end;
-            clock_gettime(CLOCK_MONOTONIC, &ts_start);
-            while (!exiting && pcap_next_ex(pcap, &header, &data) == 1) {
-                struct bpf_test_run_opts opts = {
-                    .sz = sizeof(opts),
-                    .data_in = data,
-                    .data_size_in = header->caplen,
-                };
-                int err = bpf_prog_test_run_opts(prog_fd, &opts);
-                if (err < 0) {
-                    fprintf(stderr, "ERR: test_run failed: %s\n", strerror(errno));
-                    break;
-                }
-                pkts_injected++;
-                if (g_max_events > 0 && pkts_injected >= g_max_events) break;
-            }
-            clock_gettime(CLOCK_MONOTONIC, &ts_end);
-            double duration = (ts_end.tv_sec - ts_start.tv_sec) + (ts_end.tv_nsec - ts_start.tv_nsec) / 1e9;
-            double pps = (duration > 0) ? ((double)pkts_injected / duration) : 0;
-            pcap_close(pcap);
-            fprintf(stderr, "[*] ---------------------------------------------------------\n");
-            fprintf(stderr, "[*] Benchmark: %lu packets injected natively.\n", pkts_injected);
-            fprintf(stderr, "[*] Duration : %.3f sec\n", duration);
-            fprintf(stderr, "[*] Speed    : %.2f PPS\n", pps);
-            fprintf(stderr, "[*] ---------------------------------------------------------\n");
-            sleep(1); // Wait for ringbuffer drain
-            exiting = true; // Signal workers to flush and exit
+            goto skip_pcap;
         }
+        struct stat st;
+        fstat(fd, &st);
+        uint8_t *map = mmap(NULL, st.st_size, PROT_READ, MAP_SHARED, fd, 0);
+        if (map == MAP_FAILED) {
+            fprintf(stderr, "FATAL: mmap failed\n");
+            exiting = true;
+            close(fd);
+            goto skip_pcap;
+        }
+        
+        struct injector_ctx *injectors = calloc(num_workers, sizeof(struct injector_ctx));
+        uint32_t init_capacity = 10000000 / num_workers + 1000000;
+        for (int i = 0; i < num_workers; i++) {
+            injectors[i].id = i;
+            injectors[i].prog_fd = prog_fd;
+            injectors[i].max_pkts = init_capacity;
+            injectors[i].pkts = malloc(init_capacity * sizeof(struct pcap_pkt_ptr));
+            injectors[i].count = 0;
+            injectors[i].injected = 0;
+        }
+
+        fprintf(stderr, "[*] Pre-parsing PCAP into memory arrays...\n");
+        uint64_t total_parsed = 0;
+        
+        uint32_t magic;
+        if (st.st_size >= 24) {
+            memcpy(&magic, map, 4);
+        } else {
+            magic = 0;
+        }
+
+        if (magic == 0xa1b2c3d4 || magic == 0xd4c3b2a1) {
+            // Classic PCAP
+            uint8_t *ptr = map + 24; 
+            while (ptr + 16 <= map + st.st_size) {
+                uint32_t incl_len;
+                memcpy(&incl_len, ptr + 8, 4);
+                ptr += 16;
+                
+                if (ptr + incl_len > map + st.st_size) break;
+                
+                uint32_t hash = rss_hash(ptr, incl_len);
+                int wid = hash % num_workers;
+                struct injector_ctx *ictx = &injectors[wid];
+                
+                if (ictx->count >= ictx->max_pkts) {
+                    ictx->max_pkts *= 2;
+                    ictx->pkts = realloc(ictx->pkts, ictx->max_pkts * sizeof(struct pcap_pkt_ptr));
+                }
+                ictx->pkts[ictx->count].data = ptr;
+                ictx->pkts[ictx->count].len = incl_len;
+                ictx->count++;
+                
+                ptr += incl_len;
+                total_parsed++;
+                if (g_max_events > 0 && total_parsed >= g_max_events) break;
+            }
+        } else if (magic == 0x0a0d0d0a) {
+            // PCAPNG
+            uint8_t *ptr = map;
+            while (ptr + 8 <= map + st.st_size) {
+                uint32_t block_type, block_len;
+                memcpy(&block_type, ptr, 4);
+                memcpy(&block_len, ptr + 4, 4);
+                
+                if (block_len < 12 || ptr + block_len > map + st.st_size) break;
+                
+                if (block_type == 6) { // Enhanced Packet Block
+                    uint32_t caplen;
+                    memcpy(&caplen, ptr + 20, 4);
+                    if (caplen > 0 && caplen <= block_len - 32) {
+                        uint8_t *pkt_data = ptr + 28;
+                        uint32_t hash = rss_hash(pkt_data, caplen);
+                        int wid = hash % num_workers;
+                        struct injector_ctx *ictx = &injectors[wid];
+                        
+                        if (ictx->count >= ictx->max_pkts) {
+                            ictx->max_pkts *= 2;
+                            ictx->pkts = realloc(ictx->pkts, ictx->max_pkts * sizeof(struct pcap_pkt_ptr));
+                        }
+                        ictx->pkts[ictx->count].data = pkt_data;
+                        ictx->pkts[ictx->count].len = caplen;
+                        ictx->count++;
+                        total_parsed++;
+                    }
+                }
+                ptr += block_len;
+                if (g_max_events > 0 && total_parsed >= g_max_events) break;
+            }
+        } else {
+            fprintf(stderr, "FATAL: Unknown PCAP magic: 0x%08x\n", magic);
+            exiting = true;
+            munmap(map, st.st_size);
+            close(fd);
+            goto skip_pcap;
+        }
+        
+        fprintf(stderr, "[*] XDP attached (PCAP Native Mode)\n");
+        fprintf(stderr, "[*] Pre-parsing complete. Launching %d parallel injectors...\n", num_workers);
+        struct timespec ts_start, ts_end;
+        clock_gettime(CLOCK_MONOTONIC, &ts_start);
+        
+        for (int i = 0; i < num_workers; i++) {
+            pthread_create(&injectors[i].thread, NULL, injector_fn, &injectors[i]);
+        }
+        
+        uint64_t pkts_injected = 0;
+        for (int i = 0; i < num_workers; i++) {
+            pthread_join(injectors[i].thread, NULL);
+            pkts_injected += injectors[i].injected;
+            free(injectors[i].pkts);
+        }
+        free(injectors);
+        munmap(map, st.st_size);
+        close(fd);
+        
+        clock_gettime(CLOCK_MONOTONIC, &ts_end);
+        double duration = (ts_end.tv_sec - ts_start.tv_sec) + (ts_end.tv_nsec - ts_start.tv_nsec) / 1e9;
+        double pps = (duration > 0) ? ((double)pkts_injected / duration) : 0;
+        
+        fprintf(stderr, "[*] ---------------------------------------------------------\n");
+        fprintf(stderr, "[*] Benchmark: %lu packets injected natively in %d cores.\n", pkts_injected, num_workers);
+        fprintf(stderr, "[*] Duration : %.3f sec\n", duration);
+        fprintf(stderr, "[*] Speed    : %.2f PPS\n", pps);
+        fprintf(stderr, "[*] ---------------------------------------------------------\n");
+        sleep(2); // Wait for ringbuffer drain
+        exiting = true; // Signal workers to flush and exit
+        
+skip_pcap:
+        ; // label must be followed by statement
     } else {
         ifindexes = calloc(argc, sizeof(int));
         for (int i = 1; i < argc; i++) {
@@ -697,11 +902,17 @@ int main(int argc, char **argv) {
     }
     int stats_fd = bpf_object__find_map_fd_by_name(obj, "global_stats");
     __u32 stats_key = 0; uint64_t *cpu_stats = calloc(cores, sizeof(uint64_t));
-    uint64_t total_ingress = 0;
+    uint64_t total_ingress = 0, total_drops = 0;
     if (bpf_map_lookup_elem(stats_fd, &stats_key, cpu_stats) == 0) {
         for (int i = 0; i < cores; i++) total_ingress += cpu_stats[i];
     }
+    __u32 drop_key = 1;
+    if (bpf_map_lookup_elem(stats_fd, &drop_key, cpu_stats) == 0) {
+        for (int i = 0; i < cores; i++) total_drops += cpu_stats[i];
+    }
+    double loss_pct = (total_ingress > 0) ? ((double)total_drops / (double)total_ingress) * 100.0 : 0.0;
     fprintf(stderr, "[*] Kernel-Space Total Ingress: %lu packets\n", total_ingress);
+    fprintf(stderr, "[*] Telemetry Drops (RingBuf Overflows): %lu events (%.4f%% loss)\n", total_drops, loss_pct);
     free(cpu_stats);
     fflush(g_out_f); free(ifindexes); bpf_object__close(obj); return 0;
 }
