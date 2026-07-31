@@ -39,7 +39,7 @@ class Benchmark:
     def start_extractor(self, scenario):
         print(f"Starting {self.target} extractor for {scenario}...")
         if self.target == "rustiflow":
-            cmd = f"sudo taskset -c {RF_CPUS} rustiflow -f rustiflow -o csv --export-path /tmp/{scenario}_rf.csv realtime {VETH_INTF}"
+            cmd = f"sudo taskset -c {RF_CPUS} /home/leonardo.herkenhoff/RustiFlow/target/release/rustiflow -f rustiflow -o csv --export-path /tmp/{scenario}_rf.csv realtime {VETH_INTF}"
             proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=os.setsid)
             return proc
         elif self.target == "lynceus":
