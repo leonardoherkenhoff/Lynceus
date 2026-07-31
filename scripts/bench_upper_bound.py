@@ -43,6 +43,10 @@ def run_offline_benchmark():
         res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
         t1 = time.time()
         print(f"[+] RustiFlow completed in {t1-t0:.2f} seconds.")
+        if res.stdout:
+            print("    [STDOUT] " + res.stdout.strip()[:200])
+        if res.stderr:
+            print("    [STDERR] " + res.stderr.strip()[:200])
     except Exception as e:
         print(f"[-] RustiFlow failed: {e}")
 
@@ -50,7 +54,8 @@ def run_offline_benchmark():
 
     # 2. Lynceus
     print("\n[*] Running Lynceus Offline PCAP...")
-    cmd = f"sudo taskset -c 8-23 {LYNCEUS_BIN} --pcap {PCAP_PATH}"
+    # Run from the Lynceus root directory so it finds build/main.bpf.o
+    cmd = f"cd /home/leonardo.herkenhoff/Lynceus && sudo taskset -c 8-23 {LYNCEUS_BIN} --pcap {PCAP_PATH}"
     t0 = time.time()
     try:
         res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
@@ -62,7 +67,8 @@ def run_offline_benchmark():
             print(f"[+] Lynceus completed in {t1-t0:.2f} seconds. Packets: {pkts_match.group(1)}. Speed: {pps_match.group(1)} PPS.")
         else:
             print(f"[+] Lynceus completed in {t1-t0:.2f} seconds. (Could not parse PPS)")
-            print(res.stderr)
+            if res.stderr:
+                print("    [STDERR] " + res.stderr.strip()[:200])
     except Exception as e:
         print(f"[-] Lynceus failed: {e}")
 
@@ -85,7 +91,6 @@ echo "add_device rustiflow-p0" > /proc/net/pktgen/kpktgend_0
 echo "count 50000000" > /proc/net/pktgen/rustiflow-p0
 echo "clone_skb 100000" > /proc/net/pktgen/rustiflow-p0
 echo "pkt_size 60" > /proc/net/pktgen/rustiflow-p0
-echo "dst_mac {target_mac}" > /proc/net/pktgen/rustiflow-p0
 echo "delay 0" > /proc/net/pktgen/rustiflow-p0
 """
     with open("/tmp/setup_pktgen.sh", "w") as f:
@@ -111,7 +116,7 @@ echo "delay 0" > /proc/net/pktgen/rustiflow-p0
     time.sleep(2)
 
     print("\n[*] Running Lynceus Network Upper Bound...")
-    lyn_proc = subprocess.Popen(f"sudo taskset -c 8-23 {LYNCEUS_BIN} rustiflow-t0", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    lyn_proc = subprocess.Popen(f"cd /home/leonardo.herkenhoff/Lynceus && sudo taskset -c 8-23 {LYNCEUS_BIN} rustiflow-t0", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(2)
     run_pktgen()
     subprocess.run("sudo pkill loader", shell=True)
