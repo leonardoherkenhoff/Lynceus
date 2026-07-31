@@ -45,3 +45,4 @@ echo "========================================================="
 echo "1. O tempo exato de execucao e os gargalos estao acima (saida do /usr/bin/time)."
 echo "2. O consumo de recursos do sistema foi salvo em resource_metrics.txt."
 echo "3. O benchmark nativo do eBPF (PPS absoluto) foi salvo em loader_audit.log."
+
