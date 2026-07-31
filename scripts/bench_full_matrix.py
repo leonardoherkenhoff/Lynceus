@@ -12,8 +12,8 @@ GEN_CPUS = "0-7"
 RF_CPUS = "8-23"
 CTRL_CPUS = "24-31"
 
-IPERF_SERVER_IP = "10.203.0.2"
-IPERF_CLIENT_IP = "10.203.0.1"
+IPERF_SERVER_IP = "10.203.0.1"
+IPERF_CLIENT_IP = "10.203.0.2"
 VETH_INTF = "rustiflow-t0"
 PEER_INTF = "rustiflow-p0"
 PCAP_PATH = "/root/CIC-IDS-2017/Monday-WorkingHours.pcap" # Default on testbed
@@ -63,8 +63,8 @@ class Benchmark:
         print(f"--- Running {scenario_id} ---")
         # Ensure no stale servers
         subprocess.run("sudo pkill iperf3", shell=True, stderr=subprocess.DEVNULL)
-        # Start server
-        server_cmd = f"sudo ip netns exec rustiflow-peer taskset -c {GEN_CPUS} iperf3 -s -B {IPERF_SERVER_IP} -p 5201 --daemon"
+        # Start server on host
+        server_cmd = f"sudo taskset -c {GEN_CPUS} iperf3 -s -B {IPERF_SERVER_IP} -p 5201 --daemon"
         subprocess.run(server_cmd, shell=True)
         time.sleep(1)
         
