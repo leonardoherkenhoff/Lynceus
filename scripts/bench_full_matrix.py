@@ -46,27 +46,62 @@ class Benchmark:
 
     def start_extractor(self, scenario):
         print(f"Starting {self.target} extractor for {scenario}...")
+        err_log = f"/tmp/{scenario}_{self.target}_err.log"
+        if os.path.exists(err_log):
+            try: os.remove(err_log)
+            except: pass
         if self.target == "rustiflow":
-            cmd = f"sudo taskset -c {RF_CPUS} /home/leonardo.herkenhoff/RustiFlow/target/release/rustiflow -f rustiflow -o csv --export-path /tmp/{scenario}_rf.csv realtime {VETH_INTF}"
-            proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=os.setsid)
+            cmd = f"sudo RUST_LOG=info taskset -c {RF_CPUS} /home/leonardo.herkenhoff/RustiFlow/target/release/rustiflow -f rustiflow -o print realtime {VETH_INTF} > /dev/null 2> {err_log}"
+            proc = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid)
+            proc.err_log = err_log
             return proc
         elif self.target == "lynceus":
-            cmd = f"sudo taskset -c {RF_CPUS} /home/leonardo.herkenhoff/Lynceus/build/loader -i {VETH_INTF}"
-            proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=os.setsid)
+            cmd = f"cd /home/leonardo.herkenhoff/Lynceus && sudo taskset -c {RF_CPUS} /home/leonardo.herkenhoff/Lynceus/build/loader {VETH_INTF} > /dev/null 2> {err_log}"
+            proc = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid)
+            proc.err_log = err_log
             return proc
         return None
 
     def stop_extractor(self, proc):
         if proc:
-            os.killpg(os.getpgid(proc.pid), signal.SIGINT)
+            if self.target == "rustiflow":
+                subprocess.run("sudo pkill -INT rustiflow", shell=True, stderr=subprocess.DEVNULL)
+            elif self.target == "lynceus":
+                subprocess.run("sudo pkill -INT loader", shell=True, stderr=subprocess.DEVNULL)
+            time.sleep(2)
             try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except: pass
             
-            # TODO: Parse stderr/stdout for dropped packets based on tool output
-            return "0"
-        return "N/A" # For control or no-op target
+            err_log = getattr(proc, 'err_log', None)
+            if err_log and os.path.exists(err_log):
+                with open(err_log, "r", errors="ignore") as f:
+                    content = f.read()
+                if self.target == "rustiflow":
+                    rf_matched, rf_submitted, rf_dropped = 0, 0, 0
+                    for line in content.splitlines():
+                        if "eBPF counters" in line and "matched_packets=" in line:
+                            m = re.search(r"matched_packets=(\d+), submitted_events=(\d+), dropped_packets=(\d+)", line)
+                            if m:
+                                rf_matched += int(m.group(1))
+                                rf_submitted += int(m.group(2))
+                                rf_dropped += int(m.group(3))
+                    if rf_matched > 0 or rf_dropped > 0:
+                        loss_pct = (rf_dropped / (rf_matched if rf_matched > 0 else 1)) * 100.0
+                        return f"{rf_dropped:,} ({loss_pct:.2f}%)"
+                    for line in reversed(content.splitlines()):
+                        if "Total dropped packets before exit:" in line:
+                            m = re.search(r":\s*(\d+)", line)
+                            if m and int(m.group(1)) > 0:
+                                return f"{int(m.group(1)):,} drops"
+                elif self.target == "lynceus":
+                    for line in reversed(content.splitlines()):
+                        if "Telemetry Drops" in line:
+                            m = re.search(r": (\d+) events \(([\d.]+)% loss\)", line)
+                            if m:
+                                return f"{int(m.group(1)):,} ({float(m.group(2)):.2f}%)"
+            return "0 (0.00%)"
+        return "N/A"
 
     def run_iperf_scenario(self, scenario_id, duration, bitrate, length, protocol="-u"):
         print(f"--- Running {scenario_id} ---")
