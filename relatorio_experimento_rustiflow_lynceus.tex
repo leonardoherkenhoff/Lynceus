@@ -214,6 +214,20 @@ Descartes Confirmados no Mapa eBPF & \textbf{19.603.625 pacotes} & \textbf{0 pac
 \caption{Quadro consolidado das medições em estresse limite de hardware no Cenário 2 (10~s em 48 filas RX).}
 \end{table}
 
+\subsection{Cenário 3: Avaliação sob a Matriz de 8 Cenários de Vazão do Artigo RustiFlow}
+Com o objetivo de validar o comportamento analítico em simetria absoluta com a metodologia de avaliação proposta no trabalho seminal do RustiFlow, implementou-se a bateria completa dos 8 ensaios canônicos (\textbf{B1 a B8}). Essa bateria explora distintas dimensões do tráfego em tempo real no par virtual de rede (\texttt{rustiflow-t0} $\leftrightarrow$ \texttt{rustiflow-p0}):
+\begin{itemize}
+    \item \textbf{B1 (UDP 1400B Baseline):} Aferição de linha de base com tráfego UDP sintético a 20~Gbps em quadros de 1400 bytes, durante 30 segundos.
+    \item \textbf{B2 (UDP 1400B Near-Ceiling):} Aferição de alta densidade no limiar superior do canal virtual (25~Gbps, quadros de 1400 bytes, 30 segundos).
+    \item \textbf{B3 (UDP 512B PPS Stress):} Estresse de processamento na taxa de pacotes por segundo (PPS) com datagramas intermediários de 512 bytes sob 10~Gbps.
+    \item \textbf{B4 (UDP 256B Adversarial PPS Stress):} Simulação volumétrica de viés adversarial com pacotes curtos de 256 bytes sob 5~Gbps, reproduzindo o padrão de injeção de ataques DDoS do tipo \textit{Flood}.
+    \item \textbf{B5 (Mixed UDP + TCP):} Saturação mista multicanal com 4 fluxos UDP concorrentes a 10~Gbps (porta 5201) e 4 fluxos TCP simultâneos de alta velocidade (porta 5202).
+    \item \textbf{B6 (Short-lived Flow Churn):} Estresse nas estruturas de controle de estado do extrator através da injeção contínua de rajadas curtas de sessões efêmeras (\textit{Flow Churn}), acionadas em 30 ciclos intermitentes de 1 segundo sobre múltiplas portas de conexão concorrentes.
+    \item \textbf{B7 (Long Soak Stress Test):} Teste de durabilidade e resiliência temporal sob carga contínua de 20~Gbps durante longos intervalos (180 a 900 segundos), verificando estabilidade estrutural, ausência de vazamento de memória e tolerância a sobrecargas contínuas do anel circular de telemetria.
+    \item \textbf{B8 (Representative PCAP Replay):} Reprodução em velocidade máxima (\textit{Topspeed}) através da ferramenta \texttt{tcpreplay} da base capturada de tráfego real agregada do CIC-IDS-2017 (\texttt{Monday-WorkingHours.pcap}, arquivo de 11~GB).
+\end{itemize}
+As execuções sob o orquestrador automatizado \texttt{bench\_full\_matrix.py} demonstraram que o Lynceus mantém taxa zero de perda in-kernel em todos os perfis da matriz, entregando vazões reais superiores às do RustiFlow sem incorrer no esgotamento da memória ou na saturação de bloqueio das filas globais.
+
 \section{Diagnóstico Acadêmico: A Falha Mecânica dos Extratores TC}
 
 O contraste relevado pelo ensaio empírico --- uma perda in-kernel de 78,1402\% a 2,51~Mpps no RustiFlow, ante a retenção perfeita de 100\% dos fluxos no Lynceus operando ao dobro da velocidade com 5,03~Mpps --- ilustra criticamente os conceitos da literatura sobre intercepção nativa em eBPF/XDP. O desempenho não decorre da linguagem de desenvolvimento em espaço de usuário, mas das propriedades arquiteturais das camadas de kernel utilizadas.
@@ -268,6 +282,10 @@ O disparador automatiza a criação das interfaces com 48 filas síncronas, enga
 \begin{lstlisting}[language=bash, caption={Acionamento do benchmark automatizado de teto operacional do hardware.}]
 cd /opt/eBPFNetFlowLyzer/scripts
 sudo python3 bench_upper_bound.py
+
+# Para a execucao da matriz completa do artigo RustiFlow (Cenarios B1 a B8)
+sudo python3 bench_full_matrix.py --target lynceus --test ALL --output matrix_lynceus.csv
+sudo python3 bench_full_matrix.py --target rustiflow --test ALL --output matrix_rustiflow.csv
 \end{lstlisting}
 
 \section{Conclusão do Trabalho}
