@@ -36,8 +36,8 @@ class Benchmark:
         print("Checking and enforcing testbed VETH IP configuration...")
         subprocess.run(f"sudo ip addr add {IPERF_SERVER_IP}/30 dev {VETH_INTF} 2>/dev/null", shell=True)
         subprocess.run(f"sudo ip netns exec rustiflow-peer ip addr add {IPERF_CLIENT_IP}/30 dev {PEER_INTF} 2>/dev/null", shell=True)
-        subprocess.run(f"sudo ip link set {VETH_INTF} up", shell=True)
-        subprocess.run(f"sudo ip netns exec rustiflow-peer ip link set {PEER_INTF} up", shell=True)
+        subprocess.run(f"sudo ip link set {VETH_INTF} mtu 9000 up", shell=True)
+        subprocess.run(f"sudo ip netns exec rustiflow-peer ip link set {PEER_INTF} mtu 9000 up", shell=True)
 
     def log_result(self, scenario, duration, bitrate, dropped, notes=""):
         with open(self.output_file, 'a', newline='') as f:
@@ -221,12 +221,12 @@ class Benchmark:
         extractor_proc = self.start_extractor("B8")
         time.sleep(2)
         
-        cmd = f"sudo ip netns exec rustiflow-peer taskset -c {GEN_CPUS} tcpreplay --intf1={PEER_INTF} --topspeed -W --loop=1 {pcap_file}"
+        cmd = f"sudo timeout 300 ip netns exec rustiflow-peer taskset -c {GEN_CPUS} tcpreplay --intf1={PEER_INTF} --topspeed --loop=1 {pcap_file} 2>> /tmp/B8_tcpreplay_err.log"
         try:
             subprocess.run(cmd, shell=True, check=True)
             achieved = "Topspeed Replay"
-        except subprocess.CalledProcessError:
-            achieved = "Error"
+        except subprocess.CalledProcessError as e:
+            achieved = f"Error or Timeout (Code {e.returncode})"
             
         drops = self.stop_extractor(extractor_proc)
         self.log_result("B8", "PCAP loop", achieved, drops, pcap_file)
