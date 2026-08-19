@@ -229,15 +229,15 @@ class Benchmark:
         extractor_proc = self.start_extractor("B8")
         time.sleep(2)
         
-        # Implement dynamic watchdog: run tcpreplay with --stats=1 and stdbuf for line-buffering
-        cmd = f"stdbuf -oL -eL ip netns exec rustiflow-peer taskset -c {GEN_CPUS} tcpreplay --stats=1 --intf1={PEER_INTF} --topspeed --loop=1 {pcap_file}"
+        # Implement dynamic watchdog: run tcpreplay with --stats=1 and filter out txring warnings
+        cmd = f"stdbuf -oL -eL ip netns exec rustiflow-peer taskset -c {GEN_CPUS} tcpreplay --stats=1 --intf1={PEER_INTF} --topspeed --loop=1 {pcap_file} 2>&1 | stdbuf -oL grep -v 'Warning in txring'"
         
         print(f"[*] Starting tcpreplay with dynamic watchdog...")
-        proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="ignore", preexec_fn=os.setsid)
+        proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, text=True, errors="ignore", preexec_fn=os.setsid)
         
         last_output_time = time.time()
-        output_log = []
         tcpreplay_drops = 0
+        enobufs_count = 0
         watchdog_triggered = False
         
         while True:
@@ -248,12 +248,13 @@ class Benchmark:
             if r:
                 line = proc.stdout.readline()
                 if line:
-                    output_log.append(line)
                     last_output_time = time.time()
                     if "Failed packets" in line:
                         m = re.search(r"Failed packets:\s*(\d+)", line)
                         if m:
                             tcpreplay_drops = int(m.group(1))
+                    elif "ENOBUFS" in line:
+                        enobufs_count += 1
             else:
                 if time.time() - last_output_time > 15.0:
                     print(f"[!] Watchdog triggered! tcpreplay hung for >15s. Sending SIGINT...")
@@ -263,14 +264,15 @@ class Benchmark:
                     break
                     
         for line in proc.stdout.readlines():
-            output_log.append(line)
             if "Failed packets" in line:
                 m = re.search(r"Failed packets:\s*(\d+)", line)
                 if m:
                     tcpreplay_drops = int(m.group(1))
+            elif "ENOBUFS" in line:
+                enobufs_count += 1
                     
         if tcpreplay_drops == 0:
-            tcpreplay_drops = sum(1 for line in output_log if "ENOBUFS" in line)
+            tcpreplay_drops = enobufs_count
             
         drops_rustiflow = self.stop_extractor(extractor_proc)
         
