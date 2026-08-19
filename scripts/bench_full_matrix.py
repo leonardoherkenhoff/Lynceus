@@ -223,36 +223,67 @@ class Benchmark:
 
     def run_b8(self, pcap_file):
         print(f"--- Running B8 (PCAP Replay) ---")
+        import signal
+        import select
+        
         extractor_proc = self.start_extractor("B8")
         time.sleep(2)
         
-        # We apply a 20s timeout for all B8 tests to prevent full system deadlock under MTU 9000
-        timeout_prefix = "sudo timeout -s SIGINT 20 "
-        cmd = f"{timeout_prefix} ip netns exec rustiflow-peer taskset -c {GEN_CPUS} tcpreplay --intf1={PEER_INTF} --topspeed --loop=1 {pcap_file} > /tmp/B8_tcpreplay_err.log 2>&1"
-        try:
-            subprocess.run(cmd, shell=True)
-            achieved = "Topspeed Replay (Timed out)"
-        except Exception as e:
-            achieved = f"Error (Code {e})"
-            
-        drops_rustiflow = self.stop_extractor(extractor_proc)
+        # Implement dynamic watchdog: run tcpreplay with --stats=1 and stdbuf for line-buffering
+        cmd = f"stdbuf -oL -eL ip netns exec rustiflow-peer taskset -c {GEN_CPUS} tcpreplay --stats=1 --intf1={PEER_INTF} --topspeed --loop=1 {pcap_file}"
         
+        print(f"[*] Starting tcpreplay with dynamic watchdog...")
+        proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="ignore", preexec_fn=os.setsid)
+        
+        last_output_time = time.time()
+        output_log = []
         tcpreplay_drops = 0
-        if os.path.exists("/tmp/B8_tcpreplay_err.log"):
-            with open("/tmp/B8_tcpreplay_err.log", "r", errors="ignore") as f:
-                content = f.read()
-                m = re.search(r"Failed packets:\s*(\d+)", content)
+        watchdog_triggered = False
+        
+        while True:
+            if proc.poll() is not None:
+                break
+                
+            r, _, _ = select.select([proc.stdout], [], [], 1.0)
+            if r:
+                line = proc.stdout.readline()
+                if line:
+                    output_log.append(line)
+                    last_output_time = time.time()
+                    if "Failed packets" in line:
+                        m = re.search(r"Failed packets:\s*(\d+)", line)
+                        if m:
+                            tcpreplay_drops = int(m.group(1))
+            else:
+                if time.time() - last_output_time > 15.0:
+                    print(f"[!] Watchdog triggered! tcpreplay hung for >15s. Sending SIGINT...")
+                    watchdog_triggered = True
+                    os.killpg(os.getpgid(proc.pid), signal.SIGINT)
+                    time.sleep(2)
+                    break
+                    
+        for line in proc.stdout.readlines():
+            output_log.append(line)
+            if "Failed packets" in line:
+                m = re.search(r"Failed packets:\s*(\d+)", line)
                 if m:
                     tcpreplay_drops = int(m.group(1))
-                else:
-                    tcpreplay_drops = content.count("ENOBUFS")
+                    
+        if tcpreplay_drops == 0:
+            tcpreplay_drops = sum(1 for line in output_log if "ENOBUFS" in line)
+            
+        drops_rustiflow = self.stop_extractor(extractor_proc)
         
         if tcpreplay_drops > 0:
             drops = f"{tcpreplay_drops:,} falhas TX ENOBUFS"
         else:
             drops = drops_rustiflow
             
-        self.log_result("B8", "20s Timeout", achieved, drops, pcap_file)
+        achieved = "Topspeed Replay"
+        if watchdog_triggered:
+            achieved += " (Watchdog Killed)"
+            
+        self.log_result("B8", "Dynamic Watchdog", achieved, drops, pcap_file)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run Benchmark Matrix (B1-B8)")

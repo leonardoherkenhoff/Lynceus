@@ -12,7 +12,7 @@ import json
 import shutil
 
 BASE_DIR       = "."
-RUSTIFLOW_BIN  = "/opt/RustiFlow/target/release/rustiflow"
+RUSTIFLOW_BIN  = "/home/leonardo.herkenhoff/RustiFlow/target/release/rustiflow"
 DATA_RAW       = os.path.join(BASE_DIR, "data/raw")
 DATA_INTERIM   = os.path.join(BASE_DIR, "data/interim/RUSTIFLOW_RAW")
 FEATURE_SET    = "rustiflow"   # 83 features CIC-compatíveis
