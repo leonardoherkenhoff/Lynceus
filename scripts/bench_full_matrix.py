@@ -20,9 +20,10 @@ PEER_INTF = "rustiflow-p0"
 PCAP_PATH = "/root/CIC-IDS-2017/Monday-WorkingHours.pcap" # Default on testbed
 
 class Benchmark:
-    def __init__(self, target, output_file):
+    def __init__(self, target, output_file, gro="default"):
         self.target = target
         self.output_file = output_file
+        self.gro = gro
         self.results = []
         self.ensure_network_setup()
         
@@ -38,6 +39,10 @@ class Benchmark:
         subprocess.run(f"sudo ip netns exec rustiflow-peer ip addr add {IPERF_CLIENT_IP}/30 dev {PEER_INTF} 2>/dev/null", shell=True)
         subprocess.run(f"sudo ip link set {VETH_INTF} mtu 9000 up", shell=True)
         subprocess.run(f"sudo ip netns exec rustiflow-peer ip link set {PEER_INTF} mtu 9000 up", shell=True)
+        if self.gro in ["on", "off"]:
+            print(f"Enforcing GRO {self.gro.upper()} on veth pair...")
+            subprocess.run(f"sudo ethtool -K {VETH_INTF} gro {self.gro}", shell=True, stderr=subprocess.DEVNULL)
+            subprocess.run(f"sudo ip netns exec rustiflow-peer ethtool -K {PEER_INTF} gro {self.gro}", shell=True, stderr=subprocess.DEVNULL)
 
     def log_result(self, scenario, duration, bitrate, dropped, notes=""):
         with open(self.output_file, 'a', newline='') as f:
@@ -221,15 +226,33 @@ class Benchmark:
         extractor_proc = self.start_extractor("B8")
         time.sleep(2)
         
-        cmd = f"sudo timeout 300 ip netns exec rustiflow-peer taskset -c {GEN_CPUS} tcpreplay --intf1={PEER_INTF} --topspeed --loop=1 {pcap_file} 2>> /tmp/B8_tcpreplay_err.log"
+        # We apply a 20s timeout for all B8 tests to prevent full system deadlock under MTU 9000
+        timeout_prefix = "sudo timeout -s SIGINT 20 "
+        cmd = f"{timeout_prefix} ip netns exec rustiflow-peer taskset -c {GEN_CPUS} tcpreplay --intf1={PEER_INTF} --topspeed --loop=1 {pcap_file} > /tmp/B8_tcpreplay_err.log 2>&1"
         try:
-            subprocess.run(cmd, shell=True, check=True)
-            achieved = "Topspeed Replay"
-        except subprocess.CalledProcessError as e:
-            achieved = f"Error or Timeout (Code {e.returncode})"
+            subprocess.run(cmd, shell=True)
+            achieved = "Topspeed Replay (Timed out)"
+        except Exception as e:
+            achieved = f"Error (Code {e})"
             
-        drops = self.stop_extractor(extractor_proc)
-        self.log_result("B8", "PCAP loop", achieved, drops, pcap_file)
+        drops_rustiflow = self.stop_extractor(extractor_proc)
+        
+        tcpreplay_drops = 0
+        if os.path.exists("/tmp/B8_tcpreplay_err.log"):
+            with open("/tmp/B8_tcpreplay_err.log", "r", errors="ignore") as f:
+                content = f.read()
+                m = re.search(r"Failed packets:\s*(\d+)", content)
+                if m:
+                    tcpreplay_drops = int(m.group(1))
+                else:
+                    tcpreplay_drops = content.count("ENOBUFS")
+        
+        if tcpreplay_drops > 0:
+            drops = f"{tcpreplay_drops:,} falhas TX ENOBUFS"
+        else:
+            drops = drops_rustiflow
+            
+        self.log_result("B8", "20s Timeout", achieved, drops, pcap_file)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run Benchmark Matrix (B1-B8)")
@@ -238,9 +261,10 @@ if __name__ == "__main__":
     parser.add_argument("--pcap", default=PCAP_PATH)
     parser.add_argument("--soak-duration", type=int, default=180, help="Duration in seconds for B7 long soak test")
     parser.add_argument("--test", default="ALL", choices=["ALL", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8"], help="Specific test scenario to execute")
+    parser.add_argument("--gro", choices=["on", "off", "default"], default="default", help="Control GRO offload state")
     args = parser.parse_args()
 
-    bench = Benchmark(args.target, args.output)
+    bench = Benchmark(args.target, args.output, args.gro)
     
     # Execução da matriz completa (B1 a B8) ou teste individual
     if args.test in ["ALL", "B1"]:
