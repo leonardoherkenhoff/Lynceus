@@ -177,9 +177,16 @@ class Benchmark:
                     elif "ENOBUFS" in line:
                         enobufs_count += 1
                     elif "Warning in txring" not in line:
-                        # Any other line (like Actual: XX packets) indicates real progress
-                        # If tcpreplay is stuck spamming txring warnings, this doesn't update!
-                        last_progress_time = time.time()
+                        # Parse Actual stats line to catch 0 bps livelock
+                        if "Actual: " in line:
+                            m = re.search(r"Actual:\s*(\d+)\s*packets", line)
+                            if m and int(m.group(1)) == 0:
+                                # It printed stats but 0 packets were sent! Livelock!
+                                pass
+                            else:
+                                last_progress_time = time.time()
+                        else:
+                            last_progress_time = time.time()
             else:
                 if time.time() - last_progress_time > 15.0:
                     print(f"[!] Watchdog triggered! tcpreplay made no progress for >15s (livelock). Sending SIGINT...")
