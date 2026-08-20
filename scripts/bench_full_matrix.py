@@ -56,6 +56,12 @@ class Benchmark:
             proc = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid)
             proc.err_log = err_log
             return proc
+        elif self.target == "rustiflow-organic":
+            # Realistic timeouts for a scrubbing center (15s idle, 30s active)
+            cmd = f"sudo RUST_LOG=info taskset -c {RF_CPUS} /home/leonardo.herkenhoff/RustiFlow/target/release/rustiflow -f rustiflow --idle-timeout 15 --active-timeout 30 -o print realtime {VETH_INTF} > /dev/null 2> {err_log}"
+            proc = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid)
+            proc.err_log = err_log
+            return proc
         elif self.target == "lynceus":
             cmd = f"cd /home/leonardo.herkenhoff/Lynceus && sudo taskset -c {RF_CPUS} /home/leonardo.herkenhoff/Lynceus/build/loader {VETH_INTF} > /dev/null 2> {err_log}"
             proc = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid)
@@ -65,7 +71,7 @@ class Benchmark:
 
     def stop_extractor(self, proc):
         if proc:
-            if self.target == "rustiflow":
+            if self.target.startswith("rustiflow"):
                 subprocess.run("sudo pkill -INT rustiflow", shell=True, stderr=subprocess.DEVNULL)
             elif self.target == "lynceus":
                 subprocess.run("sudo pkill -INT loader", shell=True, stderr=subprocess.DEVNULL)
@@ -78,7 +84,7 @@ class Benchmark:
             if err_log and os.path.exists(err_log):
                 with open(err_log, "r", errors="ignore") as f:
                     content = f.read()
-                if self.target == "rustiflow":
+                if self.target.startswith("rustiflow"):
                     rf_matched, rf_submitted, rf_dropped = 0, 0, 0
                     for line in content.splitlines():
                         if "eBPF counters" in line and "matched_packets=" in line:
@@ -221,7 +227,7 @@ class Benchmark:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run Strict Replication Benchmark")
-    parser.add_argument("--target", choices=["rustiflow", "lynceus", "control"], required=True)
+    parser.add_argument("--target", choices=["rustiflow", "lynceus", "control", "rustiflow-organic"], required=True)
     parser.add_argument("--output", default="full_matrix_results.csv")
     parser.add_argument("--pcap", default=PCAP_PATH)
     args = parser.parse_args()
