@@ -1,6 +1,5 @@
 #!/bin/bash
 echo "Killing any orphaned processes..."
-sudo pkill -9 -f run_batch 2>/dev/null
 sudo pkill -9 -f bench_full_matrix 2>/dev/null
 sudo killall -9 python3 tcpreplay iperf3 rustiflow loader 2>/dev/null
 
