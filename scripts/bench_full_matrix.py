@@ -128,7 +128,7 @@ class Benchmark:
 
     def run_throughput_scenario(self, scenario_id, throughput):
         print(f"--- Running {scenario_id} (Throughput: {throughput}) ---")
-        duration = 30
+        duration = 120
         subprocess.run("sudo pkill iperf3", shell=True, stderr=subprocess.DEVNULL)
         
         server_cmd = f"sudo taskset -c {GEN_CPUS} iperf3 -s -B {IPERF_SERVER_IP} -p 5201 --daemon"
@@ -243,5 +243,5 @@ if __name__ == "__main__":
     bench.run_throughput_scenario("T6", "0") # 0 = Max in iperf3
     
     # 2. PCAP test exactly as in pcap_performance_test.py
-    bench.run_pcap_scenario("PCAP1", args.pcap)
+    # bench.run_pcap_scenario("PCAP1", args.pcap)
 
