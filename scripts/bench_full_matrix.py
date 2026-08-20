@@ -34,6 +34,13 @@ class Benchmark:
 
     def ensure_network_setup(self):
         print("Checking and enforcing testbed VETH IP configuration...")
+        subprocess.run(f"sudo ip link set dev {VETH_INTF} up", shell=True, check=True)
+        subprocess.run(f"sudo ip netns exec rustiflow-peer ip link set dev {PEER_INTF} up", shell=True, check=True)
+        
+        # Disable offloading to ensure true packet-by-packet processing
+        subprocess.run(f"sudo ethtool -K {VETH_INTF} gso off tso off gro off", shell=True, stderr=subprocess.DEVNULL)
+        subprocess.run(f"sudo ip netns exec rustiflow-peer ethtool -K {PEER_INTF} gso off tso off gro off", shell=True, stderr=subprocess.DEVNULL)
+        
         subprocess.run(f"sudo ip addr add {IPERF_SERVER_IP}/30 dev {VETH_INTF} 2>/dev/null", shell=True)
         subprocess.run(f"sudo ip netns exec rustiflow-peer ip addr add {IPERF_CLIENT_IP}/30 dev {PEER_INTF} 2>/dev/null", shell=True)
         # Removed MTU 9000 and GRO isolations to perfectly match authors' blind environment (MTU 1500 / default GRO)
