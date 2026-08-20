@@ -14,12 +14,13 @@ rm -f full_matrix_results.csv
 echo "timestamp,scenario,target,duration,bitrate,dropped,notes" > full_matrix_results.csv
 
 echo "Provisioning testbed namespace and veth pair..."
-sudo ip netns add rustiflow-peer 2>/dev/null || true
-sudo ip link add rustiflow-t0 type veth peer name rustiflow-p0 2>/dev/null || true
-sudo ip link set rustiflow-p0 netns rustiflow-peer 2>/dev/null || true
-sudo ip link set rustiflow-t0 up 2>/dev/null || true
-sudo ip netns exec rustiflow-peer ip link set rustiflow-p0 up 2>/dev/null || true
-sudo ip netns exec rustiflow-peer ip link set lo up 2>/dev/null || true
+sudo ip netns add rustiflow-peer
+sudo ip link add rustiflow-t0 type veth peer name rustiflow-p0
+sudo ip link set rustiflow-p0 netns rustiflow-peer
+sudo ip link set rustiflow-t0 up
+sudo ip netns exec rustiflow-peer ip link set rustiflow-p0 up
+sudo ip netns exec rustiflow-peer ip link set lo up
+
 
 
 echo "Starting Lynceus GRO ON"
