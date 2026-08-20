@@ -22,13 +22,10 @@ sudo ip netns exec rustiflow-peer ip link set lo up
 
 
 
-echo "Starting Lynceus GRO ON"
-sudo python3 scripts/bench_full_matrix.py --target lynceus --test ALL --gro on
-echo "Starting Lynceus GRO OFF"
-sudo python3 scripts/bench_full_matrix.py --target lynceus --test ALL --gro off
-echo "Starting Rustiflow GRO ON"
-sudo python3 scripts/bench_full_matrix.py --target rustiflow --test ALL --gro on
-echo "Starting Rustiflow GRO OFF"
-sudo python3 scripts/bench_full_matrix.py --target rustiflow --test ALL --gro off
+echo "Starting Lynceus (Strict Replication)"
+sudo python3 scripts/bench_full_matrix.py --target lynceus
+
+echo "Starting Rustiflow (Strict Replication)"
+sudo python3 scripts/bench_full_matrix.py --target rustiflow
 
 echo "ALL DONE!"
