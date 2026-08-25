@@ -28,12 +28,8 @@ def get_rx_stats(iface="rustiflow-t0"):
     except: pass
     return 0, 0
 
-def run_pktgen_benchmark(target_mac):
-    print("\n" + "="*50)
-    print("=== SCENARIO 2: NETWORK PKTGEN UPPER BOUND ===")
-    print("="*50)
-
-    pktgen_script = f"""
+def create_pktgen_script(delay=0, count=5000000):
+    script = f"""
 modprobe pktgen
 for f in /proc/net/pktgen/kpktgend_*; do echo "rem_device_all" > $f 2>/dev/null; done
 for i in $(seq 0 47); do
@@ -43,49 +39,39 @@ for i in $(seq 0 47); do
     echo "flag QUEUE_MAP_CPU" > $dev 2>/dev/null
     echo "queue_map_min $i" > $dev 2>/dev/null
     echo "queue_map_max $i" > $dev 2>/dev/null
-    echo "count 5000000" > $dev 2>/dev/null
+    echo "count {count}" > $dev 2>/dev/null
     echo "clone_skb 1000" > $dev 2>/dev/null
     echo "pkt_size 60" > $dev 2>/dev/null
-    echo "delay 0" > $dev 2>/dev/null
+    echo "delay {delay}" > $dev 2>/dev/null
 done
 """
-    script_path = "/tmp/setup_pktgen.sh"
-    with open(script_path, "w") as f: f.write(pktgen_script)
+    with open("/tmp/setup_pktgen.sh", "w") as f: f.write(script)
+
+def run_pktgen(duration):
+    subprocess.run("sudo ip netns exec rustiflow-peer bash /tmp/setup_pktgen.sh", shell=True)
+    subprocess.Popen("sudo ip netns exec rustiflow-peer bash -c 'echo start > /proc/net/pktgen/pgctrl'", shell=True)
+    time.sleep(duration)
+    subprocess.run("sudo ip netns exec rustiflow-peer bash -c 'echo stop > /proc/net/pktgen/pgctrl'", shell=True)
+    try:
+        res = subprocess.check_output("sudo ip netns exec rustiflow-peer bash -c 'cat /proc/net/pktgen/rustiflow-p0*'", shell=True).decode()
+        pps_matches = re.findall(r"(\d+)pps", res)
+        if pps_matches:
+            total_pps = sum(int(p) for p in pps_matches)
+            print(f"    [PktGen] Injected at {total_pps} PPS across {len(pps_matches)} threads")
+    except: pass
+
+def run_benchmark():
+    setup_veth()
     
-    def run_pktgen():
-        subprocess.run(f"sudo ip netns exec rustiflow-peer bash {script_path}", shell=True)
-        subprocess.Popen("sudo ip netns exec rustiflow-peer bash -c 'echo start > /proc/net/pktgen/pgctrl'", shell=True)
-        time.sleep(10)
-        subprocess.run("sudo ip netns exec rustiflow-peer bash -c 'echo stop > /proc/net/pktgen/pgctrl'", shell=True)
-        try:
-            res = subprocess.check_output("sudo ip netns exec rustiflow-peer bash -c 'cat /proc/net/pktgen/rustiflow-p0*'", shell=True).decode()
-            pps_matches = re.findall(r"(\d+)pps", res)
-            if pps_matches:
-                total_pps = sum(int(p) for p in pps_matches)
-                print(f"    [PktGen] Injected at {total_pps} PPS across {len(pps_matches)} threads")
-        except: pass
-
-    print("\n[*] Running RustiFlow Network Upper Bound...")
-    pkts0, drops0 = get_rx_stats("rustiflow-t0")
-    if os.path.exists("/tmp/rf_net.log"): os.remove("/tmp/rf_net.log")
-    rf_proc = subprocess.Popen(f"sudo RUST_LOG=info {RUSTIFLOW_BIN} -f rustiflow -o print realtime rustiflow-t0 > /dev/null 2> /tmp/rf_net.log", shell=True)
-    time.sleep(2)
-    run_pktgen()
-    subprocess.run("sudo pkill -INT rustiflow", shell=True)
-    time.sleep(2)
-    pkts1, drops1 = get_rx_stats("rustiflow-t0")
-    print(f"    [Interface Stats] RX Packets Delivered: {pkts1-pkts0:,} | Kernel Interface Drops: {drops1-drops0:,}")
-    if os.path.exists("/tmp/rf_net.log"):
-        with open("/tmp/rf_net.log", "r") as logf:
-            for l in logf:
-                if "matched_packets=" in l or "Total dropped" in l: print("    [RustiFlow Engine] " + l.strip())
-
-    print("\n[*] Running Lynceus Network Upper Bound...")
+    print("\n" + "="*50)
+    print("=== SCENARIO 2A: LYNCEUS UPPER BOUND ===")
+    print("="*50)
+    create_pktgen_script(delay=0, count=5000000)
     pkts0, drops0 = get_rx_stats("rustiflow-t0")
     if os.path.exists("/tmp/lyn_net.log"): os.remove("/tmp/lyn_net.log")
     lyn_proc = subprocess.Popen(f"cd /opt/lynceus && sudo {LYNCEUS_BIN} rustiflow-t0 > /dev/null 2> /tmp/lyn_net.log", shell=True)
     time.sleep(2)
-    run_pktgen()
+    run_pktgen(10)
     subprocess.run("sudo pkill -INT loader", shell=True)
     time.sleep(2)
     pkts1, drops1 = get_rx_stats("rustiflow-t0")
@@ -95,6 +81,23 @@ done
             for l in logf:
                 if any(x in l for x in ["Kernel-Space", "Telemetry Drops", "Speed:"]): print("    [Lynceus Engine] " + l.strip())
 
+    print("\n" + "="*50)
+    print("=== SCENARIO 2B: RUSTIFLOW UPPER BOUND (SHORT BURST) ===")
+    print("="*50)
+    create_pktgen_script(delay=1000, count=1000000)
+    pkts0, drops0 = get_rx_stats("rustiflow-t0")
+    if os.path.exists("/tmp/rf_net.log"): os.remove("/tmp/rf_net.log")
+    rf_proc = subprocess.Popen(f"sudo RUST_LOG=info {RUSTIFLOW_BIN} -f rustiflow -o print realtime rustiflow-t0 > /dev/null 2> /tmp/rf_net.log", shell=True)
+    time.sleep(2)
+    run_pktgen(3)
+    subprocess.run("sudo pkill -INT rustiflow", shell=True)
+    time.sleep(2)
+    pkts1, drops1 = get_rx_stats("rustiflow-t0")
+    print(f"    [Interface Stats] RX Packets Delivered: {pkts1-pkts0:,} | Kernel Interface Drops: {drops1-drops0:,}")
+    if os.path.exists("/tmp/rf_net.log"):
+        with open("/tmp/rf_net.log", "r") as logf:
+            for l in logf:
+                if "matched_packets=" in l or "Total dropped" in l: print("    [RustiFlow Engine] " + l.strip())
+
 if __name__ == "__main__":
-    mac = setup_veth()
-    run_pktgen_benchmark(mac)
+    run_benchmark()
