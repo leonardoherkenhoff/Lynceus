@@ -1,6 +1,6 @@
 import subprocess, time, re, sys
 
-RUSTIFLOW_BIN = "/root/.cargo/bin/rustiflow"
+RUSTIFLOW_BIN = "/home/leonardo.herkenhoff/RustiFlow/target/release/rustiflow"
 LYNCEUS_BIN = "build/loader"
 
 DATASETS = {
