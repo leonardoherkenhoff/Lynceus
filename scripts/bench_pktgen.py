@@ -49,9 +49,10 @@ done
 
 def run_pktgen(duration):
     subprocess.run("sudo ip netns exec rustiflow-peer bash /tmp/setup_pktgen.sh", shell=True)
+    # Schedule safe stop in background so it executes even if SSH disconnects
+    subprocess.run(f"sudo ip netns exec rustiflow-peer bash -c '(sleep {duration}; echo stop > /proc/net/pktgen/pgctrl) &' ", shell=True)
     subprocess.Popen("sudo ip netns exec rustiflow-peer bash -c 'echo start > /proc/net/pktgen/pgctrl'", shell=True)
-    time.sleep(duration)
-    subprocess.run("sudo ip netns exec rustiflow-peer bash -c 'echo stop > /proc/net/pktgen/pgctrl'", shell=True)
+    time.sleep(duration + 1)
     try:
         res = subprocess.check_output("sudo ip netns exec rustiflow-peer bash -c 'cat /proc/net/pktgen/rustiflow-p0*'", shell=True).decode()
         pps_matches = re.findall(r"(\d+)pps", res)
@@ -106,7 +107,7 @@ def run_step_down_benchmark():
     print("="*50)
     
     # We will test increasing delays to lower the PPS until drops hit 0
-    delays_to_test = [0, 50, 100, 200, 500, 1000]
+    delays_to_test = [50, 100, 200, 500, 1000]
     
     for d in delays_to_test:
         print(f"\n[*] Testing with pktgen delay = {d} ns")
