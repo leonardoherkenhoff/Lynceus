@@ -99,5 +99,35 @@ def run_benchmark():
             for l in logf:
                 if "matched_packets=" in l or "Total dropped" in l: print("    [RustiFlow Engine] " + l.strip())
 
+def run_step_down_benchmark():
+    setup_veth()
+    print("\n" + "="*50)
+    print("=== SCENARIO 3: LYNCEUS VETH STEP-DOWN TEST ===")
+    print("="*50)
+    
+    # We will test increasing delays to lower the PPS until drops hit 0
+    delays_to_test = [0, 50, 100, 200, 500, 1000]
+    
+    for d in delays_to_test:
+        print(f"\n[*] Testing with pktgen delay = {d} ns")
+        create_pktgen_script(delay=d, count=2000000)
+        pkts0, drops0 = get_rx_stats("rustiflow-t0")
+        if os.path.exists("/tmp/lyn_net.log"): os.remove("/tmp/lyn_net.log")
+        lyn_proc = subprocess.Popen(f"cd /opt/lynceus && sudo {LYNCEUS_BIN} rustiflow-t0 > /dev/null 2> /tmp/lyn_net.log", shell=True)
+        time.sleep(2)
+        run_pktgen(8)
+        subprocess.run("sudo pkill -INT loader", shell=True)
+        time.sleep(2)
+        pkts1, drops1 = get_rx_stats("rustiflow-t0")
+        print(f"    [Interface Stats] RX Packets Delivered: {pkts1-pkts0:,}")
+        if os.path.exists("/tmp/lyn_net.log"):
+            with open("/tmp/lyn_net.log", "r") as logf:
+                for l in logf:
+                    if any(x in l for x in ["Kernel-Space", "Telemetry Drops", "Speed:"]): print("    [Lynceus Engine] " + l.strip())
+
 if __name__ == "__main__":
-    run_benchmark()
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "stepdown":
+        run_step_down_benchmark()
+    else:
+        run_benchmark()
