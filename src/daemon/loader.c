@@ -652,6 +652,8 @@ static void auto_tune(int cores) {
             (double)num_workers * ((double)g_flow_table_size * flow_state_sz + spsc_sz + g_rb_size) / (1024*1024*1024));
 }
 
+int g_parity_mode = 0;
+
 int main(int argc, char **argv) {
     init_boot_time();
     init_log2_table();
@@ -661,6 +663,10 @@ int main(int argc, char **argv) {
         if (strcmp(argv[i], "--limit") == 0 && (i + 1) < argc) {
             g_max_events = strtoull(argv[i+1], NULL, 10);
             fprintf(stderr, "[*] Event limit set to %lu\n", g_max_events);
+        }
+        if (strcmp(argv[i], "--rustiflow-parity") == 0) {
+            g_parity_mode = 1;
+            fprintf(stderr, "[*] STRICT RUSTIFLOW PARITY MODE ENABLED (L2 disabled)\n");
         }
     }
 
