@@ -311,7 +311,7 @@ To guarantee the statistical validity of the performance metrics against process
     \node[server] (srvA) {\textbf{Server A (External)}\\TRex v3.06 (DPDK)\\Hardware Generator};
     \node[target, right=3cm of srvA] (srvB) {\textbf{Server B (Target)}\\XFlowLyzer (XDP) vs RustiFlow (TC)};
     \draw[<->, thick, >=stealth, red] (srvA) -- node[above, align=center, font=\scriptsize\sffamily\bfseries] {100 Gbps Link} node[below, align=center, font=\scriptsize\sffamily] {Physical Back-to-Back} (srvB);
-    \node[groupext, above=0.8cm of srvA] (grp1) {\textbf{Group 1: Line-Rate Injection}\\TRex Replay (CICDDoS2019)};
+    \node[groupext, above=0.8cm of srvA] (grp1) {\textbf{Group 1: Line-Rate Injection}\\TRex (CIC-IDS-2017 \& CICDDoS2019)};
     \node[grouploc, above=0.8cm of srvB] (grp2) {\textbf{Group 2: Upper Bound}\\Local \textit{iperf3} Saturation};
     \node[grouploc, below=0.8cm of srvB] (grp3) {\textbf{Group 3: Volumetric Baseline}\\Offline PCAP Ingestion};
     \node[grouploc, right=1cm of srvB, fill=purple!10, draw=purple] (grp4) {\textbf{Group 4: Parity Matrix}\\B1-B8 Benchmark Suite};
