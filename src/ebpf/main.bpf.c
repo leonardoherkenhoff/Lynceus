@@ -20,7 +20,7 @@ char LICENSE[] SEC("license") = "GPL";
 /* --- [Kernel State Maps] --- */
 
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_LRU_PERCPU_HASH);
     __uint(max_entries, FLOW_HASH_SIZE);
     __type(key, flow_id_t);
     __type(value, flow_record_t);
