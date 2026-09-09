@@ -901,7 +901,7 @@ skip_pcap:
         }
     }
     int stats_fd = bpf_object__find_map_fd_by_name(obj, "global_stats");
-    __u32 stats_key = 0; uint64_t *cpu_stats = calloc(cores, sizeof(uint64_t));
+    __u32 stats_key = 0; uint64_t *cpu_stats = calloc(libbpf_num_possible_cpus(), sizeof(uint64_t));
     uint64_t total_ingress = 0, total_drops = 0;
     if (bpf_map_lookup_elem(stats_fd, &stats_key, cpu_stats) == 0) {
         for (int i = 0; i < cores; i++) total_ingress += cpu_stats[i];
