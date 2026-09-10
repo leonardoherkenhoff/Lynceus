@@ -286,7 +286,7 @@ int xdp_prog(struct xdp_md *ctx) {
 
         bpf_map_update_elem(&flow_table, &key, &new_rec, BPF_ANY);
         
-        void *rb = bpf_map_lookup_elem(&pkt_ringbuf_map, &cpu_id);
+        void *rb = NULL; // bpf_map_lookup_elem(&pkt_ringbuf_map, &cpu_id);
         if (rb) {
             packet_event_t *event = bpf_ringbuf_reserve(rb, sizeof(packet_event_t), 0);
             if (event) {
@@ -301,7 +301,7 @@ int xdp_prog(struct xdp_md *ctx) {
             }
         }
     } else {
-        void *rb = bpf_map_lookup_elem(&pkt_ringbuf_map, &cpu_id);
+        void *rb = NULL; // bpf_map_lookup_elem(&pkt_ringbuf_map, &cpu_id);
         if (rb) {
             packet_event_t *event = bpf_ringbuf_reserve(rb, sizeof(packet_event_t), 0);
             if (event) {
